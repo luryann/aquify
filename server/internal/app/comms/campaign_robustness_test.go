@@ -6,9 +6,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/luryann/aquify/server/internal/postmark"
 	"github.com/luryann/aquify/server/internal/testutil"
-	"github.com/google/uuid"
 )
 
 func TestApplyPostmarkEventFallsBackToCampaignRecipient(t *testing.T) {

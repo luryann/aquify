@@ -4,14 +4,15 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/luryann/aquify/server/internal/tenantdb"
 	"strings"
 	"time"
 
-	"github.com/luryann/aquify/server/internal/dbutil"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/luryann/aquify/server/internal/dbutil"
 )
 
 // Repository is the Postgres-backed store. Postgres is canonical: every call
@@ -21,6 +22,10 @@ type Repository struct {
 }
 
 func newRepository(pool *pgxpool.Pool) *Repository { return &Repository{pool: pool} }
+
+// at returns a handle whose statements run with the tenant bound to the database
+// session, so row-level security applies to every volunteer query.
+func (r *Repository) at(orgID string) tenantdb.Scoped { return tenantdb.Pool{P: r.pool}.For(orgID) }
 
 func isUUID(s string) bool {
 	_, err := uuid.Parse(strings.TrimSpace(s))
@@ -44,7 +49,7 @@ func isUniqueViolation(err error) bool {
 func (r *Repository) getSettings(ctx context.Context, orgID string) (*Settings, bool, error) {
 	st := &Settings{OrgID: orgID}
 	var updatedAt time.Time
-	err := r.pool.QueryRow(ctx, `
+	err := r.at(orgID).QueryRow(ctx, `
 		SELECT default_required_hours::float8, default_buyout_cents_per_hour, cancellation_cutoff_hours,
 		       reminders_enabled, timezone, updated_at, updated_by
 		FROM volunteer_settings WHERE org_id = $1`, orgID).
@@ -65,7 +70,7 @@ func (r *Repository) upsertSettings(ctx context.Context, st *Settings) error {
 	if st.UpdatedAt != nil {
 		updatedAt = *st.UpdatedAt
 	}
-	_, err := r.pool.Exec(ctx, `
+	_, err := r.at(st.OrgID).Exec(ctx, `
 		INSERT INTO volunteer_settings (org_id, default_required_hours, default_buyout_cents_per_hour,
 			cancellation_cutoff_hours, reminders_enabled, timezone, updated_at, updated_by)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
@@ -104,7 +109,7 @@ func scanJob(row pgx.Row) (*Job, error) {
 }
 
 func (r *Repository) listJobs(ctx context.Context, orgID, meetID string) ([]*Job, error) {
-	rows, err := r.pool.Query(ctx, `SELECT `+jobColumns+` FROM volunteer_jobs
+	rows, err := r.at(orgID).Query(ctx, `SELECT `+jobColumns+` FROM volunteer_jobs
 		WHERE org_id = $1 AND ($2 = '' OR meet_id = $2)
 		ORDER BY starts_at, title, id`, orgID, meetID)
 	if err != nil {
@@ -117,7 +122,7 @@ func (r *Repository) getJob(ctx context.Context, orgID, id string) (*Job, error)
 	if !isUUID(id) {
 		return nil, ErrJobNotFound
 	}
-	j, err := scanJob(r.pool.QueryRow(ctx, `SELECT `+jobColumns+` FROM volunteer_jobs WHERE id = $1::uuid AND org_id = $2`, id, orgID))
+	j, err := scanJob(r.at(orgID).QueryRow(ctx, `SELECT `+jobColumns+` FROM volunteer_jobs WHERE id = $1::uuid AND org_id = $2`, id, orgID))
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, ErrJobNotFound
 	}
@@ -135,7 +140,15 @@ func minAgeArg(v int) any {
 }
 
 func (r *Repository) insertJobs(ctx context.Context, jobs []*Job) error {
-	tx, err := r.pool.Begin(ctx)
+	if len(jobs) == 0 {
+		return nil
+	}
+	for _, j := range jobs {
+		if j.OrgID != jobs[0].OrgID {
+			return fmt.Errorf("volunteer: insert jobs: mixed orgs in one batch")
+		}
+	}
+	tx, err := r.at(jobs[0].OrgID).Begin(ctx)
 	if err != nil {
 		return fmt.Errorf("volunteer: begin insert jobs: %w", err)
 	}
@@ -164,7 +177,7 @@ func (r *Repository) updateJob(ctx context.Context, j *Job) error {
 	}
 	// Lock the job row (same pattern as insertSignup) so the capacity check
 	// cannot race a concurrent signup.
-	tx, err := r.pool.Begin(ctx)
+	tx, err := r.at(j.OrgID).Begin(ctx)
 	if err != nil {
 		return fmt.Errorf("volunteer: begin job update: %w", err)
 	}
@@ -211,12 +224,47 @@ func (r *Repository) deleteJob(ctx context.Context, orgID, id string) error {
 	if !isUUID(id) {
 		return ErrJobNotFound
 	}
-	tag, err := r.pool.Exec(ctx, `DELETE FROM volunteer_jobs WHERE id = $1::uuid AND org_id = $2`, id, orgID)
+	tx, err := r.at(orgID).Begin(ctx)
 	if err != nil {
+		return fmt.Errorf("volunteer: begin job delete: %w", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	var locked string
+	if err := tx.QueryRow(ctx, `SELECT id::text FROM volunteer_jobs WHERE id = $1::uuid AND org_id = $2 FOR UPDATE`, id, orgID).Scan(&locked); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return ErrJobNotFound
+		}
+		return fmt.Errorf("volunteer: lock job for delete: %w", err)
+	}
+	// Lock the signup rows so a concurrent check-in blocks until we commit,
+	// then fails with no row instead of crediting hours that get cascaded away.
+	rows, err := tx.Query(ctx, `SELECT status FROM volunteer_signups WHERE job_id = $1::uuid AND org_id = $2 FOR UPDATE`, id, orgID)
+	if err != nil {
+		return fmt.Errorf("volunteer: lock signups for delete: %w", err)
+	}
+	worked := false
+	for rows.Next() {
+		var st string
+		if err := rows.Scan(&st); err != nil {
+			rows.Close()
+			return fmt.Errorf("volunteer: scan signup status: %w", err)
+		}
+		if st == StatusWorked {
+			worked = true
+		}
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return fmt.Errorf("volunteer: lock signups for delete: %w", err)
+	}
+	if worked {
+		return ErrJobHasWorkedSignups
+	}
+	if _, err := tx.Exec(ctx, `DELETE FROM volunteer_jobs WHERE id = $1::uuid AND org_id = $2`, id, orgID); err != nil {
 		return fmt.Errorf("volunteer: delete job: %w", err)
 	}
-	if tag.RowsAffected() == 0 {
-		return ErrJobNotFound
+	if err := tx.Commit(ctx); err != nil {
+		return fmt.Errorf("volunteer: commit job delete: %w", err)
 	}
 	return nil
 }
@@ -239,7 +287,7 @@ func (r *Repository) listSignups(ctx context.Context, orgID string, f SignupFilt
 	if f.JobID != "" && !isUUID(f.JobID) {
 		return []*Signup{}, nil
 	}
-	rows, err := r.pool.Query(ctx, `SELECT `+signupColumns+` FROM volunteer_signups
+	rows, err := r.at(orgID).Query(ctx, `SELECT `+signupColumns+` FROM volunteer_signups
 		WHERE org_id = $1
 		  AND ($2 = '' OR job_id = NULLIF($2, '')::uuid)
 		  AND ($3 = '' OR household_id = $3)
@@ -255,7 +303,7 @@ func (r *Repository) getSignup(ctx context.Context, orgID, id string) (*Signup, 
 	if !isUUID(id) {
 		return nil, ErrSignupNotFound
 	}
-	su, err := scanSignup(r.pool.QueryRow(ctx, `SELECT `+signupColumns+` FROM volunteer_signups WHERE id = $1::uuid AND org_id = $2`, id, orgID))
+	su, err := scanSignup(r.at(orgID).QueryRow(ctx, `SELECT `+signupColumns+` FROM volunteer_signups WHERE id = $1::uuid AND org_id = $2`, id, orgID))
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, ErrSignupNotFound
 	}
@@ -268,7 +316,7 @@ func (r *Repository) getSignup(ctx context.Context, orgID, id string) (*Signup, 
 // insertSignup locks the job row so concurrent signups for the same job are
 // serialised; the capacity check and insert then happen in one transaction.
 func (r *Repository) insertSignup(ctx context.Context, su *Signup) error {
-	tx, err := r.pool.Begin(ctx)
+	tx, err := r.at(su.OrgID).Begin(ctx)
 	if err != nil {
 		return fmt.Errorf("volunteer: begin signup: %w", err)
 	}
@@ -315,7 +363,7 @@ func (r *Repository) insertSignup(ctx context.Context, su *Signup) error {
 }
 
 func (r *Repository) updateSignup(ctx context.Context, su *Signup, expectedStatus string) error {
-	tag, err := r.pool.Exec(ctx, `
+	tag, err := r.at(su.OrgID).Exec(ctx, `
 		UPDATE volunteer_signups SET status = $3, hours_credited = $4, notes = $5, cancelled_at = $6,
 			cancelled_by = $7, checked_in_at = $8, checked_in_by = $9, updated_at = $10
 		WHERE id = $1::uuid AND org_id = $2 AND status = $11`,
@@ -327,7 +375,7 @@ func (r *Repository) updateSignup(ctx context.Context, su *Signup, expectedStatu
 	if tag.RowsAffected() == 0 {
 		// Either the row is gone or a concurrent writer already moved it.
 		var exists bool
-		if err := r.pool.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM volunteer_signups WHERE id = $1::uuid AND org_id = $2)`,
+		if err := r.at(su.OrgID).QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM volunteer_signups WHERE id = $1::uuid AND org_id = $2)`,
 			su.ID, su.OrgID).Scan(&exists); err != nil {
 			return fmt.Errorf("volunteer: recheck signup: %w", err)
 		}
@@ -355,7 +403,7 @@ func (r *Repository) listRequirements(ctx context.Context, orgID, seasonID strin
 	if seasonID != "" && !isUUID(seasonID) {
 		return []*Requirement{}, nil
 	}
-	rows, err := r.pool.Query(ctx, `SELECT `+requirementColumns+` FROM volunteer_requirements
+	rows, err := r.at(orgID).Query(ctx, `SELECT `+requirementColumns+` FROM volunteer_requirements
 		WHERE org_id = $1 AND ($2 = '' OR season_id = NULLIF($2, '')::uuid)
 		ORDER BY season_id, household_id NULLS FIRST`, orgID, seasonID)
 	if err != nil {
@@ -368,7 +416,7 @@ func (r *Repository) upsertRequirement(ctx context.Context, q *Requirement) (*Re
 	if !isUUID(q.SeasonID) {
 		return nil, ErrSeasonNotFound
 	}
-	out, err := scanRequirement(r.pool.QueryRow(ctx, `
+	out, err := scanRequirement(r.at(q.OrgID).QueryRow(ctx, `
 		INSERT INTO volunteer_requirements (id, org_id, season_id, household_id, required_hours,
 			buyout_cents_per_hour, notes, updated_at, updated_by)
 		VALUES ($1::uuid, $2, $3::uuid, $4, $5, $6, $7, $8, $9)
@@ -391,7 +439,7 @@ func (r *Repository) deleteRequirement(ctx context.Context, orgID, id string) er
 	if !isUUID(id) {
 		return ErrRequirementNotFound
 	}
-	tag, err := r.pool.Exec(ctx, `DELETE FROM volunteer_requirements WHERE id = $1::uuid AND org_id = $2`, id, orgID)
+	tag, err := r.at(orgID).Exec(ctx, `DELETE FROM volunteer_requirements WHERE id = $1::uuid AND org_id = $2`, id, orgID)
 	if err != nil {
 		return fmt.Errorf("volunteer: delete requirement: %w", err)
 	}
@@ -407,7 +455,7 @@ func (r *Repository) listCredits(ctx context.Context, orgID, seasonID, household
 	if seasonID != "" && !isUUID(seasonID) {
 		return []*Credit{}, nil
 	}
-	rows, err := r.pool.Query(ctx, `
+	rows, err := r.at(orgID).Query(ctx, `
 		SELECT id::text, org_id, season_id::text, household_id, hours::float8, reason, created_by, created_at
 		FROM volunteer_credits
 		WHERE org_id = $1 AND ($2 = '' OR season_id = NULLIF($2, '')::uuid) AND ($3 = '' OR household_id = $3)
@@ -426,7 +474,7 @@ func (r *Repository) insertCredit(ctx context.Context, c *Credit) error {
 	if !isUUID(c.SeasonID) {
 		return ErrSeasonNotFound
 	}
-	_, err := r.pool.Exec(ctx, `
+	_, err := r.at(c.OrgID).Exec(ctx, `
 		INSERT INTO volunteer_credits (id, org_id, season_id, household_id, hours, reason, created_by, created_at)
 		VALUES ($1::uuid, $2, $3::uuid, $4, $5, $6, $7, $8)`,
 		c.ID, c.OrgID, c.SeasonID, c.HouseholdID, c.Hours, c.Reason, c.CreatedBy, c.CreatedAt)
@@ -442,7 +490,7 @@ func (r *Repository) listBuyouts(ctx context.Context, orgID, seasonID string) ([
 	if seasonID != "" && !isUUID(seasonID) {
 		return []*Buyout{}, nil
 	}
-	rows, err := r.pool.Query(ctx, `
+	rows, err := r.at(orgID).Query(ctx, `
 		SELECT id::text, org_id, season_id::text, household_id, status, hours_short::float8, rate_cents_per_hour,
 		       amount_cents, invoice_id, invoice_item_id, created_by, created_at, updated_at
 		FROM volunteer_buyouts
@@ -463,7 +511,7 @@ func (r *Repository) reserveBuyout(ctx context.Context, b *Buyout) error {
 	if !isUUID(b.SeasonID) {
 		return ErrSeasonNotFound
 	}
-	_, err := r.pool.Exec(ctx, `
+	_, err := r.at(b.OrgID).Exec(ctx, `
 		INSERT INTO volunteer_buyouts (id, org_id, season_id, household_id, status, hours_short, rate_cents_per_hour,
 			amount_cents, invoice_id, invoice_item_id, created_by, created_at, updated_at)
 		VALUES ($1::uuid, $2, $3::uuid, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
@@ -479,7 +527,7 @@ func (r *Repository) reserveBuyout(ctx context.Context, b *Buyout) error {
 }
 
 func (r *Repository) updateBuyout(ctx context.Context, b *Buyout) error {
-	tag, err := r.pool.Exec(ctx, `
+	tag, err := r.at(b.OrgID).Exec(ctx, `
 		UPDATE volunteer_buyouts SET status = $3, invoice_id = $4, invoice_item_id = $5, updated_at = $6
 		WHERE id = $1::uuid AND org_id = $2`,
 		b.ID, b.OrgID, b.Status, b.InvoiceID, b.InvoiceItemID, b.UpdatedAt)
@@ -493,9 +541,18 @@ func (r *Repository) updateBuyout(ctx context.Context, b *Buyout) error {
 }
 
 func (r *Repository) deleteBuyout(ctx context.Context, orgID, id string) error {
-	_, err := r.pool.Exec(ctx, `DELETE FROM volunteer_buyouts WHERE id = $1::uuid AND org_id = $2`, id, orgID)
+	_, err := r.at(orgID).Exec(ctx, `DELETE FROM volunteer_buyouts WHERE id = $1::uuid AND org_id = $2`, id, orgID)
 	if err != nil {
 		return fmt.Errorf("volunteer: delete buyout: %w", err)
 	}
 	return nil
+}
+
+// eraseHousehold deletes the household's signups (names, notes, swimmer links).
+func (r *Repository) eraseHousehold(ctx context.Context, orgID, householdID string) (int, error) {
+	tag, err := r.at(orgID).Exec(ctx, `DELETE FROM volunteer_signups WHERE org_id = $1 AND household_id = $2`, orgID, householdID)
+	if err != nil {
+		return 0, fmt.Errorf("volunteer: erase household signups: %w", err)
+	}
+	return int(tag.RowsAffected()), nil
 }

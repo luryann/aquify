@@ -261,7 +261,7 @@ function HistoryModal({ record, canManage, onClose, onChanged }: { record: TeamR
               </div>
               {canManage ? (
                 <div className="u-gap-6px u-mt-8px" style={{ display: 'flex', flexWrap: 'wrap' }}>
-                  <button type="button" className="btn btn-sm btn-secondary" disabled={busy} onClick={() => void act(() => updateRecordEntry(api, orgId, e.id, { locked: !e.locked }), e.locked ? 'Record unlocked.' : 'Record locked. Faster swims now need approval.')}>{e.locked ? 'Unlock' : 'Lock'}</button>
+                  {i === 0 || e.locked ? <button type="button" className="btn btn-sm btn-secondary" disabled={busy} onClick={() => void act(() => updateRecordEntry(api, orgId, e.id, { locked: !e.locked }), e.locked ? 'Record unlocked.' : 'Record locked. Faster swims now need approval.')}>{e.locked ? 'Unlock' : 'Lock'}</button> : null}
                   <button type="button" className="btn btn-sm btn-secondary" disabled={busy} onClick={() => void act(() => updateRecordEntry(api, orgId, e.id, { verified: !e.verified }), e.verified ? 'Verification removed.' : 'Record verified.')}>{e.verified ? 'Unverify' : 'Verify'}</button>
                   {i === 0 ? <button type="button" className="btn btn-sm btn-ghost" disabled={busy} onClick={() => void act(() => draftRecordAnnouncement(api, orgId, e.id), 'Announcement draft created. Review and publish it from Announcements.')}>Draft announcement</button> : null}
                   {e.source === 'manual'

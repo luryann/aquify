@@ -66,11 +66,13 @@ func (q *TopTimesQuery) normalize() error {
 	if q.Stroke != "" && !isIndividualStroke(q.Stroke) {
 		return fmt.Errorf("%w: stroke must be free, back, breast, fly or im", ErrRecordInvalid)
 	}
-	for _, d := range []string{q.From, q.To} {
-		if d != "" {
-			if _, err := parseDateOnly(d); err != nil {
+	for _, d := range []*string{&q.From, &q.To} {
+		if *d != "" {
+			t, err := parseDateOnly(*d)
+			if err != nil {
 				return fmt.Errorf("%w: from/to must be YYYY-MM-DD", ErrRecordInvalid)
 			}
+			*d = t.Format("2006-01-02")
 		}
 	}
 	if q.From != "" && q.To != "" && q.From > q.To {
@@ -88,6 +90,9 @@ func (q *TopTimesQuery) normalize() error {
 // TopTimes returns top-N lists. Readable by every club role (club top-10
 // boards are shared with families, like the record board).
 func (s *Service) TopTimes(orgID string, principal *appmiddleware.Principal, q TopTimesQuery) ([]TopTimesList, error) {
+	if err := s.ensureOrg(orgID); err != nil {
+		return nil, err
+	}
 	if err := s.requireReadAccess(principal); err != nil {
 		return nil, err
 	}

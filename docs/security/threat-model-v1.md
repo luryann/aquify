@@ -160,3 +160,21 @@ Controls:
 - full impersonation design with session lineage and dedicated audit model
 - WAF/CDN-level request filtering and bot mitigation validation
 - periodic threat model review after migration/cutover features land
+
+## Multi-tenancy threats (added 2026-11-03)
+
+Scope: several clubs on one deployment. Controls and the tests that prove them are listed in `docs/multi-tenancy-implementation-tracker.md`.
+
+| Threat | Controls | Residual risk |
+|---|---|---|
+| **Cross-org read/write by guessing ids (IDOR)** | org taken from the authenticated session (`X-Org-Id` is only an assertion); services filter by org; composite FKs make the database refuse a child that points at another org's parent; SQL guard test fails on by-id statements without `org_id`; the cross-org matrix walks every route with another org's ids | No row-level security: a new query that forgets `org_id` is caught by tests, not by the database (tracker 4.4) |
+| **Tenant confusion on public surfaces** (sign-up, public site, custom domains) | the browser never supplies an org id: slug or verified custom domain is resolved server-side; one slug cannot address two clubs (cross-namespace check); unknown, unverified and inactive clubs return the same 404; DNS TXT proves domain ownership (a TXT record naming another org is rejected) | slug enumeration is possible for clubs with a public site (by design) |
+| **Account re-homing / privilege crossing** | a user is bound to one org; a token claiming another org is refused (`org_mismatch`); platform operator access needs role + platform org membership + MFA; org admins cannot grant `platform_admin`; invite roles cannot be admin | Keycloak realm admins are trusted |
+| **Forged or mis-routed webhooks** | Connect events are attributed by the connected account (never metadata alone); metadata naming a different org is a permanent rejection; account rows are one-to-one with orgs; Stripe idempotency keys are namespaced per org | Postmark webhooks still authenticate with one shared secret and carry `org_id` in metadata |
+| **Confused deputy in background jobs** | jobs carry `org_id`; scheduled fan-out only targets active orgs; offboarding purges by `org_id` only and refuses the platform org | queued jobs for a suspended org are not re-checked at execution time |
+| **One club sending as another** (shared mail account) | campaign From address is pinned to the org's configured sender outside development | Postmark sender-signature verification is not automated |
+| **Stored secret transplant** | integration secrets are AES-GCM-sealed with the org id as associated data | single global encryption key |
+| **Shared-device leakage in the browser** | roll-call rosters/queues are keyed by org+user and wiped at sign-out | other localStorage values hold no tenant data |
+| **Noisy neighbour / exhaustion** | per-IP and per-org API rate limits; per-org metrics with bounded label cardinality | no storage/email quotas; shared in-memory caches |
+| **Support access abuse** | no impersonation (fails closed); platform actions are audited under the platform org | operators can pause/close any club by design |
+| **Offboarding data loss or retention** | cooling-off period, typed confirmation, export before delete, audit trail retained, single-org restore from export | stored files are not part of the archive (manifest only) |

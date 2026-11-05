@@ -89,9 +89,11 @@ export function CommandPalette() {
       setLive({ swimmers: [], meets: [], households: [] })
       return
     }
+    setLiveFailed(false)
     void Promise.all([fetchSwimmers(api, orgId), fetchMeets(api, orgId), fetchHouseholds(api, orgId)])
       .then(([sw, mt, hh]) => {
         if (cancelled) return
+        setLiveFailed(false)
         setLive({
           swimmers: sw.map((s) => ({ id: `s-${s.id}`, group: 'Swimmers', label: `${s.first_name} ${s.last_name}`, href: `/members/swimmers/${s.id}` })),
           meets: mt.map((m) => ({ id: `m-${m.id}`, group: 'Meets', label: m.name, meta: m.start_date ?? undefined, href: `/meets/${m.id}` })),
@@ -100,8 +102,8 @@ export function CommandPalette() {
       })
       .catch(() => {
         if (!cancelled) {
+          // Leave `live` null so the next open retries.
           setLiveFailed(true)
-          setLive({ swimmers: [], meets: [], households: [] })
         }
       })
     return () => {

@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"testing"
+	"time"
 
 	"github.com/luryann/aquify/meetfiles"
 	"github.com/luryann/aquify/server/internal/app/members"
@@ -41,15 +42,16 @@ func (f *fakeRecorder) UpsertResultWithRecords(_, _ string, _ *appmiddleware.Pri
 }
 
 func threeSwimFile() (*meetfiles.ParseResult, *resultSwimmerMatcher) {
+	dob := time.Date(2012, 5, 1, 0, 0, 0, 0, time.UTC)
 	row := func(distance int, seconds float64) meetfiles.ParsedIndividualResult {
 		return meetfiles.ParsedIndividualResult{
-			Swimmer:    meetfiles.ParsedSwimmer{FirstName: "Amy", LastName: "Ames"},
+			Swimmer:    meetfiles.ParsedSwimmer{FirstName: "Amy", LastName: "Ames", DOB: &dob},
 			Event:      meetfiles.ParsedEvent{Distance: distance, Stroke: meetfiles.StrokeFreestyle, EventGender: "F", Course: meetfiles.Course("SCY")},
 			FinalsTime: meetfiles.Time{Raw: "x", Valid: true, Seconds: seconds},
 		}
 	}
 	parsed := &meetfiles.ParseResult{IndividualResults: []meetfiles.ParsedIndividualResult{row(50, 25), row(100, 55), row(200, 120)}}
-	matcher := newResultSwimmerMatcher([]members.Swimmer{{ID: "amy", FirstName: "Amy", LastName: "Ames", Gender: "female"}})
+	matcher := newResultSwimmerMatcher([]members.Swimmer{{ID: "amy", FirstName: "Amy", LastName: "Ames", Gender: "female", DateOfBirth: "2012-05-01"}})
 	return parsed, matcher
 }
 
@@ -99,5 +101,12 @@ func TestResultsImportKeepsGoingWhenOnlyRecordDetectionFails(t *testing.T) {
 	}
 	if got.Imported != 3 || got.RecordDetectionFailures != 1 {
 		t.Fatalf("progress = %+v, want imported=3 record_detection_failures=1", got)
+	}
+}
+
+func TestResultMatcherRejectsNameOnlyMatchWithoutDOB(t *testing.T) {
+	matcher := newResultSwimmerMatcher([]members.Swimmer{{ID: "amy", FirstName: "Amy", LastName: "Ames", USASwimmingID: "ABC123"}})
+	if sw, reason := matcher.match(meetfiles.ParsedSwimmer{FirstName: "Amy", LastName: "Ames"}); sw != nil {
+		t.Fatalf("name-only row without a DOB must not match, got %v (%s)", sw.ID, reason)
 	}
 }

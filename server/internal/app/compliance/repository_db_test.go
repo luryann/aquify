@@ -4,8 +4,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/luryann/aquify/server/internal/testutil"
 	"github.com/google/uuid"
+	"github.com/luryann/aquify/server/internal/testutil"
 )
 
 // CompleteDataExport replaces the request's expiry with the download link's

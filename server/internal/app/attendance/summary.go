@@ -33,6 +33,12 @@ type PracticeSource interface {
 	Attendance(orgID, practiceID string) ([]Record, error)
 }
 
+// SwimmerAttendanceSource is an optional bulk read a PracticeSource may
+// implement: one swimmer's status for many practices in a single call.
+type SwimmerAttendanceSource interface {
+	AttendanceForSwimmer(orgID, swimmerID string, practiceIDs []string) (map[string]string, error)
+}
+
 // Mark is one practice outcome for the swimmer.
 type Mark struct {
 	PracticeID string `json:"practice_id"`
@@ -87,7 +93,7 @@ func Summarize(src PracticeSource, dir roster.Directory, orgID string, swimmer r
 		codeCache[ref] = code
 		return code
 	}
-	marks := []Mark{}
+	var eligible []Practice
 	for _, p := range practices {
 		if p.Date < from || p.Date > to || strings.EqualFold(p.Type, "rest") {
 			continue
@@ -95,15 +101,35 @@ func Summarize(src PracticeSource, dir roster.Directory, orgID string, swimmer r
 		if ref := strings.TrimSpace(p.GroupID); ref != "" && !swimmer.InGroup(resolve(ref)) {
 			continue
 		}
-		records, err := src.Attendance(orgID, p.ID)
-		if err != nil {
+		eligible = append(eligible, p)
+	}
+	var bulk map[string]string
+	if bs, ok := src.(SwimmerAttendanceSource); ok && len(eligible) > 0 {
+		ids := make([]string, len(eligible))
+		for i, p := range eligible {
+			ids[i] = p.ID
+		}
+		if bulk, err = bs.AttendanceForSwimmer(orgID, swimmer.ID, ids); err != nil {
 			return out, err
 		}
+	}
+	marks := []Mark{}
+	for _, p := range eligible {
 		status := "unmarked"
-		for _, rec := range records {
-			if rec.SwimmerID == swimmer.ID {
-				status = rec.Status
-				break
+		if bulk != nil {
+			if st, ok := bulk[p.ID]; ok {
+				status = st
+			}
+		} else {
+			records, err := src.Attendance(orgID, p.ID)
+			if err != nil {
+				return out, err
+			}
+			for _, rec := range records {
+				if rec.SwimmerID == swimmer.ID {
+					status = rec.Status
+					break
+				}
 			}
 		}
 		out.EligiblePractices++

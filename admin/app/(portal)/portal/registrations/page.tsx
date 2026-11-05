@@ -116,6 +116,7 @@ export default function RegistrationsPage() {
 
   const activeRegs = registrations.filter((r) => r.status === 'active')
   const pendingRegs = registrations.filter((r) => r.status === 'pending')
+  const currentRegs = [...activeRegs, ...pendingRegs]
   const pastRegs = registrations.filter((r) => ['expired', 'inactive'].includes(r.status))
 
   return (
@@ -183,12 +184,12 @@ export default function RegistrationsPage() {
               </div>
             </div>
           ))
-        ) : loadError ? null : registrations.length === 0 ? (
+        ) : loadError ? null : currentRegs.length === 0 ? (
           <div className="card is-21695c0" >
-            No registrations found for your household.
+            {pastRegs.length > 0 ? 'No active registrations. Your past registrations are listed below.' : 'No registrations found for your household.'}
           </div>
         ) : (
-          registrations.filter((r) => r.status === 'active' || r.status === 'pending').map((reg, idx) => {
+          registrations.filter((r) => currentRegs.includes(r)).map((reg, idx) => {
             const swimmer = getSwimmer(reg.swimmer_id)
             const group = getGroup(reg.group_id)
             const isExpanded = expandedId === reg.id

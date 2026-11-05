@@ -5,8 +5,8 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/luryann/aquify/server/internal/testutil"
 	"github.com/google/uuid"
+	"github.com/luryann/aquify/server/internal/testutil"
 )
 
 // Two instances can both pass the in-memory name check; the database's unique

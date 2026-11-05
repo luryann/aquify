@@ -4,8 +4,8 @@ import (
 	"context"
 	"testing"
 
-	"github.com/luryann/aquify/server/internal/testutil"
 	"github.com/google/uuid"
+	"github.com/luryann/aquify/server/internal/testutil"
 )
 
 // A failure partway through a household erase must roll the whole DB erase back
@@ -26,6 +26,9 @@ func TestEraseHouseholdDataIsAtomic(t *testing.T) {
 		t.Fatal(err)
 	}
 	svc := NewServiceWithPool(pool)
+	if err := svc.RefreshOrg(ctx, org); err != nil { // clubs load on demand, not at startup
+		t.Fatal(err)
+	}
 	if len(svc.preferences) != 1 || len(svc.deliveries) != 1 {
 		t.Fatalf("setup: prefs=%d deliveries=%d", len(svc.preferences), len(svc.deliveries))
 	}

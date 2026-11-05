@@ -4,6 +4,7 @@ import assert from 'node:assert/strict'
 import {
   buildPortalSwimmerStates,
   canEditPortalMeetSelections,
+  mapPortalCommitmentStatus,
   withAddedPortalMeetSelection,
   withRemovedPortalMeetSelection,
 } from './portal-meet-event-selections.ts'
@@ -83,4 +84,10 @@ test('portal meet selection helpers add and remove persisted selections without 
   const withRemoved = withRemovedPortalMeetSelection(withAdded, 'ev_1')
   assert.deepEqual(withRemoved.selectedEvents, ['ev_2'])
   assert.deepEqual(withRemoved.selectedEventSelectionIds, { ev_2: 'sel_2' })
+})
+
+test('mapPortalCommitmentStatus treats an unanswered invite as closed once commitments are no longer open', () => {
+  assert.equal(mapPortalCommitmentStatus('invited', 'commitment_closed'), 'closed')
+  assert.equal(mapPortalCommitmentStatus('invited', 'commitment_open'), 'pending')
+  assert.equal(mapPortalCommitmentStatus('invited'), 'pending')
 })

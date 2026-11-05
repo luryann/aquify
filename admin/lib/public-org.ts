@@ -62,13 +62,18 @@ function isLocalHost(host: string): boolean {
 
 /** Lower-cases and trims keys, trims string values, and drops entries that end up empty. */
 function normalizedMap(input: Record<string, unknown> | null | undefined): StringMap {
-  return Object.fromEntries(
-    Object.entries(input ?? {}).flatMap(([key, value]) => {
-      const normalizedKey = normalizedHost(key)
-      const normalizedValue = typeof value === 'string' ? value.trim() : ''
-      return normalizedKey && normalizedValue ? [[normalizedKey, normalizedValue]] : []
-    }),
-  )
+  // Null-prototype so lookups of keys like 'constructor' or '__proto__' never hit inherited members.
+  const out: StringMap = Object.create(null)
+  for (const [key, value] of Object.entries(input ?? {})) {
+    const normalizedKey = normalizedHost(key)
+    const normalizedValue = typeof value === 'string' ? value.trim() : ''
+    if (normalizedKey && normalizedValue) out[normalizedKey] = normalizedValue
+  }
+  return out
+}
+
+function own(map: StringMap, key: string): string {
+  return Object.hasOwn(map, key) ? map[key] : ''
 }
 
 function isUnsafeSharedDefaultOrgID(orgID: string): boolean {
@@ -85,14 +90,17 @@ export function resolvePublicOrg(input: {
   const clubCodeOrgMap = normalizedMap(input.config?.clubCodeOrgMap ?? CLUB_CODE_ORG_MAP)
   const hostOrgMap = normalizedMap(input.config?.hostOrgMap ?? HOST_ORG_MAP)
   const defaultOrgID = normalized(input.config?.defaultOrgId ?? DEFAULT_OIDC_ORG_ID)
-  const explicitOrgID = normalized(input.searchParams?.get('org_id'))
+  const production = input.config?.production ?? IS_PRODUCTION_BUILD
+  // A raw ?org_id= from the address bar is a dev convenience only. In production
+  // the tenant is resolved by the server from the club slug or a verified domain.
+  const explicitOrgID = production ? '' : normalized(input.searchParams?.get('org_id'))
   if (explicitOrgID) {
     return { orgId: explicitOrgID, clubCode: normalizedCode(input.clubCode), source: 'query_org_id' }
   }
 
   const queryClubCode = normalizedCode(input.searchParams?.get('club_code'))
   if (queryClubCode) {
-    const mappedOrgID = clubCodeOrgMap[queryClubCode.toLowerCase()] ?? ''
+    const mappedOrgID = own(clubCodeOrgMap, queryClubCode.toLowerCase())
     if (mappedOrgID) {
       return { orgId: mappedOrgID, clubCode: queryClubCode, source: 'query_club_code' }
     }
@@ -100,7 +108,7 @@ export function resolvePublicOrg(input: {
 
   const formClubCode = normalizedCode(input.clubCode)
   if (formClubCode) {
-    const mappedOrgID = clubCodeOrgMap[formClubCode.toLowerCase()] ?? ''
+    const mappedOrgID = own(clubCodeOrgMap, formClubCode.toLowerCase())
     if (mappedOrgID) {
       return { orgId: mappedOrgID, clubCode: formClubCode, source: 'form_club_code' }
     }
@@ -109,7 +117,7 @@ export function resolvePublicOrg(input: {
   const clubCode = formClubCode || queryClubCode
   const host = normalizedHost(input.host)
   if (host) {
-    const mappedOrgID = hostOrgMap[host] ?? ''
+    const mappedOrgID = own(hostOrgMap, host)
     if (mappedOrgID) {
       return { orgId: mappedOrgID, clubCode, source: 'host' }
     }

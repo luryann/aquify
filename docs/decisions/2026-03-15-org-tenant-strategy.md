@@ -1,6 +1,6 @@
 # ADR: Org/Tenant Strategy for v1
 
-- Status: Accepted
+- Status: Superseded by `2026-11-03-multi-tenancy.md`
 - Date: 2026-03-15
 
 ## Context

@@ -451,6 +451,9 @@ func standardIdentity(code string, year, dist int, stroke, course, gender string
 // PlanTimeStandardsImport classifies each valid row as create/update/unchanged
 // against the org's current standards. It never writes. Admin only.
 func (s *Service) PlanTimeStandardsImport(orgID string, principal *appmiddleware.Principal, rows []StandardsImportRow) ([]StandardsImportRow, error) {
+	if err := s.ensureOrg(orgID); err != nil {
+		return nil, err
+	}
 	if err := s.requireAdmin(principal); err != nil {
 		return nil, ErrForbidden
 	}
@@ -496,6 +499,9 @@ func (s *Service) planStandardsImportLocked(orgID string, rows []StandardsImport
 // cache is only updated after it commits. Any invalid row aborts the whole
 // import with ErrImportHasErrors. Admin only.
 func (s *Service) CommitTimeStandardsImport(orgID, actorID string, principal *appmiddleware.Principal, rows []StandardsImportRow) ([]StandardsImportRow, error) {
+	if err := s.ensureOrg(orgID); err != nil {
+		return nil, err
+	}
 	if err := s.requireAdmin(principal); err != nil {
 		return nil, ErrForbidden
 	}

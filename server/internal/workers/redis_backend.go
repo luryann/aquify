@@ -300,16 +300,19 @@ func (b *RedisBackend) Start() error {
 			if job.Interval <= 0 {
 				continue
 			}
-			task, err := NewTask(job.TaskType, job.Payload)
-			if err != nil {
-				cancel()
-				b.schedWG.Wait()
-				return err
+			var task *Task
+			if job.FanOut == nil {
+				var err error
+				task, err = NewTask(job.TaskType, job.Payload)
+				if err != nil {
+					cancel()
+					b.schedWG.Wait()
+					return err
+				}
 			}
 			// Every instance runs this; the deterministic task ID makes the
 			// duplicate enqueues from other instances collapse into one.
-			initialID := scheduledTaskID(job, "init", now.UnixNano()/int64(job.Interval))
-			if _, err := b.enqueue(ctx, time.Time{}, task, WithQueue(job.Queue), WithUniqueKey(initialID)); err != nil && !errors.Is(err, ErrDuplicateTask) {
+			if err := b.enqueueScheduled(ctx, job, task, "init", now.UnixNano()/int64(job.Interval)); err != nil {
 				cancel()
 				b.schedWG.Wait()
 				return fmt.Errorf("enqueue initial scheduled job %q: %w", job.Name, err)
@@ -619,9 +622,38 @@ func (b *RedisBackend) runScheduledJob(ctx context.Context, job ScheduledJob, ta
 		}
 		// Nearest boundary tolerates small clock skew between instances.
 		bucket := (time.Now().UnixNano() + interval/2) / interval
-		_, err := b.enqueue(ctx, time.Time{}, task, WithQueue(job.Queue), WithUniqueKey(scheduledTaskID(job, "tick", bucket)))
-		if err != nil && !errors.Is(err, ErrDuplicateTask) && ctx.Err() == nil {
+		if err := b.enqueueScheduled(ctx, job, task, "tick", bucket); err != nil && ctx.Err() == nil {
 			b.logger.Error("scheduled job enqueue failed", "job", job.Name, "error", err)
 		}
 	}
+}
+
+// enqueueScheduled enqueues one firing of job. A fan-out job produces one task
+// per item, each with its own deterministic ID so instances still dedupe.
+func (b *RedisBackend) enqueueScheduled(ctx context.Context, job ScheduledJob, task *Task, kind string, bucket int64) error {
+	if job.FanOut == nil {
+		_, err := b.enqueue(ctx, time.Time{}, task, WithQueue(job.Queue), WithUniqueKey(scheduledTaskID(job, kind, bucket)))
+		if err != nil && !errors.Is(err, ErrDuplicateTask) {
+			return err
+		}
+		return nil
+	}
+	items, err := job.FanOut(ctx)
+	if err != nil {
+		return fmt.Errorf("fan-out: %w", err)
+	}
+	var firstErr error
+	for _, item := range items {
+		t, err := NewTask(job.TaskType, item.Payload)
+		if err != nil {
+			firstErr = errors.Join(firstErr, err)
+			continue
+		}
+		itemJob := job
+		itemJob.Name = job.Name + ":" + item.Key
+		if _, err := b.enqueue(ctx, time.Time{}, t, WithQueue(job.Queue), WithUniqueKey(scheduledTaskID(itemJob, kind, bucket))); err != nil && !errors.Is(err, ErrDuplicateTask) {
+			firstErr = errors.Join(firstErr, err)
+		}
+	}
+	return firstErr
 }

@@ -6,11 +6,12 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/luryann/aquify/server/internal/dbutil"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/luryann/aquify/server/internal/dbutil"
+	"github.com/luryann/aquify/server/internal/tenantdb"
 )
 
 // Repository handles DB persistence for the comms domain.
@@ -22,10 +23,20 @@ func newRepository(pool *pgxpool.Pool) *Repository {
 	return &Repository{pool: pool}
 }
 
+// at binds orgID to every statement so row-level security on the comms tables applies.
+// An empty org sees nothing.
+func (r *Repository) at(orgID string) tenantdb.Scoped { return tenantdb.Pool{P: r.pool}.For(orgID) }
+
+// OrgIDs lists every registered club (the registry is not tenant data) so an all-club
+// load can read each club under its own binding.
+func (r *Repository) OrgIDs(ctx context.Context) ([]string, error) {
+	return dbutil.ListOrgIDs(ctx, r.pool)
+}
+
 // ─── Announcements ────────────────────────────────────────────────────────────
 
 func (r *Repository) UpsertAnnouncement(ctx context.Context, a *Announcement) error {
-	_, err := r.pool.Exec(ctx, `
+	_, err := r.at(a.OrgID).Exec(ctx, `
 		INSERT INTO announcements (id, org_id, title, body, status, audience, group_id,
 		                           published_at, archived_at, created_at, updated_at, is_public)
 		VALUES ($1::uuid, $2::uuid, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
@@ -45,7 +56,7 @@ func (r *Repository) UpsertAnnouncement(ctx context.Context, a *Announcement) er
 }
 
 func (r *Repository) LoadAnnouncements(ctx context.Context, orgID string) ([]*Announcement, error) {
-	rows, err := r.pool.Query(ctx, `
+	rows, err := r.at(orgID).Query(ctx, `
 		SELECT id::text, org_id::text, title, body, status, audience,
 		       COALESCE(group_id::text, ''), published_at, archived_at,
 		       created_at, updated_at, is_public
@@ -67,7 +78,7 @@ func (r *Repository) LoadAnnouncements(ctx context.Context, orgID string) ([]*An
 // ─── Campaigns ────────────────────────────────────────────────────────────────
 
 func (r *Repository) UpsertCampaign(ctx context.Context, c *EmailCampaign) error {
-	_, err := r.pool.Exec(ctx, `
+	_, err := r.at(c.OrgID).Exec(ctx, `
 		INSERT INTO email_campaigns (id, org_id, name, subject, body_html, body_text,
 		                             from_name, from_email, audience, group_id, status,
 		                             sent_at, total_recipients, sent_count, failed_count,
@@ -99,7 +110,7 @@ func (r *Repository) UpsertCampaign(ctx context.Context, c *EmailCampaign) error
 // reports whether this caller won the claim.
 func (r *Repository) ClaimCampaignForSend(ctx context.Context, orgID, campaignID string, staleAfter time.Duration) (bool, error) {
 	var id string
-	err := r.pool.QueryRow(ctx, `
+	err := r.at(orgID).QueryRow(ctx, `
 		UPDATE email_campaigns SET status = 'sending', updated_at = now()
 		WHERE id = $1::uuid AND org_id = $2::uuid AND deleted_at IS NULL
 		  AND (status = 'draft'
@@ -114,14 +125,14 @@ func (r *Repository) ClaimCampaignForSend(ctx context.Context, orgID, campaignID
 // TouchSendingCampaign refreshes updated_at on a campaign being sent so it is
 // not treated as a stuck claim.
 func (r *Repository) TouchSendingCampaign(ctx context.Context, orgID, campaignID string) error {
-	_, err := r.pool.Exec(ctx, `
+	_, err := r.at(orgID).Exec(ctx, `
 		UPDATE email_campaigns SET updated_at = now()
 		WHERE id = $1::uuid AND org_id = $2::uuid AND status = 'sending'`, campaignID, orgID)
 	return err
 }
 
 func (r *Repository) LoadCampaigns(ctx context.Context, orgID string) ([]*EmailCampaign, error) {
-	rows, err := r.pool.Query(ctx, `
+	rows, err := r.at(orgID).Query(ctx, `
 		SELECT id::text, org_id::text, name, subject, body_html, COALESCE(body_text, ''),
 		       from_name, from_email, audience, COALESCE(group_id::text, ''), status,
 		       sent_at, total_recipients, sent_count, failed_count, suppressed_count,
@@ -145,7 +156,7 @@ func (r *Repository) LoadCampaigns(ctx context.Context, orgID string) ([]*EmailC
 // ─── Suppression List ─────────────────────────────────────────────────────────
 
 func (r *Repository) UpsertDelivery(ctx context.Context, d *EmailDelivery) error {
-	_, err := r.pool.Exec(ctx, `
+	_, err := r.at(d.OrgID).Exec(ctx, `
 		INSERT INTO email_deliveries (
 			id, org_id, campaign_id, recipient_email, recipient_user_id, status,
 			provider_message_id, error_message, sent_at, delivered_at, bounced_at,
@@ -188,11 +199,11 @@ const deliverySelect = `
 		FROM email_deliveries`
 
 func (r *Repository) LoadDeliveries(ctx context.Context, orgID string) ([]*EmailDelivery, error) {
-	return r.queryDeliveries(ctx, deliverySelect+orgClause("org_id", orgID, false), orgArgs(orgID)...)
+	return r.queryDeliveries(ctx, orgID, deliverySelect+orgClause("org_id", orgID, false), orgArgs(orgID)...)
 }
 
-func (r *Repository) queryDeliveries(ctx context.Context, q string, args ...any) ([]*EmailDelivery, error) {
-	rows, err := r.pool.Query(ctx, q, args...)
+func (r *Repository) queryDeliveries(ctx context.Context, orgID, q string, args ...any) ([]*EmailDelivery, error) {
+	rows, err := r.at(orgID).Query(ctx, q, args...)
 	if err != nil {
 		return nil, fmt.Errorf("comms: load email_deliveries: %w", err)
 	}
@@ -208,7 +219,7 @@ func (r *Repository) queryDeliveries(ctx context.Context, q string, args ...any)
 }
 
 func (r *Repository) UpsertSuppressionEntry(ctx context.Context, e *SuppressionEntry) error {
-	_, err := r.pool.Exec(ctx, `
+	_, err := r.at(e.OrgID).Exec(ctx, `
 		INSERT INTO suppression_list (id, org_id, email, reason, created_at, created_by)
 		VALUES ($1::uuid, $2::uuid, $3, $4, $5, $6)
 		ON CONFLICT (org_id, email) DO UPDATE SET
@@ -220,7 +231,7 @@ func (r *Repository) UpsertSuppressionEntry(ctx context.Context, e *SuppressionE
 }
 
 func (r *Repository) DeleteSuppressionEntry(ctx context.Context, orgID, email string) error {
-	_, err := r.pool.Exec(ctx, `
+	_, err := r.at(orgID).Exec(ctx, `
 		DELETE FROM suppression_list WHERE org_id = $1::uuid AND email = $2`,
 		orgID, email,
 	)
@@ -228,7 +239,7 @@ func (r *Repository) DeleteSuppressionEntry(ctx context.Context, orgID, email st
 }
 
 func (r *Repository) LoadSuppressionEntries(ctx context.Context, orgID string) ([]*SuppressionEntry, error) {
-	rows, err := r.pool.Query(ctx, `
+	rows, err := r.at(orgID).Query(ctx, `
 		SELECT id::text, org_id::text, email, reason, created_at, COALESCE(created_by::text, '')
 		FROM suppression_list`+orgClause("org_id", orgID, false), orgArgs(orgID)...)
 	if err != nil {
@@ -244,12 +255,15 @@ func (r *Repository) LoadSuppressionEntries(ctx context.Context, orgID string) (
 }
 
 func (r *Repository) UpsertNotificationPreference(ctx context.Context, preference *NotificationPreference) error {
-	return upsertNotificationPreference(ctx, r.pool, preference)
+	return upsertNotificationPreference(ctx, r.at(preference.OrgID), preference)
 }
 
 // UpsertNotificationPreferences writes every preference in one transaction.
 func (r *Repository) UpsertNotificationPreferences(ctx context.Context, prefs []*NotificationPreference) error {
-	tx, err := r.pool.Begin(ctx)
+	if len(prefs) == 0 {
+		return nil
+	}
+	tx, err := r.at(prefs[0].OrgID).Begin(ctx) // one request is one club's preferences
 	if err != nil {
 		return err
 	}
@@ -293,7 +307,7 @@ func upsertNotificationPreference(ctx context.Context, db execer, preference *No
 }
 
 func (r *Repository) LoadNotificationPreferences(ctx context.Context, orgID string) ([]*NotificationPreference, error) {
-	rows, err := r.pool.Query(ctx, `
+	rows, err := r.at(orgID).Query(ctx, `
 		SELECT id::text, org_id::text, user_id, COALESCE(household_id, ''), event_id,
 		       email_enabled, push_enabled, created_at, updated_at, COALESCE(updated_by, '')
 		FROM notification_preferences`+orgClause("org_id", orgID, false), orgArgs(orgID)...)
@@ -321,7 +335,7 @@ func (r *Repository) LoadNotificationPreferences(ctx context.Context, orgID stri
 // ─── Messages ─────────────────────────────────────────────────────────────────
 
 func (r *Repository) UpsertMessage(ctx context.Context, m *Message) error {
-	_, err := r.pool.Exec(ctx, `
+	_, err := r.at(m.OrgID).Exec(ctx, `
 		INSERT INTO messages (id, org_id, household_id, swimmer_id, sender_user_id, sender_role, body, edited_at, created_at, updated_at)
 		VALUES ($1::uuid, $2::uuid, $3::uuid, $4::uuid, $5::uuid, $6, $7, $8, $9, $10)
 		ON CONFLICT (id) DO UPDATE SET
@@ -335,7 +349,7 @@ func (r *Repository) UpsertMessage(ctx context.Context, m *Message) error {
 }
 
 func (r *Repository) LoadMessages(ctx context.Context, orgID string) ([]*Message, error) {
-	rows, err := r.pool.Query(ctx, `
+	rows, err := r.at(orgID).Query(ctx, `
 		SELECT id::text, org_id::text, household_id::text, swimmer_id::text,
 		       sender_user_id::text, sender_role, body, edited_at, created_at, updated_at
 		FROM messages`+orgClause("org_id", orgID, false), orgArgs(orgID)...)
@@ -354,50 +368,40 @@ func (r *Repository) LoadMessages(ctx context.Context, orgID string) ([]*Message
 
 // ─── Message edits ────────────────────────────────────────────────────────────
 
-func (r *Repository) InsertMessageEdit(ctx context.Context, e *MessageEdit) error {
-	_, err := r.pool.Exec(ctx, `
-		INSERT INTO message_edits (id, message_id, previous_body, edited_at, edited_by)
-		VALUES ($1::uuid, $2::uuid, $3, $4, $5::uuid)
-		ON CONFLICT (id) DO NOTHING`,
-		e.ID, e.MessageID, e.PreviousBody, e.EditedAt, e.EditedBy,
-	)
-	return err
-}
-
 // EditMessageTx writes the history row and the new body in one transaction.
-func (r *Repository) EditMessageTx(ctx context.Context, e *MessageEdit, body string, editedAt time.Time) error {
-	tx, err := r.pool.Begin(ctx)
+func (r *Repository) EditMessageTx(ctx context.Context, orgID string, e *MessageEdit, body string, editedAt time.Time) error {
+	tx, err := r.at(orgID).Begin(ctx)
 	if err != nil {
 		return err
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 	if _, err := tx.Exec(ctx, `
-		INSERT INTO message_edits (id, message_id, previous_body, edited_at, edited_by)
-		VALUES ($1::uuid, $2::uuid, $3, $4, $5::uuid)
+		INSERT INTO message_edits (id, org_id, message_id, previous_body, edited_at, edited_by)
+		SELECT $1::uuid, m.org_id, m.id, $3, $4, $5::uuid FROM messages m WHERE m.id = $2::uuid
 		ON CONFLICT (id) DO NOTHING`,
 		e.ID, e.MessageID, e.PreviousBody, e.EditedAt, e.EditedBy,
 	); err != nil {
 		return err
 	}
 	if _, err := tx.Exec(ctx, `
-		UPDATE messages SET body = $2, edited_at = $3, updated_at = $3 WHERE id = $1::uuid`,
-		e.MessageID, body, editedAt,
+		UPDATE messages SET body = $2, edited_at = $3, updated_at = $3 WHERE id = $1::uuid AND org_id = $4::uuid`,
+		e.MessageID, body, editedAt, orgID,
 	); err != nil {
 		return err
 	}
 	return tx.Commit(ctx)
 }
 
-func (r *Repository) UpdateMessageBody(ctx context.Context, messageID, body string, editedAt time.Time) error {
-	_, err := r.pool.Exec(ctx, `
-		UPDATE messages SET body = $2, edited_at = $3, updated_at = $3 WHERE id = $1::uuid`,
-		messageID, body, editedAt,
+func (r *Repository) UpdateMessageBody(ctx context.Context, orgID, messageID, body string, editedAt time.Time) error {
+	_, err := r.at(orgID).Exec(ctx, `
+		UPDATE messages SET body = $2, edited_at = $3, updated_at = $3 WHERE id = $1::uuid AND org_id = $4::uuid`,
+		messageID, body, editedAt, orgID,
 	)
 	return err
 }
 
 func (r *Repository) LoadMessageEdits(ctx context.Context, orgID string) ([]*MessageEdit, error) {
-	rows, err := r.pool.Query(ctx, `
+	rows, err := r.at(orgID).Query(ctx, `
 		SELECT id::text, message_id::text, previous_body, edited_at, edited_by::text
 		FROM message_edits`+messageOrgClause(orgID), orgArgs(orgID)...)
 	if err != nil {
@@ -412,10 +416,10 @@ func (r *Repository) LoadMessageEdits(ctx context.Context, orgID string) ([]*Mes
 
 // ─── Message reactions ─────────────────────────────────────────────────────────
 
-func (r *Repository) UpsertMessageReaction(ctx context.Context, react *MessageReaction) error {
-	_, err := r.pool.Exec(ctx, `
-		INSERT INTO message_reactions (id, message_id, user_id, emoji, created_at)
-		VALUES ($1::uuid, $2::uuid, $3::uuid, $4, $5)
+func (r *Repository) UpsertMessageReaction(ctx context.Context, orgID string, react *MessageReaction) error {
+	_, err := r.at(orgID).Exec(ctx, `
+		INSERT INTO message_reactions (id, org_id, message_id, user_id, emoji, created_at)
+		SELECT $1::uuid, m.org_id, m.id, $3::uuid, $4, $5 FROM messages m WHERE m.id = $2::uuid
 		ON CONFLICT (message_id, user_id, emoji) DO NOTHING`,
 		react.ID, react.MessageID, react.UserID, react.Emoji, react.CreatedAt,
 	)
@@ -423,13 +427,13 @@ func (r *Repository) UpsertMessageReaction(ctx context.Context, react *MessageRe
 }
 
 // DeleteMessage removes a message (attachments/edits/reactions cascade via FK).
-func (r *Repository) DeleteMessage(ctx context.Context, messageID string) error {
-	_, err := r.pool.Exec(ctx, `DELETE FROM messages WHERE id = $1::uuid`, messageID)
+func (r *Repository) DeleteMessage(ctx context.Context, orgID, messageID string) error {
+	_, err := r.at(orgID).Exec(ctx, `DELETE FROM messages WHERE id = $1::uuid AND org_id = $2::uuid`, messageID, orgID)
 	return err
 }
 
-func (r *Repository) DeleteMessageReaction(ctx context.Context, messageID, userID, emoji string) error {
-	_, err := r.pool.Exec(ctx, `
+func (r *Repository) DeleteMessageReaction(ctx context.Context, orgID, messageID, userID, emoji string) error {
+	_, err := r.at(orgID).Exec(ctx, `
 		DELETE FROM message_reactions WHERE message_id = $1::uuid AND user_id = $2::uuid AND emoji = $3`,
 		messageID, userID, emoji,
 	)
@@ -437,7 +441,7 @@ func (r *Repository) DeleteMessageReaction(ctx context.Context, messageID, userI
 }
 
 func (r *Repository) LoadMessageReactions(ctx context.Context, orgID string) ([]*MessageReaction, error) {
-	rows, err := r.pool.Query(ctx, `
+	rows, err := r.at(orgID).Query(ctx, `
 		SELECT id::text, message_id::text, user_id::text, emoji, created_at
 		FROM message_reactions`+messageOrgClause(orgID), orgArgs(orgID)...)
 	if err != nil {
@@ -452,10 +456,10 @@ func (r *Repository) LoadMessageReactions(ctx context.Context, orgID string) ([]
 
 // ─── Message attachments ───────────────────────────────────────────────────────
 
-func (r *Repository) InsertMessageAttachment(ctx context.Context, a *MessageAttachment) error {
-	_, err := r.pool.Exec(ctx, `
-		INSERT INTO message_attachments (id, message_id, object_key, filename, mime_type, size_bytes, created_at)
-		VALUES ($1::uuid, $2::uuid, $3, $4, $5, $6, $7)
+func (r *Repository) InsertMessageAttachment(ctx context.Context, orgID string, a *MessageAttachment) error {
+	_, err := r.at(orgID).Exec(ctx, `
+		INSERT INTO message_attachments (id, org_id, message_id, object_key, filename, mime_type, size_bytes, created_at)
+		SELECT $1::uuid, m.org_id, m.id, $3, $4, $5, $6, $7 FROM messages m WHERE m.id = $2::uuid
 		ON CONFLICT (id) DO NOTHING`,
 		a.ID, a.MessageID, a.ObjectKey, a.Filename, a.MimeType, a.SizeBytes, a.CreatedAt,
 	)
@@ -463,7 +467,7 @@ func (r *Repository) InsertMessageAttachment(ctx context.Context, a *MessageAtta
 }
 
 func (r *Repository) LoadMessageAttachments(ctx context.Context, orgID string) ([]*MessageAttachment, error) {
-	rows, err := r.pool.Query(ctx, `
+	rows, err := r.at(orgID).Query(ctx, `
 		SELECT id::text, message_id::text, object_key, filename, mime_type, size_bytes, created_at
 		FROM message_attachments`+messageOrgClause(orgID), orgArgs(orgID)...)
 	if err != nil {
@@ -479,7 +483,7 @@ func (r *Repository) LoadMessageAttachments(ctx context.Context, orgID string) (
 // ─── Message reads ──────────────────────────────────────────────────────────────
 
 func (r *Repository) UpsertMessageRead(ctx context.Context, read *MessageRead) error {
-	_, err := r.pool.Exec(ctx, `
+	_, err := r.at(read.OrgID).Exec(ctx, `
 		INSERT INTO message_reads (id, org_id, household_id, swimmer_id, user_id, last_read_at)
 		VALUES ($1::uuid, $2::uuid, $3::uuid, $4::uuid, $5::uuid, $6)
 		ON CONFLICT (org_id, household_id, swimmer_id, user_id) DO UPDATE SET
@@ -490,7 +494,7 @@ func (r *Repository) UpsertMessageRead(ctx context.Context, read *MessageRead) e
 }
 
 func (r *Repository) LoadMessageReads(ctx context.Context, orgID string) ([]*MessageRead, error) {
-	rows, err := r.pool.Query(ctx, `
+	rows, err := r.at(orgID).Query(ctx, `
 		SELECT id::text, org_id::text, household_id::text, swimmer_id::text, user_id::text, last_read_at
 		FROM message_reads`+orgClause("org_id", orgID, false), orgArgs(orgID)...)
 	if err != nil {
@@ -516,7 +520,7 @@ func (r *Repository) LoadMessageReads(ctx context.Context, orgID string) ([]*Mes
 // cascade), read watermarks, notification preferences and email deliveries in
 // a single transaction so a compliance erasure is all-or-nothing.
 func (r *Repository) EraseHousehold(ctx context.Context, orgID, householdID string, emails []string) error {
-	tx, err := r.pool.Begin(ctx)
+	tx, err := r.at(orgID).Begin(ctx)
 	if err != nil {
 		return fmt.Errorf("begin erase tx: %w", err)
 	}
@@ -544,7 +548,49 @@ func (r *Repository) EraseHousehold(ctx context.Context, orgID, householdID stri
 
 // ─── Batch load ───────────────────────────────────────────────────────────────
 
+// LoadAll loads one club (orgID set) or, with an empty orgID, every club one at a time
+// under that club's own binding (an unbound read would see nothing under RLS).
 func (r *Repository) LoadAll(ctx context.Context, orgID string) (
+	announcements []*Announcement,
+	campaigns []*EmailCampaign,
+	deliveries []*EmailDelivery,
+	suppressions []*SuppressionEntry,
+	preferences []*NotificationPreference,
+	messages []*Message,
+	messageEdits []*MessageEdit,
+	messageReactions []*MessageReaction,
+	messageAttachments []*MessageAttachment,
+	messageReads []*MessageRead,
+	err error,
+) {
+	if orgID != "" {
+		return r.loadOrg(ctx, orgID)
+	}
+	orgs, err := r.OrgIDs(ctx)
+	if err != nil {
+		return
+	}
+	for _, o := range orgs {
+		a, c, d, su, pr, m, me, mr, ma, rd, lerr := r.loadOrg(ctx, o)
+		if lerr != nil {
+			err = lerr
+			return
+		}
+		announcements = append(announcements, a...)
+		campaigns = append(campaigns, c...)
+		deliveries = append(deliveries, d...)
+		suppressions = append(suppressions, su...)
+		preferences = append(preferences, pr...)
+		messages = append(messages, m...)
+		messageEdits = append(messageEdits, me...)
+		messageReactions = append(messageReactions, mr...)
+		messageAttachments = append(messageAttachments, ma...)
+		messageReads = append(messageReads, rd...)
+	}
+	return
+}
+
+func (r *Repository) loadOrg(ctx context.Context, orgID string) (
 	announcements []*Announcement,
 	campaigns []*EmailCampaign,
 	deliveries []*EmailDelivery,
@@ -622,29 +668,32 @@ func messageOrgClause(orgID string) string {
 	if orgID == "" {
 		return ""
 	}
-	return " WHERE message_id IN (SELECT id FROM messages WHERE org_id = $1::uuid)"
+	return " WHERE org_id = $1::uuid"
 }
 
 // FindDeliveryByProviderMessageID returns the delivery with the given provider
 // message id (optionally scoped to an org), or nil.
 func (r *Repository) FindDeliveryByProviderMessageID(ctx context.Context, orgID, messageID string) ([]*EmailDelivery, error) {
+	if orgID == "" {
+		return nil, nil // a provider event naming no club cannot be attributed to one
+	}
 	q := deliverySelect + ` WHERE provider_message_id = $1`
 	args := []any{messageID}
 	if orgID != "" {
 		q += ` AND org_id = $2::uuid`
 		args = append(args, orgID)
 	}
-	return r.queryDeliveries(ctx, q, args...)
+	return r.queryDeliveries(ctx, orgID, q, args...)
 }
 
 // FindDeliveryByCampaignRecipient returns deliveries for a campaign+recipient.
 func (r *Repository) FindDeliveryByCampaignRecipient(ctx context.Context, orgID, campaignID, email string) ([]*EmailDelivery, error) {
-	return r.queryDeliveries(ctx, deliverySelect+` WHERE org_id = $1::uuid AND campaign_id = $2::uuid AND recipient_email = $3 ORDER BY created_at DESC`, orgID, campaignID, email)
+	return r.queryDeliveries(ctx, orgID, deliverySelect+` WHERE org_id = $1::uuid AND campaign_id = $2::uuid AND recipient_email = $3 ORDER BY created_at DESC`, orgID, campaignID, email)
 }
 
 // LoadSuppressionEntry returns the single suppression row for org+email, or nil.
 func (r *Repository) LoadSuppressionEntry(ctx context.Context, orgID, email string) (*SuppressionEntry, error) {
-	rows, err := r.pool.Query(ctx, `
+	rows, err := r.at(orgID).Query(ctx, `
 		SELECT id::text, org_id::text, email, reason, created_at, COALESCE(created_by::text, '')
 		FROM suppression_list WHERE org_id = $1::uuid AND email = $2`, orgID, email)
 	if err != nil {

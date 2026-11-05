@@ -473,3 +473,38 @@ func TestAdminWhoIsAlsoParentIsNotHouseholdScoped(t *testing.T) {
 		t.Fatalf("pure parent saw %d foreign households", len(hh))
 	}
 }
+
+func TestAdminCanUpdateSwimmerWithLongNotesAndSwimmerRoleSeesNoAllergies(t *testing.T) {
+	t.Parallel()
+	svc := NewService()
+	admin := testutil.AdminPrincipal()
+	hh, err := svc.CreateHousehold(admin, CreateHouseholdInput{OrgID: testutil.DefaultOrgID, HouseholdName: "Notes Fam"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	long := strings.Repeat("n", maxSwimmerBioLength+200)
+	sw, _, err := svc.CreateSwimmer(admin, testutil.DefaultOrgID, CreateSwimmerInput{
+		HouseholdID: hh.ID, FirstName: "A", LastName: "B", DateOfBirth: "2010-01-01", Gender: "male",
+		Notes: long,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	first, al, ec := "Z", "peanuts", "Mom"
+	if _, _, err := svc.UpdateSwimmer(admin, testutil.DefaultOrgID, sw.ID, UpdateSwimmerInput{FirstName: &first, Notes: &long, Allergies: &al, EmergencyContactName: &ec}); err != nil {
+		t.Fatalf("admin update with long notes: %v", err)
+	}
+	views, err := svc.ListSwimmers(testutil.SwimmerPrincipal("sw", hh.ID), testutil.DefaultOrgID, ListSwimmersInput{})
+	if err != nil || len(views) == 0 {
+		t.Fatalf("list: %v %d", err, len(views))
+	}
+	for _, v := range views {
+		if v.Allergies != "" || v.EmergencyContactName != "" {
+			t.Fatalf("swimmer role saw medical data: %+v", v)
+		}
+	}
+	pv, _ := svc.ListSwimmers(testutil.ParentPrincipal("p", hh.ID), testutil.DefaultOrgID, ListSwimmersInput{})
+	if len(pv) == 0 || pv[0].Allergies != "peanuts" {
+		t.Fatalf("parent should still see allergies: %+v", pv)
+	}
+}

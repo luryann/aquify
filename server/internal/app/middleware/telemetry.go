@@ -1,13 +1,14 @@
 package middleware
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"time"
 
-	"github.com/luryann/aquify/server/internal/telemetry"
 	"github.com/go-chi/chi/v5"
 	chimiddleware "github.com/go-chi/chi/v5/middleware"
+	"github.com/luryann/aquify/server/internal/telemetry"
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 	"go.opentelemetry.io/otel/trace"
 )
@@ -50,6 +51,8 @@ func PrometheusMetrics(m *telemetry.Metrics) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			start := time.Now()
+			holder := &observedOrg{}
+			r = r.WithContext(context.WithValue(r.Context(), observedOrgKey{}, holder))
 			wrapped := chimiddleware.NewWrapResponseWriter(w, r.ProtoMajor)
 
 			next.ServeHTTP(wrapped, r)
@@ -74,6 +77,12 @@ func PrometheusMetrics(m *telemetry.Metrics) func(http.Handler) http.Handler {
 
 			m.HTTPRequestsTotal.WithLabelValues(r.Method, route, statusStr).Inc()
 			m.HTTPRequestDuration.WithLabelValues(r.Method, route).Observe(time.Since(start).Seconds())
+			holder.mu.Lock()
+			org := holder.org
+			holder.mu.Unlock()
+			if org != "" {
+				m.OrgHTTPRequestsTotal.WithLabelValues(m.OrgLabel(org), fmt.Sprintf("%dxx", status/100)).Inc()
+			}
 
 			// Update the OTel span name to the bounded route pattern. This update
 			// happens before otelhttp ends the span (PrometheusMetrics is inner

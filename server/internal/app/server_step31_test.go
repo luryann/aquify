@@ -11,8 +11,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/luryann/aquify/server/internal/workers"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/luryann/aquify/server/internal/workers"
 )
 
 func TestOpenValidatedDBPoolReturnsNilWhenSchemaValidationFails(t *testing.T) {

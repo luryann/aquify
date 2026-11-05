@@ -10,12 +10,11 @@ import {
 } from '@/lib/adminData'
 import { reportUIError, uiErrorMessage } from '@/lib/frontend-telemetry'
 import {
-  dueMarks, effectiveStatus, enqueueMark, failMark, isRetryable, loadQueue, pendingForPractice, saveQueue, settleMark,
+  dueMarks, effectiveStatus, enqueueMark, failMark, isRetryable, loadQueue, pendingForPractice, rollCallRosterKey, rollCallScope, saveQueue, settleMark,
   type RollCallQueue,
 } from '@/lib/roll-call-queue'
 import { localToday } from '@/lib/wellness-scale'
 
-const ROSTER_CACHE_PREFIX = 'aquify:roll-call-roster:'
 
 const STATUS_UI: Record<AttendanceStatus, { label: string; key: string; color: string; bg: string; border: string }> = {
   present: { label: 'Present', key: 'P', color: 'var(--success)', bg: 'var(--success-bg)', border: 'var(--success-border)' },
@@ -27,21 +26,22 @@ function storage(): Storage | undefined {
   try { return typeof window !== 'undefined' ? window.localStorage : undefined } catch { return undefined }
 }
 
-function readRosterCache(practiceId: string): AttendanceRosterEntry[] | null {
+function readRosterCache(scope: string, practiceId: string): AttendanceRosterEntry[] | null {
   try {
-    const raw = storage()?.getItem(ROSTER_CACHE_PREFIX + practiceId)
+    const raw = storage()?.getItem(rollCallRosterKey(scope, practiceId))
     return raw ? (JSON.parse(raw) as AttendanceRosterEntry[]) : null
   } catch { return null }
 }
 
-function writeRosterCache(practiceId: string, roster: AttendanceRosterEntry[]) {
-  try { storage()?.setItem(ROSTER_CACHE_PREFIX + practiceId, JSON.stringify(roster)) } catch { /* cache is best-effort */ }
+function writeRosterCache(scope: string, practiceId: string, roster: AttendanceRosterEntry[]) {
+  try { storage()?.setItem(rollCallRosterKey(scope, practiceId), JSON.stringify(roster)) } catch { /* cache is best-effort */ }
 }
 
 export default function RollCallPage() {
   const { session } = useSession()
   const api = useApiClient(session?.token)
   const orgId = session?.user.orgId ?? ''
+  const scope = rollCallScope(orgId, session?.user.id ?? '')
 
   const [date, setDate] = useState(localToday())
   const [practices, setPractices] = useState<PracticeRecord[]>([])
@@ -62,16 +62,18 @@ export default function RollCallPage() {
   const updateQueue = useCallback((fn: (q: RollCallQueue) => RollCallQueue) => {
     const next = fn(queueRef.current)
     queueRef.current = next
-    saveQueue(storage(), next)
+    saveQueue(storage(), next, scope)
     setQueue(next)
-  }, [])
+  }, [scope])
 
   useEffect(() => {
-    const initial = loadQueue(storage())
+    // Wait for the session: an unscoped queue must never be read or written.
+    if (!orgId) return
+    const initial = loadQueue(storage(), scope)
     queueRef.current = initial
     setQueue(initial)
     setOnline(typeof navigator === 'undefined' ? true : navigator.onLine)
-  }, [])
+  }, [orgId, scope])
 
   const flush = useCallback(async () => {
     if (flushing.current || !orgId) return
@@ -86,12 +88,17 @@ export default function RollCallPage() {
           // row does not fall back to its pre-tap status once the queue entry clears.
           const applyMark = (r: AttendanceRosterEntry[]) => r.map((e) => (e.swimmer_id === mark.swimmerId ? { ...e, status: mark.status } : e))
           if (practiceIdRef.current === mark.practiceId) setRoster((r) => (r ? applyMark(r) : r))
-          const cachedRoster = readRosterCache(mark.practiceId)
-          if (cachedRoster) writeRosterCache(mark.practiceId, applyMark(cachedRoster))
+          const cachedRoster = readRosterCache(scope, mark.practiceId)
+          if (cachedRoster) writeRosterCache(scope, mark.practiceId, applyMark(cachedRoster))
           setOnline(true)
         } catch (err) {
           const status = err instanceof ApiError ? err.status : undefined
-          if (isRetryable(status)) {
+          const code = err instanceof ApiError ? err.code : undefined
+          if (isRetryable(status, code)) {
+            if (status === 401 || status === 403) {
+              // Expired session / rotated CSRF token: keep the mark queued and ask the user to sign in again.
+              setPermanentError('Your session expired. Sign in again; queued attendance marks are kept and will retry.')
+            }
             updateQueue((q) => failMark(q, mark, uiErrorMessage(err, 'Network error'), Date.now()))
             if (status === undefined) setOnline(false)
           } else {
@@ -105,7 +112,7 @@ export default function RollCallPage() {
       flushing.current = false
       setSyncing(false)
     }
-  }, [api, orgId, updateQueue])
+  }, [api, orgId, scope, updateQueue])
 
   useEffect(() => {
     const tick = window.setInterval(() => { void flush() }, 3000)
@@ -140,17 +147,17 @@ export default function RollCallPage() {
   useEffect(() => {
     if (!practiceId || !orgId) { setRoster(null); return }
     let cancelled = false
-    const cached = readRosterCache(practiceId)
+    const cached = readRosterCache(scope, practiceId)
     if (cached) { setRoster(cached); setRosterFromCache(true) } else setRoster(null)
     fetchPracticeAttendance(api, orgId, practiceId)
-      .then((r) => { if (cancelled) return; setRoster(r); setRosterFromCache(false); writeRosterCache(practiceId, r) })
+      .then((r) => { if (cancelled) return; setRoster(r); setRosterFromCache(false); writeRosterCache(scope, practiceId, r) })
       .catch((err) => {
         if (cancelled) return
         if (!cached) setLoadError(reportUIError('roll-call-roster', err, 'The roster could not be loaded. Reconnect and try again.'))
         else setOnline(false)
       })
     return () => { cancelled = true }
-  }, [api, orgId, practiceId, reloadKey])
+  }, [api, orgId, scope, practiceId, reloadKey])
 
   function mark(swimmerId: string, status: AttendanceStatus) {
     if (!practiceId) return

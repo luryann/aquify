@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"github.com/luryann/aquify/server/internal/testutil"
 	"sync"
 	"testing"
 	"time"
@@ -21,6 +22,7 @@ func TestDBRepoBillingFinance(t *testing.T) {
 	pool := openTestPool(t)
 	ctx := context.Background()
 	orgID := uuid.NewString()
+	testutil.SeedOrgs(t, pool, orgID)
 	hhA, hhB := uuid.NewString(), uuid.NewString()
 	sw1, sw2, sw3 := uuid.NewString(), uuid.NewString(), uuid.NewString()
 	t.Cleanup(func() { cleanupBillingFinanceFixtures(t, pool, orgID) })

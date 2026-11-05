@@ -131,12 +131,11 @@ func TestPublicTeamSite(t *testing.T) {
 // publicAllowedKeys mirrors the documented public payload; a new field must be
 // added here on purpose (and in handlers/publicsite_leak_test.go).
 var publicAllowedKeys = map[string][]string{
-	"":              {"club", "announcements", "meets", "events", "records", "coaches"},
+	"":              {"club", "announcements", "meets", "events", "coaches"},
 	"club":          {"name", "slug", "about", "contact_email", "contact_phone", "join_url"},
 	"announcements": {"id", "title", "body", "published_at"},
 	"meets":         {"id", "name", "start_date", "end_date", "location", "host_org", "course"},
 	"events":        {"id", "title", "category", "description", "location", "starts_at", "ends_at", "all_day"},
-	"records":       {"label", "course", "gender", "age_group", "distance", "stroke", "time_ms", "swimmer_name", "swim_date", "meet_name"},
 	"coaches":       {"name", "role"},
 }
 

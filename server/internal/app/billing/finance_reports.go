@@ -2,6 +2,8 @@ package billing
 
 import (
 	"context"
+	"fmt"
+	"github.com/luryann/aquify/server/internal/dbutil"
 	"sort"
 	"strconv"
 	"strings"
@@ -150,10 +152,60 @@ func nameOr(names map[string]string, id string) string {
 	return id
 }
 
-func (s *Service) refreshForRead() error {
+// SetSyncHookForTest installs a hook run between refreshForRead's database read and its swap.
+func (s *Service) SetSyncHookForTest(fn func()) { s.syncHook = fn }
+
+// refreshForRead re-reads one club for a report or statement. The database read runs without
+// the service lock, so a slow read for one club does not stall every other club's billing
+// traffic; a writer that finished meanwhile forces a re-read, and repeated conflicts fall back
+// to loading under the lock so an older snapshot never overwrites a newer write.
+func (s *Service) refreshForRead(orgID string) error {
+	return s.refreshOrg(context.Background(), orgID)
+}
+
+// refreshOrg is refreshForRead with the caller's context.
+func (s *Service) refreshOrg(ctx context.Context, orgID string) error {
+	if s.repo == nil || s.repo.tx != nil {
+		return nil
+	}
+	// Probe the change counters BEFORE reading: if no other process has written since this
+	// club was last loaded, the write-through cache is current and the reload is skipped.
+	// (A write that lands between the probe and the read only causes one extra reload.)
+	foreign, probeErr := s.repo.ForeignWrites(ctx, orgID)
+	if probeErr == nil && s.foreign.Current(orgID, foreign) {
+		return nil
+	}
+	if err := s.reloadOrg(ctx, orgID); err != nil {
+		return err
+	}
+	if probeErr == nil {
+		s.foreign.Mark(orgID, foreign)
+	}
+	return nil
+}
+
+// reloadOrg reads one club from Postgres. The read runs without the service lock; a writer
+// that finished meanwhile forces a re-read, and repeated conflicts fall back to reading under
+// the lock so an older snapshot never overwrites a newer write.
+func (s *Service) reloadOrg(ctx context.Context, orgID string) error {
+	done, err := dbutil.ReloadUnlocked(&s.mu, s.syncHook, func() (func(), error) {
+		apply, err := s.fetchOrg(ctx, orgID)
+		if err != nil {
+			return nil, fmt.Errorf("billing: refresh from DB: %w", err)
+		}
+		return func() {
+			apply(true)
+			s.orgCache.Touch(orgID, s.dropOrgLocked)
+			s.rebuildIndexesLocked()
+			s.rebuildStripeCreditIndexLocked()
+		}, nil
+	})
+	if done || err != nil {
+		return err
+	}
 	s.mu.Lock()
-	defer s.mu.Unlock()
-	return s.refreshLocked(context.Background())
+	defer s.mu.UnlockWithoutBump()
+	return s.refreshLocked(ctx, orgID)
 }
 
 func isOpenInvoice(inv *Invoice) bool {
@@ -196,7 +248,7 @@ func (s *Service) AgingReport(orgID string, principal *appmiddleware.Principal, 
 	if err := s.requireAdmin(principal); err != nil {
 		return nil, err
 	}
-	if err := s.refreshForRead(); err != nil {
+	if err := s.refreshForRead(orgID); err != nil {
 		return nil, err
 	}
 	names, err := s.householdNames(orgID)
@@ -254,7 +306,7 @@ func (s *Service) RevenueReport(orgID string, principal *appmiddleware.Principal
 	if err := s.requireAdmin(principal); err != nil {
 		return nil, err
 	}
-	if err := s.refreshForRead(); err != nil {
+	if err := s.refreshForRead(orgID); err != nil {
 		return nil, err
 	}
 	groupBySwimmer := map[string]string{}
@@ -384,7 +436,7 @@ func (s *Service) OutstandingReport(orgID string, principal *appmiddleware.Princ
 	if err := s.requireAdmin(principal); err != nil {
 		return nil, err
 	}
-	if err := s.refreshForRead(); err != nil {
+	if err := s.refreshForRead(orgID); err != nil {
 		return nil, err
 	}
 	names, err := s.householdNames(orgID)
@@ -461,7 +513,7 @@ func (s *Service) DepositsReport(orgID string, principal *appmiddleware.Principa
 	if period != "day" && period != "week" {
 		period = "month"
 	}
-	if err := s.refreshForRead(); err != nil {
+	if err := s.refreshForRead(orgID); err != nil {
 		return nil, err
 	}
 	from, to = dateOnly(from), dateOnly(to)
@@ -509,6 +561,15 @@ func (s *Service) DepositsReport(orgID string, principal *appmiddleware.Principa
 			row := get(e.CreatedAt)
 			row.OverpaymentCents += e.AmountCents
 			row.GrossCents += e.AmountCents
+		}
+		// Stripe refunded cash that had landed in account credit: the reversal
+		// has no Refund record, so count the cash-out here.
+		if e.Kind == CreditKindManualDebit && strings.HasPrefix(e.StripeRef, "refund|") && inRange(e.CreatedAt) {
+			amt := e.AmountCents
+			if amt < 0 {
+				amt = -amt
+			}
+			get(e.CreatedAt).RefundsCents += amt
 		}
 	}
 	for _, r := range s.refundsByID {
@@ -615,7 +676,7 @@ func (s *Service) QuickBooksCSV(orgID string, principal *appmiddleware.Principal
 	if err := s.requireAdmin(principal); err != nil {
 		return nil, err
 	}
-	if err := s.refreshForRead(); err != nil {
+	if err := s.refreshForRead(orgID); err != nil {
 		return nil, err
 	}
 	names, err := s.householdNames(orgID)

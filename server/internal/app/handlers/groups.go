@@ -7,11 +7,11 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/go-chi/chi/v5"
+	"github.com/go-playground/validator/v10"
 	"github.com/luryann/aquify/server/internal/app/groups"
 	"github.com/luryann/aquify/server/internal/app/httpx"
 	appmiddleware "github.com/luryann/aquify/server/internal/app/middleware"
-	"github.com/go-chi/chi/v5"
-	"github.com/go-playground/validator/v10"
 )
 
 // GroupsHandlers handles HTTP requests for groups, eligibility, and registrations.
@@ -103,7 +103,7 @@ func (h *GroupsHandlers) createGroup(w http.ResponseWriter, r *http.Request) {
 		case errors.Is(err, groups.ErrGroupCodeConflict):
 			httpx.WriteError(w, r, http.StatusConflict, "group_code_conflict", err.Error(), nil)
 		default:
-			httpx.WriteError(w, r, http.StatusBadRequest, "invalid_group_request", err.Error(), nil)
+			writeServiceBadRequest(w, r, "invalid_group_request", err)
 		}
 		return
 	}
@@ -154,7 +154,7 @@ func (h *GroupsHandlers) updateGroup(w http.ResponseWriter, r *http.Request) {
 		case errors.Is(err, groups.ErrForbidden):
 			httpx.WriteError(w, r, http.StatusForbidden, "forbidden", "You are not allowed to update groups.", nil)
 		default:
-			httpx.WriteError(w, r, http.StatusBadRequest, "invalid_group_update", err.Error(), nil)
+			writeServiceBadRequest(w, r, "invalid_group_update", err)
 		}
 		return
 	}
@@ -247,7 +247,7 @@ func (h *GroupsHandlers) attachEligibilityRule(w http.ResponseWriter, r *http.Re
 		case errors.Is(err, groups.ErrForbidden):
 			httpx.WriteError(w, r, http.StatusForbidden, "forbidden", "Only admin can attach eligibility rules.", nil)
 		default:
-			httpx.WriteError(w, r, http.StatusBadRequest, "invalid_rule_request", err.Error(), nil)
+			writeServiceBadRequest(w, r, "invalid_rule_request", err)
 		}
 		return
 	}
@@ -386,7 +386,7 @@ func (h *GroupsHandlers) createRegistration(w http.ResponseWriter, r *http.Reque
 		case errors.Is(err, groups.ErrDuplicateRegistration):
 			httpx.WriteError(w, r, http.StatusConflict, "duplicate_registration", err.Error(), nil)
 		default:
-			httpx.WriteError(w, r, http.StatusBadRequest, "invalid_registration_request", err.Error(), nil)
+			writeServiceBadRequest(w, r, "invalid_registration_request", err)
 		}
 		return
 	}
@@ -424,7 +424,7 @@ func (h *GroupsHandlers) transitionRegistration(w http.ResponseWriter, r *http.R
 		case errors.Is(err, groups.ErrInvalidTransition):
 			httpx.WriteError(w, r, http.StatusUnprocessableEntity, "invalid_transition", err.Error(), nil)
 		default:
-			httpx.WriteError(w, r, http.StatusBadRequest, "invalid_transition_request", err.Error(), nil)
+			writeServiceBadRequest(w, r, "invalid_transition_request", err)
 		}
 		return
 	}
@@ -469,7 +469,7 @@ func (h *GroupsHandlers) acceptWaiver(w http.ResponseWriter, r *http.Request) {
 		case errors.Is(err, groups.ErrWaiverAlreadyAccepted):
 			httpx.WriteError(w, r, http.StatusConflict, "waiver_already_accepted", err.Error(), nil)
 		default:
-			httpx.WriteError(w, r, http.StatusBadRequest, "invalid_waiver_request", err.Error(), nil)
+			writeServiceBadRequest(w, r, "invalid_waiver_request", err)
 		}
 		return
 	}

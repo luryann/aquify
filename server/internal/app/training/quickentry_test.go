@@ -205,3 +205,10 @@ func TestParseQuickEntryNonASCIIHeaderDoesNotPanic(t *testing.T) {
 		}
 	}
 }
+
+func TestParseQuickEntryCapsNestingDepth(t *testing.T) {
+	res := ParseQuickEntry(strings.Repeat("1x{", 5000))
+	if len(res.Errors) == 0 {
+		t.Fatal("deeply nested rounds must be rejected")
+	}
+}

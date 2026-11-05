@@ -3,13 +3,14 @@ package app
 import (
 	"context"
 	"errors"
+	"github.com/luryann/aquify/server/internal/testutil"
 	"sync"
 	"testing"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/luryann/aquify/server/internal/app/events"
 	"github.com/luryann/aquify/server/internal/app/wellness"
-	"github.com/google/uuid"
 )
 
 // TestDBRepoEngagement_ClubEventsAndWellness round-trips club events, RSVPs,
@@ -18,7 +19,8 @@ import (
 func TestDBRepoEngagement_ClubEventsAndWellness(t *testing.T) {
 	pool := openTestPool(t)
 	ctx := context.Background()
-	orgID := "org-engage-" + uuid.NewString()[:8]
+	orgID := uuid.NewString()
+	testutil.SeedOrgs(t, pool, orgID)
 	t.Cleanup(func() {
 		_, _ = pool.Exec(ctx, `DELETE FROM club_events WHERE org_id = $1`, orgID)
 		_, _ = pool.Exec(ctx, `DELETE FROM calendar_feed_tokens WHERE org_id = $1`, orgID)
@@ -40,7 +42,7 @@ func TestDBRepoEngagement_ClubEventsAndWellness(t *testing.T) {
 	if err != nil || got.Title != "Banquet" || got.Capacity == nil || *got.Capacity != 3 || len(got.GroupCodes) != 1 || !got.StartsAt.Equal(start) {
 		t.Fatalf("second instance get: %+v %v", got, err)
 	}
-	if _, err := b.Get("other-org", ev.ID); !errors.Is(err, events.ErrNotFound) {
+	if _, err := b.Get(uuid.NewString(), ev.ID); !errors.Is(err, events.ErrNotFound) {
 		t.Fatalf("cross-org get should be not found, got %v", err)
 	}
 
@@ -110,10 +112,10 @@ func TestDBRepoEngagement_ClubEventsAndWellness(t *testing.T) {
 
 	// Wellness needs a real swimmer row (FK with ON DELETE CASCADE).
 	householdID, swimmerID := uuid.NewString(), uuid.NewString()
-	if _, err := pool.Exec(ctx, `INSERT INTO households (id, org_id, household_name, status) VALUES ($1::uuid, $2::uuid, 'Engage', 'active')`, householdID, testOrgID); err != nil {
+	if _, err := pool.Exec(ctx, `INSERT INTO households (id, org_id, household_name, status) VALUES ($1::uuid, $2::uuid, 'Engage', 'active')`, householdID, orgID); err != nil {
 		t.Fatalf("seed household: %v", err)
 	}
-	if _, err := pool.Exec(ctx, `INSERT INTO swimmers (id, org_id, household_id, first_name, last_name, date_of_birth, gender, registration_status) VALUES ($1::uuid, $2::uuid, $3::uuid, 'Well', 'Ness', '2011-01-01', 'female', 'active')`, swimmerID, testOrgID, householdID); err != nil {
+	if _, err := pool.Exec(ctx, `INSERT INTO swimmers (id, org_id, household_id, first_name, last_name, date_of_birth, gender, registration_status) VALUES ($1::uuid, $2::uuid, $3::uuid, 'Well', 'Ness', '2011-01-01', 'female', 'active')`, swimmerID, orgID, householdID); err != nil {
 		t.Fatalf("seed swimmer: %v", err)
 	}
 	t.Cleanup(func() {
@@ -136,7 +138,7 @@ func TestDBRepoEngagement_ClubEventsAndWellness(t *testing.T) {
 	if err != nil || len(list) != 1 || list[0].Mood != 2 || list[0].SleepHours != 7.5 || list[0].Readiness != wellness.Readiness(m) {
 		t.Fatalf("wellness list: %+v %v", list, err)
 	}
-	if other, _ := w2.List("other-org", nil, today, today); len(other) != 0 {
+	if other, _ := w2.List(uuid.NewString(), nil, today, today); len(other) != 0 {
 		t.Fatal("wellness org isolation broken")
 	}
 }

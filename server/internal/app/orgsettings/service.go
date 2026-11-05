@@ -6,7 +6,6 @@ package orgsettings
 import (
 	"context"
 	"errors"
-	"log/slog"
 	"regexp"
 	"strings"
 	"sync"
@@ -17,6 +16,10 @@ import (
 )
 
 var (
+	ErrInvalidTimezone  = errors.New("timezone must be an IANA name such as America/Los_Angeles")
+	ErrInvalidCurrency  = errors.New("currency must be a 3-letter ISO 4217 code such as usd")
+	ErrInvalidLegalName = errors.New("legal name must be at most 120 characters")
+	currencyPattern     = regexp.MustCompile(`^[a-z]{3}$`)
 	// ErrInvalidSlug means the public slug is malformed or required but empty.
 	ErrInvalidSlug = errors.New("public slug must be 3-40 lowercase letters, digits or hyphens")
 	// ErrSlugTaken means another club already uses the slug.
@@ -24,6 +27,14 @@ var (
 
 	slugPattern = regexp.MustCompile(`^[a-z0-9]([a-z0-9-]{1,38})[a-z0-9]$`)
 )
+
+// SetSlugReserved installs the cross-namespace check used when a club sets its
+// public slug: it reports whether another org already holds slug elsewhere.
+func (s *Service) SetSlugReserved(fn func(slug, orgID string) bool) {
+	s.mu.Lock()
+	s.slugReserved = fn
+	s.mu.Unlock()
+}
 
 // FindBySlug returns the settings whose public_slug matches, or (nil, nil).
 func (s *Service) FindBySlug(slug string) (*OrgSettings, error) {
@@ -54,6 +65,11 @@ type OrgSettings struct {
 	EmailSenderName    string `json:"email_sender_name"`
 	EmailSenderAddress string `json:"email_sender_address"`
 	PublicSlug         string `json:"public_slug"`
+	// Timezone is an IANA zone name ("" = UTC); Currency an ISO 4217 code in lower case
+	// ("" = the deployment default); LegalName the entity name shown on invoices.
+	Timezone           string `json:"timezone"`
+	Currency           string `json:"currency"`
+	LegalName          string `json:"legal_name"`
 	PublicSiteEnabled  bool   `json:"public_site_enabled"`
 	PublicShowCoaches  bool   `json:"public_show_coaches"`
 	PublicAbout        string `json:"public_about"`
@@ -75,6 +91,9 @@ type Updates struct {
 	EmailSenderName    *string `json:"email_sender_name,omitempty"`
 	EmailSenderAddress *string `json:"email_sender_address,omitempty"`
 	PublicSlug         *string `json:"public_slug,omitempty"`
+	Timezone           *string `json:"timezone,omitempty"`
+	Currency           *string `json:"currency,omitempty"`
+	LegalName          *string `json:"legal_name,omitempty"`
 	PublicSiteEnabled  *bool   `json:"public_site_enabled,omitempty"`
 	PublicShowCoaches  *bool   `json:"public_show_coaches,omitempty"`
 	PublicAbout        *string `json:"public_about,omitempty"`
@@ -89,10 +108,11 @@ type Updates struct {
 type Service struct {
 	// updateMu serialises Update's read-modify-write so concurrent patches to
 	// different fields cannot overwrite each other with a stale snapshot.
-	updateMu sync.Mutex
-	mu       sync.RWMutex
-	repo     *Repository
-	settings map[string]*OrgSettings
+	updateMu     sync.Mutex
+	mu           sync.RWMutex
+	repo         *Repository
+	settings     map[string]*OrgSettings
+	slugReserved func(slug, orgID string) bool
 	// swimmerOff holds orgs with swimmer sign-in disabled (in-memory mode).
 	swimmerOff map[string]bool
 }
@@ -102,24 +122,14 @@ func NewService() *Service {
 	return &Service{settings: make(map[string]*OrgSettings)}
 }
 
-// NewServiceWithPool returns a DB-backed Service and loads existing rows on
-// startup.
+// NewServiceWithPool returns a DB-backed Service. Postgres is canonical: every read and
+// write goes to the database, so nothing is loaded at startup.
 func NewServiceWithPool(pool *pgxpool.Pool) *Service {
 	s := NewService()
 	if pool == nil {
 		return s
 	}
 	s.repo = newRepository(pool)
-	rows, err := s.repo.LoadAll(context.Background())
-	if err != nil {
-		slog.Error("orgsettings: failed to load from DB", "err", err)
-		return s
-	}
-	s.mu.Lock()
-	for _, row := range rows {
-		s.settings[row.OrgID] = row
-	}
-	s.mu.Unlock()
 	return s
 }
 
@@ -175,6 +185,29 @@ func (s *Service) Update(orgID string, updates Updates, updatedBy string) (*OrgS
 	if updates.EmailSenderAddress != nil {
 		current.EmailSenderAddress = strings.TrimSpace(*updates.EmailSenderAddress)
 	}
+	if updates.Timezone != nil {
+		tz := strings.TrimSpace(*updates.Timezone)
+		if tz != "" {
+			if _, err := time.LoadLocation(tz); err != nil {
+				return nil, ErrInvalidTimezone
+			}
+		}
+		current.Timezone = tz
+	}
+	if updates.Currency != nil {
+		cur := strings.ToLower(strings.TrimSpace(*updates.Currency))
+		if cur != "" && !currencyPattern.MatchString(cur) {
+			return nil, ErrInvalidCurrency
+		}
+		current.Currency = cur
+	}
+	if updates.LegalName != nil {
+		name := strings.TrimSpace(*updates.LegalName)
+		if len([]rune(name)) > 120 {
+			return nil, ErrInvalidLegalName
+		}
+		current.LegalName = name
+	}
 	if updates.PublicSlug != nil {
 		slug := strings.ToLower(strings.TrimSpace(*updates.PublicSlug))
 		if slug != "" && !slugPattern.MatchString(slug) {
@@ -184,6 +217,11 @@ func (s *Service) Update(orgID string, updates Updates, updatedBy string) (*OrgS
 			if other, err := s.FindBySlug(slug); err != nil {
 				return nil, err
 			} else if other != nil && other.OrgID != current.OrgID {
+				return nil, ErrSlugTaken
+			}
+			// The tenant registry owns a second slug namespace (orgs.slug); a slug
+			// held there by another org must never also address this org's site.
+			if s.slugReserved != nil && s.slugReserved(slug, current.OrgID) {
 				return nil, ErrSlugTaken
 			}
 		}

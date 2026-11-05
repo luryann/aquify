@@ -15,7 +15,39 @@ export type QueuedMark = {
 
 export type RollCallQueue = Record<string, QueuedMark>
 
-export const ROLL_CALL_STORAGE_KEY = 'aquify:roll-call-queue:v1'
+// Everything roll call keeps in localStorage is scoped to org + user, and wiped on
+// sign-out: a shared pool-deck tablet must never show one club's roster or replay
+// its queued marks against another club's session.
+export const ROLL_CALL_STORAGE_PREFIX = 'aquify:roll-call-'
+/** Pre-scoping key. Removed on sight; never read. */
+export const LEGACY_ROLL_CALL_STORAGE_KEY = 'aquify:roll-call-queue:v1'
+
+export function rollCallScope(orgId: string, userId: string): string {
+  return `${orgId}:${userId}`
+}
+
+export function rollCallQueueKey(scope: string): string {
+  return `${ROLL_CALL_STORAGE_PREFIX}queue:v2:${scope}`
+}
+
+export function rollCallRosterKey(scope: string, practiceId: string): string {
+  return `${ROLL_CALL_STORAGE_PREFIX}roster:v2:${scope}:${practiceId}`
+}
+
+/** Removes every roll-call key (queue and roster caches, any scope, legacy keys). */
+export function clearRollCallStorage(storage: Pick<Storage, 'length' | 'key' | 'removeItem'> | undefined): void {
+  try {
+    if (!storage) return
+    const doomed: string[] = []
+    for (let i = 0; i < storage.length; i++) {
+      const k = storage.key(i)
+      if (k && (k.startsWith(ROLL_CALL_STORAGE_PREFIX) || k.startsWith('aquify:roll-call-roster:'))) doomed.push(k)
+    }
+    doomed.forEach((k) => storage.removeItem(k))
+  } catch {
+    // Storage blocked: nothing was persisted either.
+  }
+}
 const MAX_BACKOFF_MS = 60_000
 
 export function markKey(practiceId: string, swimmerId: string): string {
@@ -57,14 +89,18 @@ export function failMark(queue: RollCallQueue, sent: QueuedMark, error: string, 
   return { ...queue, [key]: { ...current, attempts, lastError: error, nextAttemptAt: now + backoffMs(attempts) } }
 }
 
-/** True for errors worth retrying (network/5xx/429); 4xx validation is permanent. */
-export function isRetryable(status?: number): boolean {
-  return status === undefined || status === 0 || status === 408 || status === 429 || status >= 500
+/**
+ * True for errors worth retrying (network/5xx/429, expired session 401, CSRF 403);
+ * other 4xx validation is permanent.
+ */
+export function isRetryable(status?: number, code?: string): boolean {
+  if (status === 403) return typeof code === 'string' && code.toLowerCase().startsWith('csrf')
+  return status === undefined || status === 0 || status === 401 || status === 408 || status === 429 || status >= 500
 }
 
-export function loadQueue(storage: Pick<Storage, 'getItem'> | undefined): RollCallQueue {
+export function loadQueue(storage: Pick<Storage, 'getItem'> | undefined, scope: string): RollCallQueue {
   try {
-    const raw = storage?.getItem(ROLL_CALL_STORAGE_KEY)
+    const raw = storage?.getItem(rollCallQueueKey(scope))
     if (!raw) return {}
     const parsed: unknown = JSON.parse(raw)
     if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return {}
@@ -86,9 +122,9 @@ export function loadQueue(storage: Pick<Storage, 'getItem'> | undefined): RollCa
   }
 }
 
-export function saveQueue(storage: Pick<Storage, 'setItem'> | undefined, queue: RollCallQueue): void {
+export function saveQueue(storage: Pick<Storage, 'setItem'> | undefined, queue: RollCallQueue, scope: string): void {
   try {
-    storage?.setItem(ROLL_CALL_STORAGE_KEY, JSON.stringify(queue))
+    storage?.setItem(rollCallQueueKey(scope), JSON.stringify(queue))
   } catch {
     // Storage full or blocked: the in-memory queue still retries this session.
   }

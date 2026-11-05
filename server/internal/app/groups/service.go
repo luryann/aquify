@@ -6,16 +6,15 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"log/slog"
+	"github.com/luryann/aquify/server/internal/dbutil"
 	"slices"
 	"sort"
 	"strings"
-	"sync"
 	"time"
 
-	appmiddleware "github.com/luryann/aquify/server/internal/app/middleware"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
+	appmiddleware "github.com/luryann/aquify/server/internal/app/middleware"
 )
 
 var (
@@ -28,6 +27,7 @@ var (
 	ErrSwimmerNotFound       = errors.New("swimmer not found")
 	ErrHouseholdNotFound     = errors.New("household not found")
 	ErrGroupInactive         = errors.New("group is not active")
+	ErrInvalidInput          = errors.New("invalid input")
 	ErrNotEligible           = errors.New("swimmer is not eligible for this group")
 	ErrDuplicateRegistration = errors.New("swimmer already registered to this group for this season")
 )
@@ -189,10 +189,12 @@ type householdRef struct {
 
 // Service is the in-memory groups/eligibility/registrations service.
 type Service struct {
+	// orgCache bounds how many clubs' rows stay cached (idle TTL + LRU cap).
+	orgCache dbutil.OrgCache
 	// syncHook runs after a reload has read Postgres and before it replaces the
 	// in-memory state; tests use it to land a write inside that window.
 	syncHook        func()
-	mu              sync.RWMutex
+	mu              dbutil.GenMutex
 	repo            *Repository // nil = in-memory only
 	groups          map[string]Group
 	rules           map[string]EligibilityRule
@@ -234,9 +236,8 @@ func NewServiceWithPool(pool *pgxpool.Pool) *Service {
 		return s
 	}
 	s.repo = newRepository(pool)
-	if err := s.syncFromDB(context.Background()); err != nil {
-		slog.Error("groups: failed to load initial state from DB", "error", err)
-	}
+	// No eager load: every request path loads its own org on demand (syncFromDB(ctx, orgID)),
+	// so the process holds only the clubs it has served, not every club's data.
 	return s
 }
 
@@ -246,27 +247,82 @@ func (s *Service) SetSyncHookForTest(fn func()) { s.syncHook = fn }
 
 // Refresh reloads in-memory state from Postgres so cross-process readers (the
 // worker) observe writes made by another instance. No-op in in-memory mode.
-func (s *Service) Refresh(ctx context.Context) error { return s.syncFromDB(ctx) }
+// Refresh reloads every club (an operator/test hook; request paths use RefreshOrg).
+func (s *Service) Refresh(ctx context.Context) error { return s.syncFromDB(ctx, "") }
 
-// syncFromDB reloads the in-memory maps from the database (no-op without a repository).
-func (s *Service) syncFromDB(ctx context.Context) error {
+// RefreshOrg reloads one club from Postgres. Prefer it to Refresh on any path that already
+// knows its club: Refresh reads every club.
+func (s *Service) RefreshOrg(ctx context.Context, orgID string) error {
+	return s.syncFromDB(ctx, orgID)
+}
+
+// syncFromDB reloads the cache from the database. A non-empty orgID reloads and
+// replaces only that org's rows (the normal request path); an empty orgID reloads
+// every org (Refresh, and the few lookups made before an org is known).
+func (s *Service) syncFromDB(ctx context.Context, orgID string) error {
 	if s.repo == nil {
 		return nil
 	}
-	// Load under the write lock so a concurrent write cannot be overwritten by an
-	// older snapshot (writers persist and update memory while holding it).
+	// Scoped reloads read Postgres WITHOUT holding the service lock, so a slow load for
+	// one club does not block the others. A writer that ran during the load bumps the
+	// write generation, and then the possibly-stale snapshot is discarded and re-read;
+	// after a few conflicts it falls back to loading under the lock (below).
+	if orgID != "" {
+		done, err := dbutil.ReloadUnlocked(&s.mu, s.syncHook, func() (func(), error) {
+			grps, rules, regs, waivers, swimmers, households, err := s.repo.LoadAll(ctx, orgID)
+			if err != nil {
+				return nil, err
+			}
+			return func() { s.replaceOrgLocked(orgID, grps, rules, regs, waivers, swimmers, households) }, nil
+		})
+		if done || err != nil {
+			return err
+		}
+	}
+	// Full reload, or a scoped one that kept losing to writers: load under the write
+	// lock so a concurrent write cannot be overwritten by an older snapshot (writers
+	// persist and update memory while holding it).
 	s.mu.Lock()
-	defer s.mu.Unlock()
-	grps, rules, regs, waivers, swimmers, households, err := s.repo.LoadAll(ctx)
+	defer s.mu.UnlockWithoutBump()
+	grps, rules, regs, waivers, swimmers, households, err := s.repo.LoadAll(ctx, orgID)
 	if err != nil {
 		return err
 	}
 	if s.syncHook != nil {
 		s.syncHook()
 	}
-	s.resetDBBackedStateLocked()
-	s.populateDBBackedStateLocked(grps, rules, regs, waivers, swimmers, households)
+	if orgID == "" {
+		s.resetDBBackedStateLocked()
+		s.populateDBBackedStateLocked(grps, rules, regs, waivers, swimmers, households)
+		return nil
+	}
+	s.replaceOrgLocked(orgID, grps, rules, regs, waivers, swimmers, households)
 	return nil
+}
+
+// replaceOrgLocked swaps one org's cached rows for freshly loaded ones and evicts
+// clubs that are idle or beyond the cache cap. The caller holds the write lock.
+func (s *Service) replaceOrgLocked(orgID string, grps []Group, rules []EligibilityRule, regs []Registration, waivers []WaiverAcceptance, swimmers []swimmerRef, households []householdRef) {
+	s.dropOrgLocked(orgID)
+	s.populateDBBackedStateLocked(grps, rules, regs, waivers, swimmers, households)
+	s.orgCache.Touch(orgID, s.dropOrgLocked)
+}
+
+// SetOrgCacheLimits bounds the per-org cache: idle clubs older than ttl and the least
+// recently served clubs beyond maxOrgs are evicted (0 = unlimited). Safe because every
+// request reloads its own org first.
+func (s *Service) SetOrgCacheLimits(ttl time.Duration, maxOrgs int) {
+	s.orgCache.ConfigureLocked(&s.mu, ttl, maxOrgs)
+}
+
+// dropOrgLocked removes one org's cached rows so a scoped reload replaces exactly them.
+func (s *Service) dropOrgLocked(orgID string) {
+	dbutil.DropByOrg(s.groups, orgID, func(v Group) string { return v.OrgID })
+	dbutil.DropByOrg(s.rules, orgID, func(v EligibilityRule) string { return v.OrgID })
+	dbutil.DropByOrg(s.registrations, orgID, func(v Registration) string { return v.OrgID })
+	dbutil.DropByOrg(s.waivers, orgID, func(v WaiverAcceptance) string { return v.OrgID })
+	dbutil.DropByOrg(s.swimmers, orgID, func(v swimmerRef) string { return v.OrgID })
+	dbutil.DropByOrg(s.households, orgID, func(v householdRef) string { return v.OrgID })
 }
 
 // resetDBBackedStateLocked clears exactly the state populateDBBackedStateLocked
@@ -346,7 +402,7 @@ func (s *Service) CreateGroup(principal *appmiddleware.Principal, orgID string, 
 	if !appmiddleware.HasAnyRole(principal, "admin", "coach") {
 		return Group{}, GroupAuditEvent{}, ErrForbidden
 	}
-	if err := s.syncFromDB(context.Background()); err != nil {
+	if err := s.syncFromDB(context.Background(), orgID); err != nil {
 		return Group{}, GroupAuditEvent{}, err
 	}
 
@@ -413,7 +469,7 @@ func (s *Service) UpdateGroup(principal *appmiddleware.Principal, orgID, groupID
 	if !appmiddleware.HasAnyRole(principal, "admin", "coach") {
 		return Group{}, GroupAuditEvent{}, ErrForbidden
 	}
-	if err := s.syncFromDB(context.Background()); err != nil {
+	if err := s.syncFromDB(context.Background(), orgID); err != nil {
 		return Group{}, GroupAuditEvent{}, err
 	}
 
@@ -493,7 +549,7 @@ func (s *Service) GetGroup(principal *appmiddleware.Principal, orgID, groupID st
 	if !appmiddleware.HasAnyRole(principal, "admin", "coach", "parent", "swimmer") {
 		return Group{}, ErrForbidden
 	}
-	if err := s.syncFromDB(context.Background()); err != nil {
+	if err := s.syncFromDB(context.Background(), orgID); err != nil {
 		return Group{}, err
 	}
 
@@ -521,7 +577,7 @@ func (s *Service) ListGroups(principal *appmiddleware.Principal, orgID string, a
 	if !appmiddleware.HasAnyRole(principal, "admin", "coach", "parent", "swimmer") {
 		return nil, ErrForbidden
 	}
-	if err := s.syncFromDB(context.Background()); err != nil {
+	if err := s.syncFromDB(context.Background(), orgID); err != nil {
 		return nil, err
 	}
 
@@ -561,7 +617,7 @@ func (s *Service) AttachEligibilityRule(principal *appmiddleware.Principal, orgI
 	if !appmiddleware.HasAnyRole(principal, "admin") {
 		return EligibilityRule{}, GroupAuditEvent{}, ErrForbidden
 	}
-	if err := s.syncFromDB(context.Background()); err != nil {
+	if err := s.syncFromDB(context.Background(), orgID); err != nil {
 		return EligibilityRule{}, GroupAuditEvent{}, err
 	}
 
@@ -619,7 +675,7 @@ func (s *Service) EvaluateSwimmerEligibility(principal *appmiddleware.Principal,
 	if !appmiddleware.HasAnyRole(principal, "admin", "coach", "parent") {
 		return EligibilityResult{}, ErrForbidden
 	}
-	if err := s.syncFromDB(context.Background()); err != nil {
+	if err := s.syncFromDB(context.Background(), orgID); err != nil {
 		return EligibilityResult{}, err
 	}
 
@@ -681,7 +737,7 @@ func (s *Service) ListEligibilityRules(principal *appmiddleware.Principal, orgID
 	if !appmiddleware.HasAnyRole(principal, "admin", "coach", "parent") {
 		return nil, ErrForbidden
 	}
-	if err := s.syncFromDB(context.Background()); err != nil {
+	if err := s.syncFromDB(context.Background(), orgID); err != nil {
 		return nil, err
 	}
 
@@ -742,14 +798,14 @@ func (s *Service) evalRule(rule EligibilityRule, swimmer swimmerRef) RuleEvaluat
 
 	case "gender":
 		allowed := toStringSlice(rule.Parameters["allowed"])
-		if len(allowed) > 0 && !slices.Contains(allowed, swimmer.Gender) {
+		if len(allowed) > 0 && !containsFold(allowed, swimmer.Gender) {
 			eval.Passed = false
 			eval.Reason = fmt.Sprintf("swimmer gender %q not in allowed list", swimmer.Gender)
 		}
 
 	case "registration_status":
 		allowed := toStringSlice(rule.Parameters["allowed"])
-		if len(allowed) > 0 && !slices.Contains(allowed, swimmer.RegistrationStatus) {
+		if len(allowed) > 0 && !containsFold(allowed, swimmer.RegistrationStatus) {
 			eval.Passed = false
 			eval.Reason = fmt.Sprintf("swimmer registration_status %q not in allowed list", swimmer.RegistrationStatus)
 		}
@@ -768,7 +824,7 @@ func (s *Service) CreateRegistration(principal *appmiddleware.Principal, orgID s
 	if !appmiddleware.HasAnyRole(principal, "admin", "coach", "parent") {
 		return Registration{}, ErrForbidden
 	}
-	if err := s.syncFromDB(context.Background()); err != nil {
+	if err := s.syncFromDB(context.Background(), orgID); err != nil {
 		return Registration{}, err
 	}
 
@@ -841,6 +897,8 @@ func (s *Service) CreateRegistration(principal *appmiddleware.Principal, orgID s
 	regDate := strings.TrimSpace(input.RegistrationDate)
 	if regDate == "" {
 		regDate = time.Now().UTC().Format("2006-01-02")
+	} else if _, err := time.Parse("2006-01-02", regDate); err != nil {
+		return Registration{}, fmt.Errorf("%w: registration_date must be YYYY-MM-DD", ErrInvalidInput)
 	}
 
 	now := time.Now().UTC()
@@ -903,7 +961,7 @@ func (s *Service) transitionRegistrationStatus(principal *appmiddleware.Principa
 	if !appmiddleware.HasAnyRole(principal, "admin", "coach", "parent") {
 		return Registration{}, GroupAuditEvent{}, ErrForbidden
 	}
-	if err := s.syncFromDB(context.Background()); err != nil {
+	if err := s.syncFromDB(context.Background(), orgID); err != nil {
 		return Registration{}, GroupAuditEvent{}, err
 	}
 
@@ -960,7 +1018,7 @@ func (s *Service) AcceptWaiver(principal *appmiddleware.Principal, orgID, regist
 	if !appmiddleware.HasAnyRole(principal, "admin", "parent") {
 		return WaiverAcceptance{}, ErrForbidden
 	}
-	if err := s.syncFromDB(context.Background()); err != nil {
+	if err := s.syncFromDB(context.Background(), orgID); err != nil {
 		return WaiverAcceptance{}, err
 	}
 
@@ -1194,7 +1252,7 @@ func (s *Service) recordAuditEventLocked(event GroupAuditEvent) GroupAuditEvent 
 
 // SnapshotGroups returns a copy of all groups for the given org.
 func (s *Service) SnapshotGroups(orgID string) []Group {
-	if err := s.syncFromDB(context.Background()); err != nil {
+	if err := s.syncFromDB(context.Background(), orgID); err != nil {
 		return []Group{}
 	}
 	s.mu.RLock()
@@ -1212,7 +1270,7 @@ func (s *Service) SnapshotGroups(orgID string) []Group {
 
 // SnapshotRegistrations returns a copy of all registrations for the given org.
 func (s *Service) SnapshotRegistrations(orgID string) []Registration {
-	if err := s.syncFromDB(context.Background()); err != nil {
+	if err := s.syncFromDB(context.Background(), orgID); err != nil {
 		return []Registration{}
 	}
 	s.mu.RLock()
@@ -1234,7 +1292,7 @@ func (s *Service) ListRegistrations(principal *appmiddleware.Principal, orgID st
 	if !appmiddleware.HasAnyRole(principal, "admin", "coach", "parent") {
 		return nil, ErrForbidden
 	}
-	if err := s.syncFromDB(context.Background()); err != nil {
+	if err := s.syncFromDB(context.Background(), orgID); err != nil {
 		return nil, err
 	}
 
@@ -1242,16 +1300,6 @@ func (s *Service) ListRegistrations(principal *appmiddleware.Principal, orgID st
 	defer s.mu.RUnlock()
 
 	parentScoped := appmiddleware.IsParentOnly(principal)
-	allowedHouseholds := make(map[string]struct{})
-	if parentScoped {
-		if householdID := strings.TrimSpace(principal.HouseholdID); householdID != "" {
-			allowedHouseholds[householdID] = struct{}{}
-		}
-		for householdID := range s.parentHousehold[principal.UserID] {
-			allowedHouseholds[householdID] = struct{}{}
-		}
-	}
-
 	waiverTypesByRegistration := make(map[string][]string)
 	lastWaiverByRegistration := make(map[string]time.Time)
 	for _, waiver := range s.waivers {
@@ -1270,7 +1318,7 @@ func (s *Service) ListRegistrations(principal *appmiddleware.Principal, orgID st
 			continue
 		}
 		if parentScoped {
-			if _, ok := allowedHouseholds[registration.HouseholdID]; !ok {
+			if !s.principalOwnsHouseholdLocked(principal, registration.HouseholdID) {
 				continue
 			}
 		}
@@ -1303,7 +1351,7 @@ func (s *Service) ListRegistrations(principal *appmiddleware.Principal, orgID st
 
 // SnapshotWaivers returns a copy of all waiver acceptances for the given org.
 func (s *Service) SnapshotWaivers(orgID string) []WaiverAcceptance {
-	if err := s.syncFromDB(context.Background()); err != nil {
+	if err := s.syncFromDB(context.Background(), orgID); err != nil {
 		return []WaiverAcceptance{}
 	}
 	s.mu.RLock()
@@ -1346,4 +1394,10 @@ func mapPersistenceError(err error) error {
 	default:
 		return err
 	}
+}
+
+func containsFold(allowed []string, v string) bool {
+	return slices.ContainsFunc(allowed, func(a string) bool {
+		return strings.EqualFold(strings.TrimSpace(a), strings.TrimSpace(v))
+	})
 }

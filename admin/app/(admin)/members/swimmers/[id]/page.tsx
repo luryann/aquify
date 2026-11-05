@@ -7,6 +7,7 @@ import { Icon } from '@/components/ui/icons'
 import { Modal } from '@/components/ui/Modal'
 import { Tabs } from '@/components/ui/Tabs'
 import { SwimmerSignInToggle } from '@/components/members/SwimmerSignInToggle'
+import { GuardianConsentCard } from '@/components/members/GuardianConsentCard'
 import { SwimmerEngagementCard } from '@/components/engagement/SwimmerEngagementCard'
 import { Table, type Column } from '@/components/ui/Table'
 import { EmptyState } from '@/components/ui/EmptyState'
@@ -337,6 +338,7 @@ export default function SwimmerDetailPage() {
               {swimmer.notes || 'No coach notes recorded yet.'}
             </p>
           </div>
+          <GuardianConsentCard swimmer={swimmer} mode="staff" />
           <SwimmerSignInToggle swimmerId={swimmer.id} disabled={swimmer.portal_access_disabled ?? false} onChange={(next) => setSwimmer((prev) => (prev ? { ...prev, portal_access_disabled: next } : prev))} />
         </div>
       ) : null}

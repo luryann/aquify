@@ -495,3 +495,49 @@ func TestParse_BOMAndWhitespaceLinesNoErrors(t *testing.T) {
 		}
 	}
 }
+
+func TestParse_PrelimTimeAndZeroTime(t *testing.T) {
+	d0 := makeD0("Poe, Ed", "", "01012005", "20", "M", "M", "0100", "1", "0001", "OPEN",
+		"03152026", "", "", "        ", " ", " 1", " 1", "  1")
+	d0 = d0[:97] + "   59.10" + "2" + d0[106:]
+	result, err := sdif.Parse([]byte(crlf(makeA0()) + crlf(d0)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	r := result.IndividualResults[0]
+	if !r.PrelimTime.Valid || r.PrelimTime.Seconds != 59.10 || r.FinalsTime.Valid {
+		t.Fatalf("prelim/finals = %+v / %+v", r.PrelimTime, r.FinalsTime)
+	}
+	for _, raw := range []string{"0.00", "0:00.00", "99999999999:00.00", "61:00.00"} {
+		d := makeD0("Poe, Ed", "", "01012005", "20", "M", "M", "0100", "1", "0001", "OPEN",
+			"03152026", "", "", raw, "2", " 1", " 1", "  1")
+		res, err := sdif.Parse([]byte(crlf(makeA0()) + crlf(d)))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if res.IndividualResults[0].FinalsTime.Valid {
+			t.Errorf("%q should be invalid", raw)
+		}
+	}
+}
+
+func TestParse_ParseErrorsAreCapped(t *testing.T) {
+	var sb strings.Builder
+	for i := 0; i < 500; i++ {
+		sb.WriteString("ZZ\n")
+	}
+	res, err := sdif.Parse([]byte(sb.String()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.ParseErrors) != 100 || res.TotalParseErrors != 500 {
+		t.Fatalf("recorded=%d total=%d", len(res.ParseErrors), res.TotalParseErrors)
+	}
+	sb.Reset()
+	for i := 0; i < 10001; i++ {
+		sb.WriteString("ZZ\n")
+	}
+	if _, err := sdif.Parse([]byte(sb.String())); err == nil {
+		t.Fatal("expected too-many-errors failure")
+	}
+}

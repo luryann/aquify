@@ -1,5 +1,6 @@
 import type { AnnouncementRecord } from '@/lib/adminData'
 import type { ApiClient } from '@/lib/api'
+import { apiInternalOrigin } from '@/lib/api-origin'
 
 export type PublicClub = {
   name: string
@@ -29,31 +30,18 @@ export type PublicEvent = {
   ends_at?: string | null
   all_day: boolean
 }
-export type PublicRecord = {
-  label: string
-  course: string
-  gender: string
-  age_group: string
-  distance: number
-  stroke: string
-  time_ms: number
-  swimmer_name: string
-  swim_date: string
-  meet_name?: string
-}
 export type PublicCoach = { name: string; role: string }
 export type PublicSite = {
   club: PublicClub
   announcements: PublicAnnouncement[]
   meets: PublicMeet[]
   events: PublicEvent[]
-  records: PublicRecord[]
   coaches: PublicCoach[]
 }
 
 /** Server-side fetch of the public team site; null when the site is disabled or unknown. */
 export async function fetchPublicSite(slug: string): Promise<PublicSite | null> {
-  const base = process.env.API_INTERNAL_URL ?? process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8080'
+  const base = apiInternalOrigin()
   try {
     const res = await fetch(`${base}/api/v1/public/orgs/${encodeURIComponent(slug)}/site`, { next: { revalidate: 60 } })
     if (res.status === 404) return null

@@ -119,7 +119,7 @@ func (s *Service) addCreditEntryLocked(ctx context.Context, p creditEntryParams)
 	ev := s.newLedgerEventLocked(p.OrgID, p.InvoiceID, p.PaymentID, p.RefundID, p.HouseholdID, eventType, ledgerAmount, description, p.ActorID)
 
 	if s.repo != nil {
-		err := s.repo.inTx(ctx, func(tx pgx.Tx) error {
+		err := s.repo.inTx(ctx, p.OrgID, func(tx pgx.Tx) error {
 			balance, err := adjustCreditBalance(ctx, tx, p.OrgID, p.HouseholdID, delta, now)
 			if err != nil {
 				return err
@@ -169,7 +169,7 @@ func (s *Service) applyHouseholdCreditLocked(ctx context.Context, inv *Invoice, 
 		applied, err := s.applyCreditAmountLocked(ctx, inv, amount, actorID)
 		if errors.Is(err, ErrInsufficientCredit) && s.repo != nil && attempt == 0 {
 			// Another instance spent credit; re-read the canonical balance once.
-			if err := s.repo.pool.QueryRow(ctx,
+			if err := s.repo.at(inv.OrgID).QueryRow(ctx,
 				`SELECT COALESCE((SELECT balance_cents FROM household_credit_balances WHERE org_id = $1::uuid AND household_id = $2), 0)`,
 				inv.OrgID, inv.HouseholdID).Scan(&available); err != nil {
 				return 0, err
@@ -221,7 +221,7 @@ func (s *Service) applyCreditAmountLocked(ctx context.Context, inv *Invoice, amo
 		fmt.Sprintf("Account credit %s applied to invoice %s", formatCents(amount), inv.InvoiceNumber), actorID)
 
 	if s.repo != nil {
-		err := s.repo.inTx(ctx, func(tx pgx.Tx) error {
+		err := s.repo.inTx(ctx, inv.OrgID, func(tx pgx.Tx) error {
 			balance, err := adjustCreditBalance(ctx, tx, inv.OrgID, inv.HouseholdID, -amount, now)
 			if err != nil {
 				return err
@@ -264,11 +264,11 @@ func (s *Service) applyCreditAmountLocked(ctx context.Context, inv *Invoice, amo
 // No-op in in-memory mode and inside a staged transaction (which has already
 // loaded canonical state under the invoice row lock).
 // Must be called with s.mu held (write).
-func (s *Service) refreshLocked(ctx context.Context) error {
+func (s *Service) refreshLocked(ctx context.Context, orgID string) error {
 	if s.repo == nil || s.repo.tx != nil {
 		return nil
 	}
-	if err := s.reloadLocked(ctx); err != nil {
+	if err := s.reloadLocked(ctx, orgID); err != nil {
 		return fmt.Errorf("billing: refresh from DB: %w", err)
 	}
 	return nil
@@ -290,12 +290,18 @@ func (s *Service) GetHouseholdCredit(orgID string, principal *appmiddleware.Prin
 	if err := s.requireHouseholdFinanceRead(principal, householdID); err != nil {
 		return nil, err
 	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if err := s.refreshLocked(context.Background()); err != nil {
+	if err := s.refreshForRead(orgID); err != nil {
 		return nil, err
 	}
-	return s.creditSummaryLocked(orgID, householdID), nil
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	summary := s.creditSummaryLocked(orgID, householdID)
+	if _, parentScoped := s.parentHouseholdScope(principal); parentScoped {
+		for _, e := range summary.Entries {
+			e.Reason, e.CreatedBy = "", ""
+		}
+	}
+	return summary, nil
 }
 
 func (s *Service) creditSummaryLocked(orgID, householdID string) *HouseholdCreditSummary {
@@ -327,16 +333,19 @@ func (s *Service) AddManualCredit(orgID, actorID string, principal *appmiddlewar
 	if strings.TrimSpace(input.Reason) == "" {
 		return nil, nil, invalidField("reason", "is required")
 	}
+	if err := s.requireHouseholdInOrg(orgID, householdID); err != nil {
+		return nil, nil, err
+	}
 	kind := CreditKindManualCredit
 	if input.Direction == "debit" {
 		kind = CreditKindManualDebit
 	}
 	ctx := context.Background()
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if err := s.refreshLocked(ctx); err != nil {
+	if err := s.refreshOrg(ctx, orgID); err != nil {
 		return nil, nil, err
 	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	entry, err := s.addCreditEntryLocked(ctx, creditEntryParams{
 		OrgID: orgID, HouseholdID: householdID, AmountCents: input.AmountCents, Kind: kind,
 		Reason: input.Reason, ActorID: actorID,
@@ -380,11 +389,10 @@ func (s *Service) AddManualCredit(orgID, actorID string, principal *appmiddlewar
 // RefundToCredit refunds part of a payment into household account credit
 // (no money leaves the club). Admin only.
 func (s *Service) RefundToCredit(orgID, actorID string, principal *appmiddleware.Principal, invoiceID string, input CreateRefundInput) (*Refund, *LedgerEvent, error) {
-	s.mu.Lock()
-	if err := s.refreshLocked(context.Background()); err != nil {
-		s.mu.Unlock()
+	if err := s.refreshForRead(orgID); err != nil {
 		return nil, nil, err
 	}
+	s.mu.Lock()
 	inv, ok := s.invoices[invoiceID]
 	householdID := ""
 	if ok && inv.OrgID == orgID {

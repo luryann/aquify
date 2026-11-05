@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"strings"
+	"sync"
 
 	"github.com/luryann/aquify/server/internal/app/httpx"
 )
@@ -37,8 +38,27 @@ func RequireOrgScope(next http.Handler) http.Handler {
 		}
 
 		ctx := context.WithValue(r.Context(), orgContextKey{}, orgID)
+		observeOrg(r.Context(), orgID)
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})
+}
+
+type observedOrgKey struct{}
+
+// observedOrg lets an outer middleware (metrics) learn which org a request was
+// authenticated for: only orgs that passed the principal check are recorded, so
+// a spoofed X-Org-Id header can never create metric series.
+type observedOrg struct {
+	mu  sync.Mutex
+	org string
+}
+
+func observeOrg(ctx context.Context, orgID string) {
+	if o, ok := ctx.Value(observedOrgKey{}).(*observedOrg); ok {
+		o.mu.Lock()
+		o.org = orgID
+		o.mu.Unlock()
+	}
 }
 
 func OrgIDFromContext(ctx context.Context) (string, bool) {

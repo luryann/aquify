@@ -4,8 +4,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/luryann/aquify/server/internal/testutil"
 	"github.com/google/uuid"
+	"github.com/luryann/aquify/server/internal/testutil"
 )
 
 // The API and worker processes each hold their own Service on one database.

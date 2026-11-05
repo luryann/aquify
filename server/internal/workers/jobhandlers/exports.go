@@ -20,12 +20,15 @@ func GenerateExportHandler(logger *slog.Logger, service *exports.Service) worker
 		if p.ExportID == "" {
 			return fmt.Errorf("generate export: missing export_id")
 		}
+		if p.OrgID == "" {
+			return fmt.Errorf("generate export: missing org_id")
+		}
 		if service == nil {
 			return fmt.Errorf("generate export: exports service is not configured")
 		}
 
 		logger.Info("generate export: starting", "export_id", p.ExportID)
-		if err := service.ProcessExport(ctx, p.ExportID); err != nil {
+		if err := service.ProcessExportFor(ctx, p.OrgID, p.ExportID); err != nil {
 			return err
 		}
 		logger.Info("generate export: completed", "export_id", p.ExportID)

@@ -30,7 +30,9 @@ func financeRequest(t *testing.T, router http.Handler, method, path, token, body
 func TestBillingFinanceRoutesRBACAndAudit(t *testing.T) {
 	t.Parallel()
 	auditSvc := audit.NewService()
-	router := newBillingRouterWithAudit(t, billing.NewService(), auditSvc)
+	billingSvc := billing.NewService()
+	billingSvc.SetHouseholdChecker(func(_, id string) bool { return id == "hh-own" })
+	router := newBillingRouterWithAudit(t, billingSvc, auditSvc)
 	admin := issueSessionToken(t, router, "org-demo", []string{"admin"}, false)
 	adminMFA := issueSessionToken(t, router, "org-demo", []string{"admin"}, true)
 	coach := issueSessionToken(t, router, "org-demo", []string{"coach"}, true)

@@ -5,14 +5,14 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/go-chi/chi/v5"
+	"github.com/go-playground/validator/v10"
 	"github.com/luryann/aquify/server/internal/app/audit"
 	"github.com/luryann/aquify/server/internal/app/groups"
 	"github.com/luryann/aquify/server/internal/app/httpx"
 	"github.com/luryann/aquify/server/internal/app/members"
 	"github.com/luryann/aquify/server/internal/app/seasons"
 	"github.com/luryann/aquify/server/internal/app/training"
-	"github.com/go-chi/chi/v5"
-	"github.com/go-playground/validator/v10"
 )
 
 // TrainingHandlers handles practice/schedule CRUD endpoints.
@@ -152,6 +152,10 @@ func (h *TrainingHandlers) createPractice(w http.ResponseWriter, r *http.Request
 			httpx.WriteError(w, r, http.StatusBadRequest, "bad_request", "Invalid practice type.", nil)
 			return
 		}
+		if errors.Is(err, training.ErrInvalidNumeric) {
+			httpx.WriteError(w, r, http.StatusBadRequest, "bad_request", "Yardage, stroke yardage and attendance must be between 0 and 200000 (attendance 10000).", nil)
+			return
+		}
 		httpx.WriteError(w, r, http.StatusInternalServerError, "internal_error", "Failed to create practice.", err)
 		return
 	}
@@ -236,6 +240,10 @@ func (h *TrainingHandlers) updatePractice(w http.ResponseWriter, r *http.Request
 		}
 		if errors.Is(err, training.ErrInvalidType) {
 			httpx.WriteError(w, r, http.StatusBadRequest, "bad_request", "Invalid practice type.", nil)
+			return
+		}
+		if errors.Is(err, training.ErrInvalidNumeric) {
+			httpx.WriteError(w, r, http.StatusBadRequest, "bad_request", "Yardage, stroke yardage and attendance must be between 0 and 200000 (attendance 10000).", nil)
 			return
 		}
 		httpx.WriteError(w, r, http.StatusInternalServerError, "internal_error", "Failed to update practice.", err)

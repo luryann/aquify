@@ -7,10 +7,10 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/go-chi/chi/v5"
 	"github.com/luryann/aquify/server/internal/app/members"
 	appmiddleware "github.com/luryann/aquify/server/internal/app/middleware"
 	"github.com/luryann/aquify/server/internal/keycloak"
-	"github.com/go-chi/chi/v5"
 )
 
 type adminResolver struct{}

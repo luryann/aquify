@@ -4,8 +4,8 @@ import (
 	"context"
 	"testing"
 
-	appmiddleware "github.com/luryann/aquify/server/internal/app/middleware"
 	"github.com/jackc/pgx/v5/pgxpool"
+	appmiddleware "github.com/luryann/aquify/server/internal/app/middleware"
 )
 
 // A failed Postgres re-sync must surface to the caller; ListRegistrations used

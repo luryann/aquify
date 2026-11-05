@@ -8,8 +8,8 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/luryann/aquify/server/internal/app/httpx"
 	"github.com/go-playground/validator/v10"
+	"github.com/luryann/aquify/server/internal/app/httpx"
 )
 
 const defaultJSONBodyLimit int64 = 1 << 20

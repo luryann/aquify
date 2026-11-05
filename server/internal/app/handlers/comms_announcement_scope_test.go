@@ -6,9 +6,9 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/go-chi/chi/v5"
 	"github.com/luryann/aquify/server/internal/app/comms"
 	appmiddleware "github.com/luryann/aquify/server/internal/app/middleware"
-	"github.com/go-chi/chi/v5"
 )
 
 // Parents and swimmers must only see published announcements; drafts and

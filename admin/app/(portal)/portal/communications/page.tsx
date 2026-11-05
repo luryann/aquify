@@ -81,6 +81,8 @@ export default function CommunicationsPage() {
   const [prefsSaving, setPrefsSaving] = useState(false)
   const [prefsSaved, setPrefsSaved] = useState(false)
   const [prefsError, setPrefsError] = useState<string | null>(null)
+  const [prefsLoadFailed, setPrefsLoadFailed] = useState(false)
+  const [prefsRetryKey, setPrefsRetryKey] = useState(0)
   const [announcementsRetryKey, setAnnouncementsRetryKey] = useState(0)
 
   useEffect(() => {
@@ -111,6 +113,7 @@ export default function CommunicationsPage() {
 
     setPrefsLoading(true)
     setPrefsError(null)
+    setPrefsLoadFailed(false)
     loadPortalCommunicationPreferences(api, orgId)
       .then((nextPrefs) => {
         if (cancelled) return
@@ -119,8 +122,7 @@ export default function CommunicationsPage() {
       })
       .catch((error: unknown) => {
         if (cancelled) return
-        setPrefs(DEFAULT_PORTAL_COMMUNICATION_PREFERENCES)
-        setSavedPrefs(DEFAULT_PORTAL_COMMUNICATION_PREFERENCES)
+        setPrefsLoadFailed(true)
         setPrefsError(portalCommunicationPreferencesErrorMessage(error))
       })
       .finally(() => {
@@ -130,7 +132,7 @@ export default function CommunicationsPage() {
     return () => {
       cancelled = true
     }
-  }, [api, orgId])
+  }, [api, orgId, prefsRetryKey])
 
   const filtered = announcements.filter((a) => {
     if (filter === 'all') return true
@@ -145,7 +147,7 @@ export default function CommunicationsPage() {
   }
 
   const savePrefs = async () => {
-    if (!orgId || prefsSaving) return
+    if (!orgId || prefsSaving || prefsLoadFailed || prefsLoading) return
     setPrefsSaving(true)
     setPrefsError(null)
     setPrefsSaved(false)
@@ -359,6 +361,15 @@ export default function CommunicationsPage() {
               {prefsError}
             </div>
           )}
+          {prefsLoadFailed ? (
+            <div className="card" style={{ padding: '20px' }}>
+              <p className="is-58c33bb">Preferences are unavailable</p>
+              <p className="is-4f39ab0">Your saved settings could not be loaded, so they are hidden to avoid overwriting them.</p>
+              <button type="button" className="comms-save-btn" onClick={() => setPrefsRetryKey((k) => k + 1)} disabled={prefsLoading}>
+                {prefsLoading ? 'Loading…' : 'Retry'}
+              </button>
+            </div>
+          ) : (<>
           <div
             className="card is-b25ef49" 
           >
@@ -453,6 +464,7 @@ export default function CommunicationsPage() {
               </div>
             )}
           </div>
+          </>)}
         </div>
       )}
 

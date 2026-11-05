@@ -3,10 +3,11 @@ package wellness
 import (
 	"context"
 	"fmt"
+	"github.com/luryann/aquify/server/internal/tenantdb"
 
-	"github.com/luryann/aquify/server/internal/dbutil"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/luryann/aquify/server/internal/dbutil"
 )
 
 // Repository persists wellness check-ins. Postgres is canonical in DB mode.
@@ -23,8 +24,11 @@ const columns = `id::text, org_id, swimmer_id::text, household_id, checkin_date:
 	submitted_by, submitted_role, created_at, updated_at`
 
 // Upsert inserts or replaces the swimmer's check-in for the day.
+// at binds the org to the database session so row-level security applies.
+func (r *Repository) at(orgID string) tenantdb.Scoped { return tenantdb.Pool{P: r.pool}.For(orgID) }
+
 func (r *Repository) Upsert(ctx context.Context, c *CheckIn) (*CheckIn, bool, error) {
-	row := r.pool.QueryRow(ctx, `
+	row := r.at(c.OrgID).QueryRow(ctx, `
 		INSERT INTO wellness_checkins (
 			id, org_id, swimmer_id, household_id, checkin_date, sleep_hours, sleep_quality,
 			soreness, energy, stress, mood, note, submitted_by, submitted_role, created_at, updated_at
@@ -61,7 +65,7 @@ func (r *Repository) List(ctx context.Context, orgID string, swimmerIDs []string
 		args = append(args, swimmerIDs)
 	}
 	query += ` ORDER BY swimmer_id, checkin_date`
-	rows, err := r.pool.Query(ctx, query, args...)
+	rows, err := r.at(orgID).Query(ctx, query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("wellness: list check-ins: %w", err)
 	}

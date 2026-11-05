@@ -8,6 +8,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/go-chi/chi/v5"
+	"github.com/go-playground/validator/v10"
 	"github.com/luryann/aquify/server/internal/app/audit"
 	"github.com/luryann/aquify/server/internal/app/comms"
 	"github.com/luryann/aquify/server/internal/app/documents"
@@ -17,8 +19,6 @@ import (
 	"github.com/luryann/aquify/server/internal/app/members"
 	appmiddleware "github.com/luryann/aquify/server/internal/app/middleware"
 	"github.com/luryann/aquify/server/internal/app/performance"
-	"github.com/go-chi/chi/v5"
-	"github.com/go-playground/validator/v10"
 )
 
 // PerformanceHandlers handles HTTP requests for the performance/best-times domain.
@@ -122,8 +122,8 @@ type upsertResultBody struct {
 	Heat        *int             `json:"heat"`
 	Lane        *int             `json:"lane"`
 	Place       *int             `json:"place"`
-	SeedTimeMs  *int             `json:"seed_time_ms"   validate:"omitempty,gt=0"`
-	FinTimeMs   *int             `json:"fin_time_ms"    validate:"omitempty,gt=0"`
+	SeedTimeMs  *int             `json:"seed_time_ms"   validate:"omitempty,gt=0,lte=3600000"`
+	FinTimeMs   *int             `json:"fin_time_ms"    validate:"omitempty,gt=0,lte=3600000"`
 	DQ          bool             `json:"dq"`
 	DQCode      string           `json:"dq_code"`
 	DQNote      string           `json:"dq_note"`
@@ -135,7 +135,7 @@ type overrideBestTimeBody struct {
 	EventDistance int    `json:"event_distance" validate:"required,gt=0"`
 	Stroke        string `json:"stroke"         validate:"required,oneof=free back breast fly im"`
 	Course        string `json:"course"         validate:"required,oneof=SCY SCM LCM"`
-	BestTimeMs    *int   `json:"best_time_ms"   validate:"omitempty,gt=0"`
+	BestTimeMs    *int   `json:"best_time_ms"   validate:"omitempty,gt=0,lte=3600000"`
 	Reason        string `json:"reason"         validate:"required"`
 	RecordedAt    string `json:"recorded_at"`
 }
@@ -724,6 +724,10 @@ func (h *PerformanceHandlers) createTimeStandard(w http.ResponseWriter, r *http.
 	if err != nil {
 		if errors.Is(err, performance.ErrForbidden) {
 			httpx.WriteError(w, r, http.StatusForbidden, "forbidden", "Only admins may manage time standards.", nil)
+			return
+		}
+		if errors.Is(err, performance.ErrInvalidAgeRange) {
+			httpx.WriteError(w, r, http.StatusBadRequest, "validation_error", err.Error(), nil)
 			return
 		}
 		httpx.WriteError(w, r, http.StatusInternalServerError, "internal_error", "An internal error occurred.", err)

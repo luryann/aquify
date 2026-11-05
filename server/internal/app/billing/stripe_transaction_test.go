@@ -10,9 +10,9 @@ import (
 	"sync"
 	"testing"
 
-	appmiddleware "github.com/luryann/aquify/server/internal/app/middleware"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
+	appmiddleware "github.com/luryann/aquify/server/internal/app/middleware"
 )
 
 // These tests use a private schema and the real migrations. They never reset

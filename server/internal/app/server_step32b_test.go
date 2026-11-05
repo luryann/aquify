@@ -285,7 +285,7 @@ func TestDurableWorkerModeExecutesScheduledReconcileJobs(t *testing.T) {
 	}, logger, RouterDeps{
 		Workers: backend,
 	})
-	RegisterDurableScheduledJobs(backend, Config{Worker: WorkerConfig{ReconcileInterval: "50ms"}})
+	RegisterDurableScheduledJobs(backend, Config{Worker: WorkerConfig{ReconcileInterval: "50ms"}}, nil)
 
 	if err := backend.Start(); err != nil {
 		t.Fatalf("backend.Start: %v", err)

@@ -56,6 +56,52 @@ const EMPTY_SCHEDULE: ScheduleDraft = {
   name: '', kind: 'dues', group_code: '', season: '', frequency: 'monthly', amount: '', start_date: '', end_date: '', proration: 'daily', auto_bill: false,
 }
 
+/** Text input for a money/percent setting. Keeps what the admin typed, flags invalid input, and only reports valid values. */
+function SettingNumberField({ field, value, kind, onValue, onValidity }: {
+  field: string
+  value: number
+  kind: 'money' | 'percent'
+  onValue: (n: number) => void
+  onValidity: (field: string, valid: boolean) => void
+}) {
+  const format = (n: number) => (kind === 'money' ? (n / 100).toFixed(2) : String(n / 100))
+  const parse = (t: string): number | null => {
+    if (kind === 'money') {
+      const c = parseDollarsToCents(t)
+      return c !== null && c >= 0 ? c : null
+    }
+    if (t.trim() === '') return null
+    const n = Number(t)
+    return Number.isFinite(n) && n >= 0 && n <= 100 ? Math.round(n * 100) : null
+  }
+  const [text, setText] = useState(() => format(value))
+  const [invalid, setInvalid] = useState(false)
+  // Re-initialise from settings after a load or save, unless the admin is mid-correction.
+  useEffect(() => {
+    if (!invalid && parse(text) !== value) setText(format(value))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [value])
+  useEffect(() => () => onValidity(field, true), [field, onValidity])
+  return (
+    <>
+      <input
+        className="form-input"
+        inputMode="decimal"
+        value={text}
+        aria-invalid={invalid || undefined}
+        onChange={(e) => {
+          setText(e.target.value)
+          const parsed = parse(e.target.value)
+          setInvalid(parsed === null)
+          onValidity(field, parsed !== null)
+          if (parsed !== null) onValue(parsed)
+        }}
+      />
+      {invalid ? <span role="alert" className="u-fs-fs-sm" style={{ color: 'var(--error)' }}>{kind === 'money' ? 'Enter a dollar amount like 25.00.' : 'Enter a percent between 0 and 100.'}</span> : null}
+    </>
+  )
+}
+
 export default function FeeSchedulesPage() {
   const { api, orgId } = useFinanceContext()
   const [schedules, setSchedules] = useState<FeeSchedule[]>([])
@@ -72,6 +118,16 @@ export default function FeeSchedulesPage() {
   const [ruleDraft, setRuleDraft] = useState({ name: '', min: '2', max: '', type: 'percent' as 'percent' | 'fixed', value: '', applies_to: 'dues' as DiscountRule['applies_to'] })
   const [adjDraft, setAdjDraft] = useState({ household_id: '', amount: '', reason: '' })
   const [busy, setBusy] = useState(false)
+  const [invalidFields, setInvalidFields] = useState<Set<string>>(new Set())
+  const setFieldValidity = useCallback((field: string, valid: boolean) => {
+    setInvalidFields((prev) => {
+      if (valid === !prev.has(field)) return prev
+      const next = new Set(prev)
+      if (valid) next.delete(field)
+      else next.add(field)
+      return next
+    })
+  }, [])
 
   const load = useCallback(async () => {
     if (!orgId) return
@@ -455,15 +511,15 @@ export default function FeeSchedulesPage() {
             </Field>
             {settings.late_fee_type === 'flat' ? (
               <Field label="Fee (USD)">
-                <input className="form-input" inputMode="decimal" defaultValue={(settings.late_fee_flat_cents / 100).toFixed(2)} onBlur={(e) => setSettings({ ...settings, late_fee_flat_cents: parseDollarsToCents(e.target.value) ?? 0 })} />
+                <SettingNumberField field="late_fee_flat_cents" kind="money" value={settings.late_fee_flat_cents} onValue={(n) => setSettings((st) => (st ? { ...st, late_fee_flat_cents: n } : st))} onValidity={setFieldValidity} />
               </Field>
             ) : (
               <Field label="Percent of balance">
-                <input className="form-input" inputMode="decimal" defaultValue={settings.late_fee_percent_bps / 100} onBlur={(e) => setSettings({ ...settings, late_fee_percent_bps: Math.round(Number(e.target.value) * 100) })} />
+                <SettingNumberField field="late_fee_percent_bps" kind="percent" value={settings.late_fee_percent_bps} onValue={(n) => setSettings((st) => (st ? { ...st, late_fee_percent_bps: n } : st))} onValidity={setFieldValidity} />
               </Field>
             )}
             <Field label="Cap (USD, 0 = none)">
-              <input className="form-input" inputMode="decimal" defaultValue={(settings.late_fee_max_cents / 100).toFixed(2)} onBlur={(e) => setSettings({ ...settings, late_fee_max_cents: parseDollarsToCents(e.target.value) ?? 0 })} />
+              <SettingNumberField field="late_fee_max_cents" kind="money" value={settings.late_fee_max_cents} onValue={(n) => setSettings((st) => (st ? { ...st, late_fee_max_cents: n } : st))} onValidity={setFieldValidity} />
             </Field>
           </div>
           <div style={{ ...formGrid, marginTop: 16 }}>
@@ -490,10 +546,10 @@ export default function FeeSchedulesPage() {
           </p>
           <div style={{ ...formGrid, marginTop: 12 }}>
             <Field label="Fee per event (USD)">
-              <input className="form-input" inputMode="decimal" defaultValue={(settings.meet_fee_per_event_cents / 100).toFixed(2)} onBlur={(e) => setSettings({ ...settings, meet_fee_per_event_cents: parseDollarsToCents(e.target.value) ?? 0 })} />
+              <SettingNumberField field="meet_fee_per_event_cents" kind="money" value={settings.meet_fee_per_event_cents} onValue={(n) => setSettings((st) => (st ? { ...st, meet_fee_per_event_cents: n } : st))} onValidity={setFieldValidity} />
             </Field>
             <Field label="Flat fee per swimmer per meet (USD)">
-              <input className="form-input" inputMode="decimal" defaultValue={(settings.meet_fee_flat_cents / 100).toFixed(2)} onBlur={(e) => setSettings({ ...settings, meet_fee_flat_cents: parseDollarsToCents(e.target.value) ?? 0 })} />
+              <SettingNumberField field="meet_fee_flat_cents" kind="money" value={settings.meet_fee_flat_cents} onValue={(n) => setSettings((st) => (st ? { ...st, meet_fee_flat_cents: n } : st))} onValidity={setFieldValidity} />
             </Field>
             <Field label="Create meet invoices as">
               <select className="form-input" value={settings.meet_fee_invoice_status} onChange={(e) => setSettings({ ...settings, meet_fee_invoice_status: e.target.value as BillingSettings['meet_fee_invoice_status'] })}>
@@ -506,7 +562,7 @@ export default function FeeSchedulesPage() {
             </Field>
           </div>
           <div className="u-gap-8px u-mt-16px" style={{ display: 'flex', flexWrap: 'wrap' }}>
-            <button type="button" className="btn btn-primary btn-sm" disabled={busy} onClick={() => void run(() => saveBillingSettings(api, orgId, settings), 'Billing settings saved.')}>
+            <button type="button" className="btn btn-primary btn-sm" disabled={busy || invalidFields.size > 0} onClick={() => void run(() => saveBillingSettings(api, orgId, settings), 'Billing settings saved.')}>
               Save settings
             </button>
             <button

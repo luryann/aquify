@@ -88,10 +88,13 @@ type ParsedIndividualResult struct {
 	Swimmer    ParsedSwimmer
 	Event      ParsedEvent
 	SeedTime   Time
+	PrelimTime Time
 	FinalsTime Time
-	Heat       int
-	Lane       int
-	Place      int
+	// PrelimCourse is the course code of the prelim swim, when given.
+	PrelimCourse Course
+	Heat         int
+	Lane         int
+	Place        int
 }
 
 // ParsedRelayResult corresponds to one E0 record plus its F0 legs (SDIF).
@@ -161,6 +164,9 @@ type ParseResult struct {
 	IndividualResults []ParsedIndividualResult
 	RelayResults      []ParsedRelayResult
 	ParseErrors       []ParseError
+	// TotalParseErrors counts every parse error seen; ParseErrors itself may be
+	// capped to bound memory on junk input.
+	TotalParseErrors int
 }
 
 // ─── Error types ──────────────────────────────────────────────────────────────

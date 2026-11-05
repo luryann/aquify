@@ -9,9 +9,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/luryann/aquify/server/internal/app/authn"
 	"github.com/luryann/aquify/server/internal/testutil"
-	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 func TestDBRepoAuthSessions_CrossInstanceRefreshRotationAndResolve(t *testing.T) {
@@ -161,6 +161,7 @@ func TestDBRepoAuthSessions_ExpiryValidatedFromPersistentStore(t *testing.T) {
 
 func cleanupAuthFixtures(t *testing.T, pool *pgxpool.Pool, orgID string) {
 	t.Helper()
+	testutil.SeedOrgs(t, pool, orgID)
 	deleteFixtures(t, pool, orgID, []string{
 		"DELETE FROM sessions WHERE org_id = $1::uuid",
 		"DELETE FROM mfa_factors WHERE org_id = $1",

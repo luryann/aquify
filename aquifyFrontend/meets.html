@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Meets | aquify</title>
+<meta name="description" content="Commitments, entries, host files, results import and team records for swim meets.">
+<meta name="theme-color" content="#04080b">
+<link rel="icon" href="assets/icon.svg" type="image/svg+xml">
+<link rel="preload" href="assets/fonts/inter-tight-latin-500-normal.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="assets/styles.css">
+</head>
+<body>
+<header class="nav">
+  <a class="brand" href="index.html" aria-label="aquify home">aquify<i>.</i></a>
+  <button class="burger" aria-label="Menu" aria-expanded="false"><span></span><span></span></button>
+  <nav class="links" aria-label="Main">
+    <div class="dd"><button class="dd-btn" aria-expanded="false" style="color:var(--chalk)">Features</button><div class="dd-menu"><a href="coaches.html"><b>Coaches</b><span>Workouts, roll call and the pool-deck view</span></a><a href="meets.html" aria-current="page"><b>Meets</b><span>Commitments, entries, results and records</span></a><a href="billing.html"><b>Billing</b><span>Dues, discounts, autopay and invoices</span></a><a href="registration.html"><b>Registration</b><span>Sign-ups, waivers, groups and rosters</span></a><a href="communication.html"><b>Communication</b><span>Announcements, email and messages</span></a><a href="volunteers.html"><b>Volunteers and events</b><span>Shifts, hours, RSVPs and fees</span></a><a href="performance.html"><b>Performance</b><span>Best times, cuts, records and goals</span></a><a href="families.html"><b>Families</b><span>Parent and swimmer portals</span></a><a href="website.html"><b>Team website</b><span>A public page and a phone app</span></a></div></div>
+    <a href="season.html">A season</a><a href="switch.html">Switching</a><a href="safety.html">Safety</a><a href="faq.html">FAQ</a>
+    <a class="btn" href="waitlist.html">Join the waitlist</a>
+  </nav>
+</header>
+<main>
+
+<section class="page-hero"><canvas id="water" aria-hidden="true"></canvas><div class="fallback"></div><div class="in"><h1 class="d1" style="max-width:11ch">Meet day without the spreadsheet.</h1><div class="chips" aria-label="Meet file formats"><span class="chip hot">SD3</span><span class="chip">HY3</span><span class="chip">ZIP</span></div><p class="lede">Open a host’s file to build your meet. Send entries back in the format they expect.</p></div></section>
+
+<section class="stage rise" data-len="300vh" aria-label="Meet page with dates, commitment deadline and open items">
+  <div class="pin">
+    <div class="shot" data-r="0.02,0.55"><div class="win"><picture><source media="(max-width:760px)" srcset="assets/img/m-meets.jpg"><img src="assets/img/meet-detail.jpg" alt="Meet page with dates, commitment deadline and open items" decoding="async"></picture></div></div>
+    <div class="calls"><div class="call" data-r="0.55,0.68">Deadline and who hasn’t answered<span>See every family still waiting.</span></div><div class="call" data-r="0.66,0.79">Sessions and events from the host’s file<span>Add any missing event by hand.</span></div><div class="call" data-r="0.77,0.9">Entries and what’s still open<span>Approve before the lock.</span></div></div>
+  </div>
+</section>
+<section class="stage say" data-len="300vh"><div class="pin"><p>Open the host’s file. Collect commitments. Approve entries. Send the file back. Import the results.</p></div></section>
+
+<section class="stage" data-len="420vh" data-steps="3" aria-label="How a meet moves through aquify">
+  <div class="pin"><div class="split">
+    <div class="txt">
+      <h2 class="d2">From the family’s yes to the host’s file.</h2>
+      <div class="steps">
+        <div class="step">Parents commit from their phones<small>Each swimmer’s family answers yes or no. Yes opens the event list for that swimmer.</small></div>
+        <div class="step">Coaches review every entry<small>Approve, change or reject with a reason before commitments lock.</small></div>
+        <div class="step">Download the entry file<small>The meet’s entries, ready in the format the host asked for.</small></div>
+      </div>
+    </div>
+    <div class="layers">
+      <div class="win" ><img src="assets/img/portal-meets.jpg" alt="Parent portal showing a meet that needs a response" loading="lazy" decoding="async"></div>
+      <div class="win" ><img src="assets/img/meet-detail.jpg" alt="Meet page with commitment deadline and progress" loading="lazy" decoding="async"></div>
+      <div class="win" style="background:var(--deep)"><img src="assets/img/meet-detail.jpg" alt="Meet page, entries finalized" loading="lazy" decoding="async">
+        <div class="fileflow" data-r="0.7,0.88"><i>SD3</i><div><b>Winter Invitational.sd3</b><br><span>Ready to send to the host</span></div></div></div>
+    </div>
+  </div></div>
+</section>
+
+<section class="stage" data-len="340vh" data-steps="2">
+  <div class="pin"><div class="split">
+    <div class="txt"><h2 class="d2">Results come back in.</h2><div class="steps"><div class="step">Matched to your swimmers<small>aquify matches each swim to your swimmer by USA Swimming ID, then by name and birthday, and lists anything it couldn’t match.</small></div><div class="step">Best times and top times update<small>Every swimmer’s best times refresh, and the fastest swims by age are ready the same day.</small></div></div></div>
+    <div class="layers"><div class="win" ><img src="assets/img/performance.jpg" alt="Best times for every swimmer" loading="lazy" decoding="async"></div><div class="win" ><img src="assets/img/top-times.jpg" alt="Top times by event for women, open age group" loading="lazy" decoding="async"></div></div>
+  </div></div>
+</section>
+
+<section class="stage" data-len="260vh" aria-label="Team records for each stroke">
+  <div class="pin" style="display:grid;place-items:center">
+    <div class="zoomwin" style="--ox:18%;--oy:24%" data-r="0.08,0.85"><div class="win" ><img src="assets/img/records.jpg" alt="Team records for each stroke" loading="lazy" decoding="async"></div></div>
+    <div class="cap" data-r="0.5,0.72"><h2 class="d3">Records are checked every time you import results.</h2></div>
+  </div>
+</section>
+<section class="sect tight"><div class="wrap row flip">
+  <div data-par="0.04"><div class="phones" style="justify-content:center"><div class="phone"><div class="screen" style="--sb:#fcfbfa;--sbb:#f1e7d8;--ind:rgba(0,0,0,.35)"><img src="assets/img/m-volunteer.jpg" alt="Parent view of volunteer shifts for the meet" loading="lazy" decoding="async"></div></div></div></div>
+  <div class="txt"><h2 class="d2">Staff the meet from the same page.</h2><p class="copy">Post timer and runner shifts on the meet itself. Families sign up from their phones, and you see who’s covered and who’s still short.</p><ul class="facts"><li>Shifts have a limit, so a job is never overbooked.</li><li>Hours count toward each family’s season requirement.</li></ul></div>
+</div></section>
+<section class="sect tight"><div class="wrap"><ul class="index"><li><b>Right events only</b><span>Swimmers only see events their age and gender allow.</span></li><li><b>Coach changes</b><span>Edit an entry before commitments close. aquify remembers who changed what.</span></li><li><b>Meet fees</b><span>Charge a fee per event or a flat fee per swimmer, and it lands on the family’s invoice.</span></li><li><b>Protected records</b><span>Mark a record as protected, and a faster swim waits for an admin’s okay before it replaces it.</span></li><li><b>Relay builder</b><span>Suggests the fastest four swimmers for a relay from their best times.</span></li><li><b>Your own files</b><span>Start a meet from SD3, HY3 or ZIP, and import results from any of them.</span></li></ul></div></section>
+
+<section class="cta"><div class="in">
+  <h2 class="d1" style="max-width:9ch">Ready when your club is.</h2>
+  <p class="lede">We’re opening aquify to clubs in order. Leave your email and we’ll tell you when it’s your turn.</p>
+  <a class="btn" href="waitlist.html" style="height:60px;padding:0 34px;font-size:18px">Join the waitlist</a>
+</div></section>
+
+</main>
+<footer class="foot">
+  <div class="foot-grid">
+    <div class="foot-lead">
+      <p class="lede">Swim club software for coaches and admins.</p>
+      <a class="btn" href="waitlist.html">Join the waitlist</a>
+    </div>
+    <nav aria-label="Footer">
+      <div><b>Run the team</b><a href="coaches.html">Coaches</a><a href="meets.html">Meets</a><a href="registration.html">Registration</a><a href="communication.html">Communication</a></div>
+      <div><b>More features</b><a href="billing.html">Billing</a><a href="volunteers.html">Volunteers and events</a><a href="performance.html">Performance</a><a href="families.html">Families</a><a href="website.html">Team website</a></div>
+      <div><b>Learn more</b><a href="season.html">A season</a><a href="switch.html">Switching</a><a href="safety.html">Safety</a><a href="faq.html">FAQ</a><a href="people.html">Who it’s for</a></div>
+    </nav>
+  </div>
+  <div class="foot-mark" aria-hidden="true">aquify.</div>
+  <small>Every screen on this site shows sample data for a made-up club. No real swimmers, families or payments.</small>
+</footer>
+<script src="assets/main.js" defer></script>
+</body>
+</html>

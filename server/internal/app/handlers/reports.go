@@ -8,11 +8,11 @@ import (
 	"strings"
 	"time"
 
+	"github.com/go-chi/chi/v5"
 	"github.com/luryann/aquify/server/internal/app/audit"
 	"github.com/luryann/aquify/server/internal/app/httpx"
 	appmiddleware "github.com/luryann/aquify/server/internal/app/middleware"
 	"github.com/luryann/aquify/server/internal/app/reports"
-	"github.com/go-chi/chi/v5"
 )
 
 type ReportsHandlers struct {

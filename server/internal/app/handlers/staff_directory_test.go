@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"context"
+	"fmt"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -13,6 +14,16 @@ type countingKC struct {
 	keycloak.Client
 	listCalls atomic.Int32
 	roleCalls atomic.Int32
+	// adminMemberCalls counts "members of the admin role" queries: exactly one
+	// per uncached ListStaff.
+	adminMemberCalls atomic.Int32
+}
+
+func (c *countingKC) ListUsersWithRealmRole(ctx context.Context, orgID, role string) ([]keycloak.User, error) {
+	if role == "admin" {
+		c.adminMemberCalls.Add(1)
+	}
+	return c.Client.ListUsersWithRealmRole(ctx, orgID, role)
 }
 
 func (c *countingKC) ListUsers(ctx context.Context, orgID, search string, limit, offset int) ([]keycloak.User, error) {
@@ -74,23 +85,22 @@ func TestCachedStaffListerCachesPerOrgWithinTTLAndExpires(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	if got := kc.listCalls.Load(); got != 1 {
+	if got := kc.adminMemberCalls.Load(); got != 1 {
 		t.Fatalf("Keycloak list calls after 50 requests = %d, want 1", got)
 	}
-	roleCalls := kc.roleCalls.Load()
 
 	now = now.Add(59 * time.Second)
 	_, _ = cache.ListStaff(context.Background(), "org-1")
-	if kc.listCalls.Load() != 1 {
+	if kc.adminMemberCalls.Load() != 1 {
 		t.Fatal("cache expired early")
 	}
 	now = now.Add(2 * time.Second)
 	_, _ = cache.ListStaff(context.Background(), "org-1")
-	if kc.listCalls.Load() != 2 || kc.roleCalls.Load() <= roleCalls {
-		t.Fatalf("cache should refresh after TTL: list=%d", kc.listCalls.Load())
+	if kc.adminMemberCalls.Load() != 2 {
+		t.Fatalf("cache should refresh after TTL: list=%d", kc.adminMemberCalls.Load())
 	}
 	_, _ = cache.ListStaff(context.Background(), "org-2")
-	if kc.listCalls.Load() != 3 {
+	if kc.adminMemberCalls.Load() != 3 {
 		t.Fatal("cache must be per org")
 	}
 }
@@ -113,5 +123,25 @@ func TestCountOrgAdminsUsesOneRoleMembershipQueryNotPerUserLookups(t *testing.T)
 	failing.GetUserRealmRolesErr = context.DeadlineExceeded
 	if _, err := (&UserHandlers{kc: failing}).countOrgAdmins(context.Background(), "org-1"); err == nil {
 		t.Fatal("a lookup failure must be returned (fail closed), not folded into a count")
+	}
+}
+
+func TestStaffDirectoryFindsStaffBeyondFirst500Accounts(t *testing.T) {
+	stub := keycloak.NewStubClient()
+	for i := 0; i < 700; i++ {
+		stub.AddUser(keycloak.User{ID: fmt.Sprintf("a-parent-%04d", i), Email: fmt.Sprintf("p%04d@example.com", i), Enabled: true,
+			Attributes: map[string][]string{"org_id": {"org-1"}}})
+	}
+	stub.AddUser(keycloak.User{ID: "z-late-coach", Email: "late@example.com", FirstName: "Late", LastName: "Coach", Enabled: true,
+		Attributes: map[string][]string{"org_id": {"org-1"}}})
+	if err := stub.AssignRealmRole(context.Background(), "z-late-coach", "coach"); err != nil {
+		t.Fatal(err)
+	}
+	staff, err := NewStaffDirectory(stub).ListStaff(context.Background(), "org-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(staff) != 1 || staff[0].ID != "z-late-coach" || len(staff[0].Roles) != 1 || staff[0].Roles[0] != "coach" {
+		t.Fatalf("staff = %+v, want the coach beyond the first 500 accounts", staff)
 	}
 }

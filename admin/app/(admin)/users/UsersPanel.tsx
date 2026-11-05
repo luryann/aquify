@@ -7,7 +7,7 @@ import { Modal } from '@/components/ui/Modal'
 import { useSession } from '@/lib/session'
 import { useApiClient } from '@/lib/api'
 import {
-  fetchUsers,
+  fetchAllUsers,
   inviteUser,
   createUser,
   type UserRecord,
@@ -106,7 +106,7 @@ export function UsersPanel() {
     const role = roleFilter !== 'all' ? roleFilter : undefined
     setLoading(true)
     setError(null)
-    fetchUsers(api, session.user.orgId, { limit: 200, role })
+    fetchAllUsers(api, session.user.orgId, { role })
       .then(({ users: fetched, source }) => {
         if (loadRequestIdRef.current !== requestId) return
         setUsers(fetched)

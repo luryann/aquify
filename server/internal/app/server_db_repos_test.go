@@ -20,6 +20,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/luryann/aquify/server/internal/app/billing"
 	"github.com/luryann/aquify/server/internal/app/comms"
 	"github.com/luryann/aquify/server/internal/app/compliance"
@@ -32,7 +33,6 @@ import (
 	"github.com/luryann/aquify/server/internal/app/training"
 	"github.com/luryann/aquify/server/internal/storage"
 	"github.com/luryann/aquify/server/internal/testutil"
-	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 // openTestPool returns a pgxpool.Pool from DATABASE_URL. The test is skipped
@@ -53,6 +53,12 @@ func openTestPool(t *testing.T) *pgxpool.Pool {
 		t.Fatalf("DATABASE_URL is set but the database is unreachable: %v", err)
 	}
 	t.Cleanup(func() { pool.Close() })
+	// Tenant tables FK to orgs(id): register the fixed orgs these tests use.
+	for _, id := range []string{testOrgID, "00000000-0000-0000-0000-00000000a001", "00000000-0000-0000-0000-0000000a0d17"} {
+		if _, err := pool.Exec(context.Background(), `INSERT INTO orgs (id) VALUES ($1::uuid) ON CONFLICT (id) DO NOTHING`, id); err != nil {
+			t.Fatalf("register test org %s: %v", id, err)
+		}
+	}
 	return pool
 }
 
@@ -915,6 +921,10 @@ func TestDBRepoMeets_RoundTrip(t *testing.T) {
 	}
 
 	svc2 := meets.NewServiceWithPool(pool)
+	// A new instance loads clubs on demand; Refresh is the explicit full load.
+	if err := svc2.Refresh(context.Background()); err != nil {
+		t.Fatalf("Refresh: %v", err)
+	}
 	ms := svc2.SnapshotMeets(testOrgID)
 	found := false
 	for _, m := range ms {
@@ -1079,6 +1089,9 @@ func TestDBRepoBilling_RoundTrip(t *testing.T) {
 	}
 
 	svc2 := billing.NewServiceWithPool(pool)
+	if err := svc2.Refresh(context.Background()); err != nil {
+		t.Fatalf("Refresh: %v", err)
+	}
 	invs := svc2.SnapshotInvoices(testOrgID)
 	found := false
 	for _, i := range invs {

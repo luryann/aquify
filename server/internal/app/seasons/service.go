@@ -5,8 +5,10 @@ import (
 	"context"
 	"errors"
 	"sort"
+	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -17,6 +19,7 @@ import (
 var (
 	ErrNotFound      = errors.New("season not found")
 	ErrInvalidStatus = errors.New("season status must be active, upcoming, or completed")
+	ErrInvalidName   = errors.New("season name is required (max 120 characters)")
 	ErrInvalidDates  = errors.New("season dates must be YYYY-MM-DD with start_date on or before end_date")
 )
 
@@ -83,6 +86,10 @@ func NewServiceWithPool(pool *pgxpool.Pool) *Service {
 
 // Create persists a new season record.
 func (s *Service) Create(orgID, name, startDate, endDate, status, goals, createdBy string) (*Season, error) {
+	name = strings.TrimSpace(name)
+	if name == "" || utf8.RuneCountInString(name) > 120 {
+		return nil, ErrInvalidName
+	}
 	if !validStatuses[status] {
 		return nil, ErrInvalidStatus
 	}
@@ -191,7 +198,11 @@ func validateDates(start, end string) error {
 
 func applyUpdates(season *Season, updates SeasonUpdates) error {
 	if updates.Name != nil {
-		season.Name = *updates.Name
+		n := strings.TrimSpace(*updates.Name)
+		if n == "" || utf8.RuneCountInString(n) > 120 {
+			return ErrInvalidName
+		}
+		season.Name = n
 	}
 	if updates.StartDate != nil {
 		season.StartDate = *updates.StartDate

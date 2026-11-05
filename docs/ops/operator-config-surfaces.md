@@ -147,7 +147,7 @@ These settings are controlled by environment variables in `/opt/aquify/.env.prod
 
 | Variable | Description |
 |---|---|
-| `SECURITY_IMPERSONATION_ENABLED` | Enable admin impersonation — `false` by default; requires owner MFA when enabled |
+| `SECURITY_IMPERSONATION_ENABLED` | Enable admin impersonation — currently has no effect: impersonation headers are rejected unconditionally with 403 `impersonation_unavailable` |
 | `TURNSTILE_SECRET_KEY` | Cloudflare Turnstile server-side key for login bot protection |
 
 ---

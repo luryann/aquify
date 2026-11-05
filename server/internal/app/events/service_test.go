@@ -1,6 +1,7 @@
 package events
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"strings"
@@ -306,13 +307,13 @@ func TestFeedTokenLifecycle(t *testing.T) {
 
 func TestRenderICS(t *testing.T) {
 	end := baseNow.Add(90 * time.Minute)
-	out := RenderICS("Club", []CalendarItem{
+	out := RenderICS("Club", "America/Los_Angeles", []CalendarItem{
 		{UID: "a@x", Title: "Meet; finals, day 1", AllDay: true, StartDate: "2026-10-10", EndDate: "2026-10-11"},
 		{UID: "b@x", Title: "Banquet", Start: baseNow, End: &end, Location: "Hall\nRoom 2", Cancelled: true,
 			Description: strings.Repeat("long description ", 10)},
 	}, baseNow)
 	for _, want := range []string{
-		"BEGIN:VCALENDAR\r\n", "SUMMARY:Meet\\; finals\\, day 1\r\n",
+		"BEGIN:VCALENDAR\r\n", "X-WR-TIMEZONE:America/Los_Angeles\r\n", "SUMMARY:Meet\\; finals\\, day 1\r\n",
 		"DTSTART;VALUE=DATE:20261010\r\n", "DTEND;VALUE=DATE:20261012\r\n",
 		"DTSTART:20261001T120000Z\r\n", "DTEND:20261001T133000Z\r\n",
 		"LOCATION:Hall\\nRoom 2\r\n", "STATUS:CANCELLED\r\n", "END:VCALENDAR\r\n",
@@ -408,5 +409,53 @@ func TestAllDayEventListedThroughItsDay(t *testing.T) {
 	list, _ := s.List("org", ListFilter{From: &from})
 	if len(list) != 1 {
 		t.Fatalf("all-day event should still be listed, got %d", len(list))
+	}
+}
+
+func TestCapacityCheckUsesNewStatus(t *testing.T) {
+	s := newTestService()
+	in := validInput()
+	in.Capacity = intPtr(50)
+	e, _ := s.Create("org", "admin", in)
+	if _, err := s.Respond("org", e.ID, "p1", RSVPInput{HouseholdID: "h1", Response: "yes", GuestCount: 3}, true); err != nil {
+		t.Fatal(err)
+	}
+	// Cancelling while lowering capacity below headcount is allowed.
+	in.Capacity = intPtr(2)
+	in.Status = "cancelled"
+	if _, err := s.Update("org", e.ID, "admin", in); err != nil {
+		t.Fatalf("cancel with low capacity should succeed, got %v", err)
+	}
+	// Un-cancelling with capacity below headcount is rejected.
+	in.Status = "scheduled"
+	if _, err := s.Update("org", e.ID, "admin", in); !errors.Is(err, ErrCapacityBelowYes) {
+		t.Fatalf("expected ErrCapacityBelowYes on un-cancel, got %v", err)
+	}
+}
+
+func TestFeeDueDateUsesClubTimezone(t *testing.T) {
+	s := newTestService()
+	s.SetTimezoneResolver(func(string) string { return "America/Los_Angeles" })
+	ev := &Event{OrgID: "org", StartsAt: time.Date(2026, 11, 11, 3, 0, 0, 0, time.UTC)}
+	if got := s.feeDueDate(ev); got != "2026-11-10" {
+		t.Fatalf("got %s", got)
+	}
+	ev.AllDay = true
+	if got := s.feeDueDate(ev); got != "2026-11-11" {
+		t.Fatalf("all-day should keep UTC date, got %s", got)
+	}
+}
+
+func TestEraseHouseholdDataRemovesRSVPs(t *testing.T) {
+	s := newTestService()
+	e, _ := s.Create("org", "admin", validInput())
+	if _, err := s.Respond("org", e.ID, "p1", RSVPInput{HouseholdID: "h1", Response: "yes", Note: "private"}, true); err != nil {
+		t.Fatal(err)
+	}
+	if n, err := s.EraseHouseholdData(context.Background(), "org", "h1"); err != nil || n != 1 {
+		t.Fatalf("n=%d err=%v", n, err)
+	}
+	if rs, _ := s.ListRSVPs("org", e.ID); len(rs) != 0 {
+		t.Fatalf("rsvps remain: %v", rs)
 	}
 }

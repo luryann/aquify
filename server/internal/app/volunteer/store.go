@@ -40,6 +40,9 @@ type store interface {
 	reserveBuyout(ctx context.Context, b *Buyout) error
 	updateBuyout(ctx context.Context, b *Buyout) error
 	deleteBuyout(ctx context.Context, orgID, id string) error
+
+	// eraseHousehold deletes a household's volunteer signups (personal names/notes) and returns the count.
+	eraseHousehold(ctx context.Context, orgID, householdID string) (int, error)
 }
 
 // ─── In-memory store ──────────────────────────────────────────────────────────
@@ -158,6 +161,11 @@ func (m *memoryStore) deleteJob(_ context.Context, orgID, id string) error {
 	if !ok || j.OrgID != orgID {
 		return ErrJobNotFound
 	}
+	for _, su := range m.signups {
+		if su.JobID == id && su.Status == StatusWorked {
+			return ErrJobHasWorkedSignups
+		}
+	}
 	delete(m.jobs, id)
 	for sid, su := range m.signups {
 		if su.JobID == id {
@@ -165,6 +173,19 @@ func (m *memoryStore) deleteJob(_ context.Context, orgID, id string) error {
 		}
 	}
 	return nil
+}
+
+func (m *memoryStore) eraseHousehold(_ context.Context, orgID, householdID string) (int, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	n := 0
+	for id, su := range m.signups {
+		if su.OrgID == orgID && su.HouseholdID == householdID {
+			delete(m.signups, id)
+			n++
+		}
+	}
+	return n, nil
 }
 
 func matchSignup(su *Signup, orgID string, f SignupFilter) bool {

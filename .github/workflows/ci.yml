@@ -86,7 +86,9 @@ jobs:
         shell: bash
         run: |
           set +e
-          go test ./... 2>&1 | tee /tmp/server-test.log
+          # -p 1: the database-backed tests each build a private schema; running
+          # many packages at once exhausts Postgres shared memory on DROP SCHEMA.
+          go test -p 1 ./... 2>&1 | tee /tmp/server-test.log
           rc=${PIPESTATUS[0]}
           # Repeat failures as annotations so they show on the run summary.
           grep -E '^(--- FAIL|FAIL|panic:)|_test\.go:[0-9]+' /tmp/server-test.log | head -20 | while IFS= read -r line; do

@@ -86,11 +86,11 @@ func (s *Service) ListFeeSchedules(orgID string, principal *appmiddleware.Princi
 	if err := s.requireAdmin(principal); err != nil {
 		return nil, err
 	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if err := s.refreshLocked(context.Background()); err != nil {
+	if err := s.refreshForRead(orgID); err != nil {
 		return nil, err
 	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	out := make([]*FeeSchedule, 0)
 	for _, sc := range s.finance.schedules {
 		if sc.OrgID == orgID {
@@ -115,11 +115,11 @@ func (s *Service) GetFeeSchedule(orgID string, principal *appmiddleware.Principa
 	if err := s.requireAdmin(principal); err != nil {
 		return nil, err
 	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if err := s.refreshLocked(context.Background()); err != nil {
+	if err := s.refreshForRead(orgID); err != nil {
 		return nil, err
 	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	sc, ok := s.finance.schedules[scheduleID]
 	if !ok || sc.OrgID != orgID {
 		return nil, ErrFeeScheduleNotFound
@@ -167,11 +167,11 @@ func (s *Service) UpdateFeeSchedule(orgID, actorID string, principal *appmiddlew
 	if err != nil {
 		return nil, nil, err
 	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if err := s.refreshLocked(context.Background()); err != nil {
+	if err := s.refreshForRead(orgID); err != nil {
 		return nil, nil, err
 	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	sc, ok := s.finance.schedules[scheduleID]
 	if !ok || sc.OrgID != orgID {
 		return nil, nil, ErrFeeScheduleNotFound
@@ -208,11 +208,11 @@ func (s *Service) ArchiveFeeSchedule(orgID, actorID string, principal *appmiddle
 	if err := s.requireAdmin(principal); err != nil {
 		return nil, err
 	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if err := s.refreshLocked(context.Background()); err != nil {
+	if err := s.refreshForRead(orgID); err != nil {
 		return nil, err
 	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	sc, ok := s.finance.schedules[scheduleID]
 	if !ok || sc.OrgID != orgID {
 		return nil, ErrFeeScheduleNotFound
@@ -271,11 +271,11 @@ func (s *Service) ListDiscountRules(orgID string, principal *appmiddleware.Princ
 	if err := s.requireAdmin(principal); err != nil {
 		return nil, err
 	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if err := s.refreshLocked(context.Background()); err != nil {
+	if err := s.refreshForRead(orgID); err != nil {
 		return nil, err
 	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	out := make([]*DiscountRule, 0)
 	for _, rule := range s.finance.rules {
 		if rule.OrgID == orgID {
@@ -329,11 +329,11 @@ func (s *Service) UpdateDiscountRule(orgID, actorID string, principal *appmiddle
 	if err != nil {
 		return nil, nil, err
 	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if err := s.refreshLocked(context.Background()); err != nil {
+	if err := s.refreshForRead(orgID); err != nil {
 		return nil, nil, err
 	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	rule, ok := s.finance.rules[ruleID]
 	if !ok || rule.OrgID != orgID {
 		return nil, nil, ErrDiscountRuleNotFound
@@ -362,11 +362,11 @@ func (s *Service) ArchiveDiscountRule(orgID, actorID string, principal *appmiddl
 	if err := s.requireAdmin(principal); err != nil {
 		return nil, err
 	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if err := s.refreshLocked(context.Background()); err != nil {
+	if err := s.refreshForRead(orgID); err != nil {
 		return nil, err
 	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	rule, ok := s.finance.rules[ruleID]
 	if !ok || rule.OrgID != orgID {
 		return nil, ErrDiscountRuleNotFound
@@ -392,11 +392,11 @@ func (s *Service) ListAdjustments(orgID string, principal *appmiddleware.Princip
 	if err := s.requireAdmin(principal); err != nil {
 		return nil, err
 	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if err := s.refreshLocked(context.Background()); err != nil {
+	if err := s.refreshForRead(orgID); err != nil {
 		return nil, err
 	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	out := make([]*Adjustment, 0)
 	for _, a := range s.finance.adjustments {
 		if a.OrgID != orgID || (status != "" && a.Status != status) || (householdID != "" && a.HouseholdID != householdID) {
@@ -453,7 +453,7 @@ func (s *Service) CreateAdjustment(orgID, actorID string, principal *appmiddlewa
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.repo != nil {
-		if err := upsertAdjustment(context.Background(), s.repo.pool, a); err != nil {
+		if err := upsertAdjustment(context.Background(), s.repo.at(a.OrgID), a); err != nil {
 			return nil, err
 		}
 	}
@@ -467,11 +467,11 @@ func (s *Service) VoidAdjustment(orgID, actorID string, principal *appmiddleware
 	if err := s.requireAdmin(principal); err != nil {
 		return nil, err
 	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if err := s.refreshLocked(context.Background()); err != nil {
+	if err := s.refreshForRead(orgID); err != nil {
 		return nil, err
 	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	a, ok := s.finance.adjustments[adjustmentID]
 	if !ok || a.OrgID != orgID {
 		return nil, ErrAdjustmentNotFound
@@ -484,9 +484,9 @@ func (s *Service) VoidAdjustment(orgID, actorID string, principal *appmiddleware
 	updated.UpdatedAt = time.Now().UTC()
 	updated.UpdatedBy = actorID
 	if s.repo != nil {
-		tag, err := s.repo.pool.Exec(context.Background(),
-			`UPDATE billing_adjustments SET status = 'voided', updated_at = $2, updated_by = $3 WHERE id = $1::uuid AND status = 'pending'`,
-			a.ID, updated.UpdatedAt, actorID)
+		tag, err := s.repo.at(orgID).Exec(context.Background(),
+			`UPDATE billing_adjustments SET status = 'voided', updated_at = $2, updated_by = $3 WHERE id = $1::uuid AND org_id = $4::uuid AND status = 'pending'`,
+			a.ID, updated.UpdatedAt, actorID, a.OrgID)
 		if err != nil {
 			return nil, err
 		}
@@ -513,11 +513,11 @@ func (s *Service) GetBillingSettings(orgID string, principal *appmiddleware.Prin
 	if err := s.requireAdmin(principal); err != nil {
 		return nil, err
 	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if err := s.refreshLocked(context.Background()); err != nil {
+	if err := s.refreshForRead(orgID); err != nil {
 		return nil, err
 	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	cp := *s.settingsLocked(orgID)
 	return &cp, nil
 }
@@ -539,11 +539,11 @@ func (s *Service) UpdateBillingSettings(orgID, actorID string, principal *appmid
 	if meetFeeStatus == "" {
 		meetFeeStatus = "draft"
 	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if err := s.refreshLocked(context.Background()); err != nil {
+	if err := s.refreshForRead(orgID); err != nil {
 		return nil, nil, err
 	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	before := *s.settingsLocked(orgID)
 	st := &BillingSettings{
 		OrgID: orgID, LateFeeEnabled: input.LateFeeEnabled, LateFeeGraceDays: input.LateFeeGraceDays,
@@ -569,7 +569,7 @@ func (s *Service) UpdateBillingSettings(orgID, actorID string, principal *appmid
 func (s *Service) releaseInvoiceFinanceLocked(ctx context.Context, orgID, invoiceID, actorID string) error {
 	now := time.Now().UTC()
 	if s.repo != nil {
-		if err := s.repo.inTx(ctx, func(tx pgx.Tx) error {
+		if err := s.repo.inTx(ctx, orgID, func(tx pgx.Tx) error {
 			if err := releaseCharges(ctx, tx, invoiceID, now); err != nil {
 				return err
 			}

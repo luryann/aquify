@@ -3,9 +3,9 @@ package handlers
 import (
 	"net/http"
 
+	chimiddleware "github.com/go-chi/chi/v5/middleware"
 	"github.com/luryann/aquify/server/internal/app/httpx"
 	appmiddleware "github.com/luryann/aquify/server/internal/app/middleware"
-	chimiddleware "github.com/go-chi/chi/v5/middleware"
 )
 
 func AuthzPing(w http.ResponseWriter, r *http.Request) {

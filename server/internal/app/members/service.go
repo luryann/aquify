@@ -6,16 +6,16 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"github.com/luryann/aquify/server/internal/dbutil"
 	"log/slog"
 	"slices"
 	"sort"
 	"strings"
-	"sync"
 	"time"
 
-	appmiddleware "github.com/luryann/aquify/server/internal/app/middleware"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
+	appmiddleware "github.com/luryann/aquify/server/internal/app/middleware"
 )
 
 var (
@@ -33,11 +33,41 @@ var (
 
 const maxSwimmerBioLength = 400
 
+// Caps on parent-writable free text, so one account cannot bloat the per-org
+// cache that is reloaded on nearly every request.
+const (
+	maxShortFieldLength     = 100
+	maxEmailLength          = 254
+	maxNotesLength          = 2000
+	maxGroupCodeLength      = 32
+	maxContactsPerHousehold = 20
+)
+
+var ErrFieldTooLong = errors.New("field exceeds maximum length")
+
+func checkLengths(pairs ...any) error {
+	for i := 0; i+1 < len(pairs); i += 2 {
+		name, _ := pairs[i].(string)
+		limit := 0
+		switch v := pairs[i+1].(type) {
+		case [2]any:
+			val, _ := v[0].(string)
+			limit, _ = v[1].(int)
+			if len([]rune(val)) > limit {
+				return fmt.Errorf("%w: %s must be %d characters or fewer", ErrFieldTooLong, name, limit)
+			}
+		}
+	}
+	return nil
+}
+
 type Service struct {
+	// orgCache bounds how many clubs' rows stay cached (idle TTL + LRU cap).
+	orgCache dbutil.OrgCache
 	// syncHook runs after a reload has read Postgres and before it replaces the
 	// in-memory state; tests use it to land a write inside that window.
 	syncHook             func()
-	mu                   sync.RWMutex
+	mu                   dbutil.GenMutex
 	repo                 *Repository // nil = in-memory only
 	households           map[string]Household
 	contacts             map[string]Contact
@@ -79,18 +109,16 @@ func NewService() *Service {
 	}
 }
 
-// NewServiceWithPool creates a DB-backed members service. On construction it
-// loads all existing records from the database into the in-memory maps, then
-// every subsequent write is persisted to the database before updating memory.
+// NewServiceWithPool creates a DB-backed members service. Each club is loaded on demand
+// (syncFromDB), and every write is persisted to the database before updating memory.
 func NewServiceWithPool(pool *pgxpool.Pool) *Service {
 	s := NewService()
 	if pool == nil {
 		return s
 	}
 	s.repo = newRepository(pool)
-	if err := s.syncFromDB(context.Background()); err != nil {
-		slog.Error("members: failed to load initial state from DB", "error", err)
-	}
+	// No eager load: every request path loads its own org on demand (syncFromDB(ctx, orgID)),
+	// so the process holds only the clubs it has served, not every club's data.
 	return s
 }
 
@@ -101,27 +129,81 @@ func (s *Service) SetSyncHookForTest(fn func()) { s.syncHook = fn }
 // Refresh reloads the in-memory state from Postgres so trusted in-process
 // readers (the worker-side data export) observe writes made by another
 // instance. No-op in in-memory mode.
-func (s *Service) Refresh(ctx context.Context) error { return s.syncFromDB(ctx) }
+// Refresh reloads every club (an operator/test hook; request paths use RefreshOrg).
+func (s *Service) Refresh(ctx context.Context) error { return s.syncFromDB(ctx, "") }
+
+// RefreshOrg reloads one club from Postgres. Prefer it to Refresh on any path that already
+// knows its club: Refresh reads every club.
+func (s *Service) RefreshOrg(ctx context.Context, orgID string) error {
+	return s.syncFromDB(ctx, orgID)
+}
 
 // syncFromDB reloads the in-memory maps from the database (no-op without a repository).
-func (s *Service) syncFromDB(ctx context.Context) error {
+// syncFromDB reloads the cache from the database. A non-empty orgID reloads and
+// replaces only that org's rows (the normal request path); an empty orgID reloads
+// every org (Refresh, and the few lookups made before an org is known).
+func (s *Service) syncFromDB(ctx context.Context, orgID string) error {
 	if s.repo == nil {
 		return nil
 	}
-	// Load under the write lock so a concurrent write cannot be overwritten by an
-	// older snapshot (writers persist and update memory while holding it).
+	// Scoped reloads read Postgres WITHOUT holding the service lock, so a slow load for
+	// one club does not block the others. A writer that ran during the load bumps the
+	// write generation, and then the possibly-stale snapshot is discarded and re-read;
+	// after a few conflicts it falls back to loading under the lock (below).
+	if orgID != "" {
+		done, err := dbutil.ReloadUnlocked(&s.mu, s.syncHook, func() (func(), error) {
+			households, contacts, swimmers, links, err := s.repo.LoadAll(ctx, orgID)
+			if err != nil {
+				return nil, err
+			}
+			return func() { s.replaceOrgLocked(orgID, households, contacts, swimmers, links) }, nil
+		})
+		if done || err != nil {
+			return err
+		}
+	}
+	// Full reload, or a scoped one that kept losing to writers: load under the write
+	// lock so a concurrent write cannot be overwritten by an older snapshot (writers
+	// persist and update memory while holding it).
 	s.mu.Lock()
-	defer s.mu.Unlock()
-	households, contacts, swimmers, links, err := s.repo.LoadAll(ctx)
+	defer s.mu.UnlockWithoutBump()
+	households, contacts, swimmers, links, err := s.repo.LoadAll(ctx, orgID)
 	if err != nil {
 		return err
 	}
 	if s.syncHook != nil {
 		s.syncHook()
 	}
-	s.resetDBBackedStateLocked()
-	s.populateDBBackedStateLocked(households, contacts, swimmers, links)
+	if orgID == "" {
+		s.resetDBBackedStateLocked()
+		s.populateDBBackedStateLocked(households, contacts, swimmers, links)
+		return nil
+	}
+	s.replaceOrgLocked(orgID, households, contacts, swimmers, links)
 	return nil
+}
+
+// replaceOrgLocked swaps one org's cached rows for freshly loaded ones and evicts
+// clubs that are idle or beyond the cache cap. The caller holds the write lock.
+func (s *Service) replaceOrgLocked(orgID string, households []Household, contacts []Contact, swimmers []Swimmer, links []SwimmerGroupLink) {
+	s.dropOrgLocked(orgID)
+	s.populateDBBackedStateLocked(households, contacts, swimmers, links)
+	s.orgCache.Touch(orgID, s.dropOrgLocked)
+}
+
+// SetOrgCacheLimits bounds the per-org cache: idle clubs older than ttl and the least
+// recently served clubs beyond maxOrgs are evicted (0 = unlimited). Safe because every
+// request reloads its own org first.
+func (s *Service) SetOrgCacheLimits(ttl time.Duration, maxOrgs int) {
+	s.orgCache.ConfigureLocked(&s.mu, ttl, maxOrgs)
+}
+
+// dropOrgLocked removes one org's cached rows so a scoped reload replaces exactly them.
+func (s *Service) dropOrgLocked(orgID string) {
+	dbutil.DropByOrg(s.households, orgID, func(v Household) string { return v.OrgID })
+	dbutil.DropByOrg(s.contacts, orgID, func(v Contact) string { return v.OrgID })
+	dbutil.DropByOrg(s.swimmers, orgID, func(v Swimmer) string { return v.OrgID })
+	dbutil.DropByOrg(s.swimmerGroupLinks, orgID, func(v SwimmerGroupLink) string { return v.OrgID })
 }
 
 func (s *Service) resetDBBackedStateLocked() {
@@ -245,11 +327,16 @@ type Swimmer struct {
 	KeycloakUserID               string   `json:"keycloak_user_id,omitempty"`
 	// PortalAccessDisabled blocks this swimmer's own sign-in (swimmer role).
 	// Records, registrations and household workflows are unaffected.
-	PortalAccessDisabled bool      `json:"portal_access_disabled"`
-	CreatedAt            time.Time `json:"created_at"`
-	UpdatedAt            time.Time `json:"updated_at"`
-	CreatedBy            string    `json:"created_by"`
-	UpdatedBy            string    `json:"updated_by"`
+	PortalAccessDisabled bool `json:"portal_access_disabled"`
+	// Guardian consent (COPPA): a parent's recorded consent to their child
+	// having their own swimmer account. Required for swimmers under 13.
+	GuardianConsentAt      *time.Time `json:"guardian_consent_at,omitempty"`
+	GuardianConsentBy      string     `json:"guardian_consent_by,omitempty"`
+	GuardianConsentVersion string     `json:"guardian_consent_version,omitempty"`
+	CreatedAt              time.Time  `json:"created_at"`
+	UpdatedAt              time.Time  `json:"updated_at"`
+	CreatedBy              string     `json:"created_by"`
+	UpdatedBy              string     `json:"updated_by"`
 }
 
 type SwimmerView struct {
@@ -287,6 +374,9 @@ type UpdateSwimmerInput struct {
 	EmergencyContactRelationship *string
 	Allergies                    *string
 	PortalAccessDisabled         *bool
+	// GuardianConsent true records the parent's consent (parent role only);
+	// false withdraws it (staff or parent) and unlinks the swimmer's account.
+	GuardianConsent *bool
 }
 
 type SwimmerGroupLink struct {
@@ -336,7 +426,7 @@ func (s *Service) CreateHousehold(principal *appmiddleware.Principal, input Crea
 	if !appmiddleware.HasAnyRole(principal, "admin", "coach", "parent") {
 		return Household{}, ErrForbidden
 	}
-	if err := s.syncFromDB(context.Background()); err != nil {
+	if err := s.syncFromDB(context.Background(), input.OrgID); err != nil {
 		return Household{}, err
 	}
 
@@ -399,7 +489,7 @@ func (s *Service) CreateHousehold(principal *appmiddleware.Principal, input Crea
 // dev stub parent/swimmer principals point at a fixed household that would
 // otherwise never exist; existing records are left untouched.
 func (s *Service) EnsureSeedHousehold(household Household, parentUserID string) error {
-	if err := s.syncFromDB(context.Background()); err != nil {
+	if err := s.syncFromDB(context.Background(), household.OrgID); err != nil {
 		return err
 	}
 	s.mu.Lock()
@@ -428,7 +518,7 @@ func (s *Service) UpdateHousehold(principal *appmiddleware.Principal, orgID, hou
 	if !appmiddleware.HasAnyRole(principal, "admin", "coach", "parent") {
 		return Household{}, ErrForbidden
 	}
-	if err := s.syncFromDB(context.Background()); err != nil {
+	if err := s.syncFromDB(context.Background(), orgID); err != nil {
 		return Household{}, err
 	}
 
@@ -482,7 +572,7 @@ func (s *Service) DeleteHousehold(principal *appmiddleware.Principal, orgID, hou
 	if !appmiddleware.HasAnyRole(principal, "admin") {
 		return Household{}, ErrForbidden
 	}
-	if err := s.syncFromDB(context.Background()); err != nil {
+	if err := s.syncFromDB(context.Background(), orgID); err != nil {
 		return Household{}, err
 	}
 
@@ -500,7 +590,7 @@ func (s *Service) DeleteHousehold(principal *appmiddleware.Principal, orgID, hou
 	}
 
 	if s.repo != nil {
-		if err := s.repo.DeleteHousehold(context.Background(), household.ID, principal.UserID); err != nil {
+		if err := s.repo.DeleteHousehold(context.Background(), household.OrgID, household.ID, principal.UserID); err != nil {
 			return Household{}, fmt.Errorf("delete household: %w", err)
 		}
 	}
@@ -521,7 +611,7 @@ type HouseholdErasureContext struct {
 // linked swimmers) and contact emails for a household, for use by the
 // compliance deletion worker before AnonymizeHousehold scrubs them.
 func (s *Service) GetHouseholdErasureContext(orgID, householdID string) (HouseholdErasureContext, error) {
-	if err := s.syncFromDB(context.Background()); err != nil {
+	if err := s.syncFromDB(context.Background(), orgID); err != nil {
 		return HouseholdErasureContext{}, err
 	}
 
@@ -567,7 +657,7 @@ func (s *Service) GetHouseholdErasureContext(orgID, householdID string) (Househo
 // deletion worker and does not take a principal — the caller (an approved,
 // audited deletion request) has already been authorized.
 func (s *Service) AnonymizeHousehold(orgID, householdID string) error {
-	if err := s.syncFromDB(context.Background()); err != nil {
+	if err := s.syncFromDB(context.Background(), orgID); err != nil {
 		return err
 	}
 
@@ -687,11 +777,19 @@ func scrubAuditPII(m map[string]any) map[string]any {
 	return out
 }
 
+// HouseholdExists reports whether householdID is a household of orgID.
+func (s *Service) HouseholdExists(orgID, householdID string) bool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	_, ok := s.householdLocked(orgID, householdID)
+	return ok
+}
+
 func (s *Service) GetHousehold(principal *appmiddleware.Principal, orgID, householdID string) (Household, error) {
 	if !appmiddleware.HasAnyRole(principal, "admin", "coach", "parent") {
 		return Household{}, ErrForbidden
 	}
-	if err := s.syncFromDB(context.Background()); err != nil {
+	if err := s.syncFromDB(context.Background(), orgID); err != nil {
 		return Household{}, err
 	}
 
@@ -715,7 +813,7 @@ func (s *Service) ListHouseholds(principal *appmiddleware.Principal, orgID strin
 	if !appmiddleware.HasAnyRole(principal, "admin", "coach", "parent", "swimmer") {
 		return nil, ErrForbidden
 	}
-	if err := s.syncFromDB(context.Background()); err != nil {
+	if err := s.syncFromDB(context.Background(), orgID); err != nil {
 		return nil, err
 	}
 
@@ -764,7 +862,7 @@ func (s *Service) AddContact(principal *appmiddleware.Principal, orgID, househol
 	if !appmiddleware.HasAnyRole(principal, "admin", "coach", "parent") {
 		return Contact{}, ErrForbidden
 	}
-	if err := s.syncFromDB(context.Background()); err != nil {
+	if err := s.syncFromDB(context.Background(), orgID); err != nil {
 		return Contact{}, err
 	}
 
@@ -800,6 +898,25 @@ func (s *Service) AddContact(principal *appmiddleware.Principal, orgID, househol
 	if contact.Relationship == "" || contact.FirstName == "" || contact.LastName == "" {
 		return Contact{}, errors.New("relationship, first_name, and last_name are required")
 	}
+	if err := checkLengths(
+		"relationship", [2]any{contact.Relationship, maxShortFieldLength},
+		"first_name", [2]any{contact.FirstName, maxShortFieldLength},
+		"last_name", [2]any{contact.LastName, maxShortFieldLength},
+		"phone", [2]any{contact.PhoneE164, maxShortFieldLength},
+		"email", [2]any{contact.Email, maxEmailLength},
+		"notes", [2]any{contact.Notes, maxNotesLength},
+	); err != nil {
+		return Contact{}, err
+	}
+	existingContacts := 0
+	for _, c := range s.contacts {
+		if c.OrgID == orgID && c.HouseholdID == householdID {
+			existingContacts++
+		}
+	}
+	if existingContacts >= maxContactsPerHousehold {
+		return Contact{}, fmt.Errorf("%w: a household may have at most %d contacts", ErrFieldTooLong, maxContactsPerHousehold)
+	}
 
 	if s.repo != nil {
 		if err := s.repo.UpsertContact(context.Background(), contact); err != nil {
@@ -822,7 +939,7 @@ func (s *Service) createSwimmer(principal *appmiddleware.Principal, orgID string
 	if !appmiddleware.HasAnyRole(principal, "admin", "coach", "parent") {
 		return Swimmer{}, SwimmerAuditEvent{}, ErrForbidden
 	}
-	if err := s.syncFromDB(context.Background()); err != nil {
+	if err := s.syncFromDB(context.Background(), orgID); err != nil {
 		return Swimmer{}, SwimmerAuditEvent{}, err
 	}
 
@@ -869,6 +986,14 @@ func (s *Service) createSwimmer(principal *appmiddleware.Principal, orgID string
 	if swimmer.FirstName == "" || swimmer.LastName == "" || swimmer.HouseholdID == "" {
 		return Swimmer{}, SwimmerAuditEvent{}, errors.New("household_id, first_name, and last_name are required")
 	}
+	if err := checkLengths(
+		"first_name", [2]any{swimmer.FirstName, maxShortFieldLength},
+		"last_name", [2]any{swimmer.LastName, maxShortFieldLength},
+		"preferred_name", [2]any{swimmer.PreferredName, maxShortFieldLength},
+		"notes", [2]any{swimmer.Notes, maxNotesLength},
+	); err != nil {
+		return Swimmer{}, SwimmerAuditEvent{}, err
+	}
 	if isParentScoped(principal) && len(swimmer.MedicalFlags) > 0 {
 		return Swimmer{}, SwimmerAuditEvent{}, ErrMedicalFlagsRestricted
 	}
@@ -904,7 +1029,7 @@ func (s *Service) UpdateSwimmer(principal *appmiddleware.Principal, orgID, swimm
 	if !appmiddleware.HasAnyRole(principal, "admin", "coach", "parent", "swimmer") {
 		return Swimmer{}, SwimmerAuditEvent{}, ErrForbidden
 	}
-	if err := s.syncFromDB(context.Background()); err != nil {
+	if err := s.syncFromDB(context.Background(), orgID); err != nil {
 		return Swimmer{}, SwimmerAuditEvent{}, err
 	}
 
@@ -985,8 +1110,11 @@ func (s *Service) UpdateSwimmer(principal *appmiddleware.Principal, orgID, swimm
 	}
 	if input.Notes != nil {
 		nextNotes := strings.TrimSpace(*input.Notes)
-		if len([]rune(nextNotes)) > maxSwimmerBioLength {
+		if swimmerOnly && nextNotes != swimmer.Notes && len([]rune(nextNotes)) > maxSwimmerBioLength {
 			return Swimmer{}, SwimmerAuditEvent{}, ErrSwimmerBioTooLong
+		}
+		if len([]rune(nextNotes)) > maxNotesLength {
+			return Swimmer{}, SwimmerAuditEvent{}, fmt.Errorf("%w: notes must be %d characters or fewer", ErrFieldTooLong, maxNotesLength)
 		}
 		swimmer.Notes = nextNotes
 	}
@@ -1013,6 +1141,33 @@ func (s *Service) UpdateSwimmer(principal *appmiddleware.Principal, orgID, swimm
 			return Swimmer{}, SwimmerAuditEvent{}, ErrForbidden
 		}
 		swimmer.PortalAccessDisabled = *input.PortalAccessDisabled
+	}
+	if input.GuardianConsent != nil {
+		if *input.GuardianConsent {
+			// Consent must come from a parent of this household, never staff or the child.
+			// Household binding is checked directly: scoping elsewhere is waived for
+			// users who also hold coach/admin, which must not let them consent for
+			// someone else's child. A swimmer role can never consent for themselves.
+			if !appmiddleware.HasAnyRole(principal, "parent") || appmiddleware.HasAnyRole(principal, "swimmer") {
+				return Swimmer{}, SwimmerAuditEvent{}, ErrForbidden
+			}
+			if _, ok := s.parentAllowedHouseholdsLocked(principal)[swimmer.HouseholdID]; !ok {
+				return Swimmer{}, SwimmerAuditEvent{}, ErrParentHouseholdScope
+			}
+			now := time.Now().UTC()
+			swimmer.GuardianConsentAt = &now
+			swimmer.GuardianConsentBy = principal.UserID
+			swimmer.GuardianConsentVersion = GuardianConsentVersion
+		} else {
+			if !appmiddleware.HasAnyRole(principal, "admin", "coach", "parent") {
+				return Swimmer{}, SwimmerAuditEvent{}, ErrForbidden
+			}
+			swimmer.GuardianConsentAt = nil
+			swimmer.GuardianConsentBy = ""
+			swimmer.GuardianConsentVersion = ""
+			// Withdrawn consent ends the child's own account access.
+			swimmer.KeycloakUserID = ""
+		}
 	}
 
 	if swimmer.FirstName == "" || swimmer.LastName == "" {
@@ -1068,7 +1223,7 @@ func (s *Service) DeleteSwimmer(principal *appmiddleware.Principal, orgID, swimm
 	if !appmiddleware.HasAnyRole(principal, "admin") {
 		return Swimmer{}, nil, ErrForbidden
 	}
-	if err := s.syncFromDB(context.Background()); err != nil {
+	if err := s.syncFromDB(context.Background(), orgID); err != nil {
 		return Swimmer{}, nil, err
 	}
 
@@ -1096,7 +1251,7 @@ func (s *Service) DeleteSwimmer(principal *appmiddleware.Principal, orgID, swimm
 	}
 
 	if s.repo != nil {
-		if err := s.repo.DeleteSwimmer(context.Background(), swimmer.ID, principal.UserID); err != nil {
+		if err := s.repo.DeleteSwimmer(context.Background(), swimmer.OrgID, swimmer.ID, principal.UserID); err != nil {
 			return Swimmer{}, nil, fmt.Errorf("delete swimmer: %w", err)
 		}
 	}
@@ -1127,7 +1282,7 @@ func (s *Service) GetSwimmer(principal *appmiddleware.Principal, orgID, swimmerI
 	if !appmiddleware.HasAnyRole(principal, "admin", "coach", "parent") {
 		return SwimmerView{}, ErrForbidden
 	}
-	if err := s.syncFromDB(context.Background()); err != nil {
+	if err := s.syncFromDB(context.Background(), orgID); err != nil {
 		return SwimmerView{}, err
 	}
 
@@ -1148,7 +1303,14 @@ func (s *Service) GetSwimmer(principal *appmiddleware.Principal, orgID, swimmerI
 // swimmerViewLocked wraps a swimmer, redacting medical flags unless requested and permitted.
 func (s *Service) swimmerViewLocked(principal *appmiddleware.Principal, swimmer Swimmer, includeMedical bool) SwimmerView {
 	view := SwimmerView{Swimmer: swimmer}
-	if !includeMedical || !s.canViewMedicalLocked(principal, swimmer.HouseholdID) {
+	permitted := s.canViewMedicalLocked(principal, swimmer.HouseholdID)
+	if !permitted {
+		view.Allergies = ""
+		view.EmergencyContactName = ""
+		view.EmergencyContactPhone = ""
+		view.EmergencyContactRelationship = ""
+	}
+	if !includeMedical || !permitted {
 		view.MedicalFlags = nil
 		view.MedicalFlagsRedacted = true
 	}
@@ -1159,7 +1321,7 @@ func (s *Service) AssignSwimmerToGroup(principal *appmiddleware.Principal, orgID
 	if !appmiddleware.HasAnyRole(principal, "admin", "coach") {
 		return SwimmerGroupLink{}, ErrForbidden
 	}
-	if err := s.syncFromDB(context.Background()); err != nil {
+	if err := s.syncFromDB(context.Background(), orgID); err != nil {
 		return SwimmerGroupLink{}, err
 	}
 
@@ -1176,6 +1338,9 @@ func (s *Service) AssignSwimmerToGroup(principal *appmiddleware.Principal, orgID
 	groupCode := normalizeGroupCode(input.GroupCode)
 	if groupCode == "" {
 		return SwimmerGroupLink{}, errors.New("group_code is required")
+	}
+	if len([]rune(groupCode)) > maxGroupCodeLength {
+		return SwimmerGroupLink{}, fmt.Errorf("%w: group_code must be %d characters or fewer", ErrFieldTooLong, maxGroupCodeLength)
 	}
 
 	var existing *SwimmerGroupLink
@@ -1263,7 +1428,7 @@ func (s *Service) ListSwimmers(principal *appmiddleware.Principal, orgID string,
 	if !appmiddleware.HasAnyRole(principal, "admin", "coach", "parent", "swimmer") {
 		return nil, ErrForbidden
 	}
-	if err := s.syncFromDB(context.Background()); err != nil {
+	if err := s.syncFromDB(context.Background(), orgID); err != nil {
 		return nil, err
 	}
 
@@ -1330,7 +1495,7 @@ func (s *Service) ListSwimmerGroupLinks(principal *appmiddleware.Principal, orgI
 	if !appmiddleware.HasAnyRole(principal, "admin", "coach", "parent", "swimmer") {
 		return nil, ErrForbidden
 	}
-	if err := s.syncFromDB(context.Background()); err != nil {
+	if err := s.syncFromDB(context.Background(), orgID); err != nil {
 		return nil, err
 	}
 
@@ -1445,7 +1610,7 @@ func (s *Service) AssociateParentToHousehold(principal *appmiddleware.Principal,
 		return errors.New("parent_user_id and household_id are required")
 	}
 
-	if err := s.syncFromDB(context.Background()); err != nil {
+	if err := s.syncFromDB(context.Background(), orgID); err != nil {
 		return err
 	}
 	s.mu.Lock()
@@ -1486,7 +1651,7 @@ func (s *Service) associateParentHouseholdLocked(parentUserID, householdID strin
 
 // HasPrimaryGroup reports whether the swimmer already has a primary group link.
 func (s *Service) HasPrimaryGroup(orgID, swimmerID string) bool {
-	if err := s.syncFromDB(context.Background()); err != nil {
+	if err := s.syncFromDB(context.Background(), orgID); err != nil {
 		// Fail safe: assume a primary exists so we never demote a real one.
 		return true
 	}
@@ -1543,8 +1708,15 @@ func (s *Service) GetHouseholdByKeycloakUserID(keycloakUserID string) (Household
 	if keycloakUserID == "" {
 		return Household{}, false
 	}
-	if err := s.syncFromDB(context.Background()); err != nil {
-		return Household{}, false
+	if s.repo != nil {
+		// Find the owning org with one indexed lookup and load only that org.
+		org, found, err := s.repo.OrgOfHouseholdKeycloakUser(context.Background(), keycloakUserID)
+		if err != nil || !found {
+			return Household{}, false
+		}
+		if err := s.syncFromDB(context.Background(), org); err != nil {
+			return Household{}, false
+		}
 	}
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -1570,7 +1742,7 @@ func (s *Service) UnlinkHouseholdFromUser(orgID, householdID string) error {
 // setHouseholdKeycloakUser links (or, with an empty ID, unlinks) a household,
 // refusing an ID already linked to another household.
 func (s *Service) setHouseholdKeycloakUser(orgID, householdID, keycloakUserID string) error {
-	if err := s.syncFromDB(context.Background()); err != nil {
+	if err := s.syncFromDB(context.Background(), orgID); err != nil {
 		return err
 	}
 	s.mu.Lock()
@@ -1591,7 +1763,7 @@ func (s *Service) setHouseholdKeycloakUser(orgID, householdID, keycloakUserID st
 	h.KeycloakUserID = keycloakUserID
 	h.UpdatedAt = time.Now().UTC()
 	if s.repo != nil {
-		if err := s.repo.SetHouseholdKeycloakUserID(context.Background(), householdID, keycloakUserID); err != nil {
+		if err := s.repo.SetHouseholdKeycloakUserID(context.Background(), h.OrgID, householdID, keycloakUserID); err != nil {
 			return fmt.Errorf("persist household link: %w", err)
 		}
 	}
@@ -1607,8 +1779,14 @@ func (s *Service) GetSwimmerByKeycloakUserID(keycloakUserID string) (Swimmer, bo
 	if keycloakUserID == "" {
 		return Swimmer{}, false
 	}
-	if err := s.syncFromDB(context.Background()); err != nil {
-		return Swimmer{}, false
+	if s.repo != nil {
+		org, found, err := s.repo.OrgOfSwimmerKeycloakUser(context.Background(), keycloakUserID)
+		if err != nil || !found {
+			return Swimmer{}, false
+		}
+		if err := s.syncFromDB(context.Background(), org); err != nil {
+			return Swimmer{}, false
+		}
 	}
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -1636,7 +1814,7 @@ func (s *Service) UnlinkSwimmerFromUser(orgID, swimmerID string) error {
 // setSwimmerKeycloakUser links (or, with an empty ID, unlinks) a swimmer,
 // refusing an ID already linked to another swimmer.
 func (s *Service) setSwimmerKeycloakUser(orgID, swimmerID, keycloakUserID string) error {
-	if err := s.syncFromDB(context.Background()); err != nil {
+	if err := s.syncFromDB(context.Background(), orgID); err != nil {
 		return err
 	}
 	s.mu.Lock()
@@ -1654,10 +1832,14 @@ func (s *Service) setSwimmerKeycloakUser(orgID, swimmerID, keycloakUserID string
 		}
 	}
 
+	if keycloakUserID != "" && swimmerNeedsGuardianConsent(sw) {
+		return ErrGuardianConsentRequired
+	}
+
 	sw.KeycloakUserID = keycloakUserID
 	sw.UpdatedAt = time.Now().UTC()
 	if s.repo != nil {
-		if err := s.repo.SetSwimmerKeycloakUserID(context.Background(), swimmerID, keycloakUserID); err != nil {
+		if err := s.repo.SetSwimmerKeycloakUserID(context.Background(), sw.OrgID, swimmerID, keycloakUserID); err != nil {
 			return fmt.Errorf("persist swimmer link: %w", err)
 		}
 	}
@@ -1684,7 +1866,7 @@ func (s *Service) ListContacts(principal *appmiddleware.Principal, orgID, househ
 	if !appmiddleware.HasAnyRole(principal, "admin", "coach", "parent") {
 		return nil, ErrForbidden
 	}
-	if err := s.syncFromDB(context.Background()); err != nil {
+	if err := s.syncFromDB(context.Background(), orgID); err != nil {
 		return nil, err
 	}
 
@@ -1748,7 +1930,7 @@ type RosterSnapshot struct {
 }
 
 func (s *Service) SnapshotRoster(orgID string) (RosterSnapshot, error) {
-	if err := s.syncFromDB(context.Background()); err != nil {
+	if err := s.syncFromDB(context.Background(), orgID); err != nil {
 		return RosterSnapshot{}, err
 	}
 	s.mu.RLock()
@@ -1804,7 +1986,7 @@ func (s *Service) CachedSwimmerHouseholdID(orgID, swimmerID string) (string, boo
 // belong to the specified org.
 // Implements performance.SwimmerHouseholdChecker.
 func (s *Service) SwimmerHouseholdID(orgID, swimmerID string) (string, bool) {
-	if err := s.syncFromDB(context.Background()); err != nil {
+	if err := s.syncFromDB(context.Background(), orgID); err != nil {
 		return "", false
 	}
 	s.mu.RLock()
@@ -1829,7 +2011,7 @@ type SwimmerEligibilityInfo struct {
 // by the meets domain to gate entry creation. Unscoped by role on purpose —
 // callers are trusted server-side services, not end-user requests.
 func (s *Service) SwimmerEligibility(orgID, swimmerID string) (SwimmerEligibilityInfo, bool) {
-	if err := s.syncFromDB(context.Background()); err != nil {
+	if err := s.syncFromDB(context.Background(), orgID); err != nil {
 		return SwimmerEligibilityInfo{}, false
 	}
 	s.mu.RLock()
@@ -1861,6 +2043,7 @@ func swimmerSnapshot(swimmer Swimmer) map[string]any {
 		"household_id":        swimmer.HouseholdID,
 
 		"portal_access_disabled": swimmer.PortalAccessDisabled,
+		"guardian_consent":       swimmer.GuardianConsentAt != nil,
 	}
 }
 
@@ -1892,11 +2075,32 @@ func randomToken(byteLen int) string {
 // SwimmerPortalDisabled reports whether the swimmer's own sign-in has been
 // turned off. Unknown swimmers report false (the org-level switch still applies).
 func (s *Service) SwimmerPortalDisabled(orgID, swimmerID string) (bool, error) {
-	if err := s.syncFromDB(context.Background()); err != nil {
+	if err := s.syncFromDB(context.Background(), orgID); err != nil {
 		return false, err
 	}
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	swimmer, ok := s.swimmerLocked(orgID, strings.TrimSpace(swimmerID))
-	return ok && swimmer.PortalAccessDisabled, nil
+	// Fail closed: an under-13 swimmer without recorded guardian consent cannot sign in.
+	return ok && (swimmer.PortalAccessDisabled || swimmerNeedsGuardianConsent(swimmer)), nil
+}
+
+// GuardianConsentVersion identifies the privacy-policy text a parent consented to.
+const GuardianConsentVersion = "2026-11-03"
+
+// ErrGuardianConsentRequired is returned when a swimmer under 13 would get their
+// own account without a parent's recorded consent (COPPA).
+var ErrGuardianConsentRequired = errors.New("a parent must give consent before a swimmer under 13 can have their own account")
+
+// swimmerNeedsGuardianConsent reports whether the swimmer is under 13 today and
+// has no recorded guardian consent. An unparseable date of birth counts as under 13.
+func swimmerNeedsGuardianConsent(sw Swimmer) bool {
+	if sw.GuardianConsentAt != nil {
+		return false
+	}
+	dob, err := time.Parse("2006-01-02", sw.DateOfBirth)
+	if err != nil {
+		return true
+	}
+	return dob.AddDate(13, 0, 0).After(time.Now().UTC())
 }

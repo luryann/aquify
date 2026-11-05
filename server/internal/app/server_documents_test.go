@@ -258,6 +258,28 @@ func TestDocumentUploadURLAndAttachValidateObjectStorage(t *testing.T) {
 	if attachResp.Code != http.StatusOK {
 		t.Fatalf("attach uploaded object: got %d body=%s", attachResp.Code, attachResp.Body.String())
 	}
+
+	// The presigned URL outlives attach, but the stored record must point at a
+	// sealed copy the uploader's key can no longer change.
+	var attached struct {
+		Document struct {
+			FileObjectKey string `json:"file_object_key"`
+		} `json:"document"`
+	}
+	if err := json.NewDecoder(attachResp.Body).Decode(&attached); err != nil {
+		t.Fatalf("decode attach response: %v", err)
+	}
+	sealed := attached.Document.FileObjectKey
+	if sealed == "" || sealed == uploadPayload.ObjectKey {
+		t.Fatalf("expected sealed object key distinct from upload key, got %q", sealed)
+	}
+	if err := store.PutObject(context.Background(), uploadPayload.ObjectKey, "application/pdf", []byte("swapped content")); err != nil {
+		t.Fatalf("overwrite via stale presigned key: %v", err)
+	}
+	data, _, err := store.GetObject(context.Background(), sealed)
+	if err != nil || string(data) != "pdf" {
+		t.Fatalf("sealed object changed after attach: data=%q err=%v", data, err)
+	}
 }
 
 func TestDocumentAttachRejectsObjectKeyOutsideSubmissionScope(t *testing.T) {

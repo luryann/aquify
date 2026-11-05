@@ -55,11 +55,15 @@ Same pattern at `/opt/aquify/.env.staging`, owned `root:aquify`, mode `640`.
 |---|---|
 | `MINIO_ROOT_USER` | MinIO root user (equivalent to AWS Access Key ID) |
 | `MINIO_ROOT_PASSWORD` | MinIO root password (equivalent to AWS Secret Access Key) |
-| `S3_ENDPOINT` | Storage endpoint URL |
-| `S3_ACCESS_KEY_ID` | App-scoped access key (not root key) |
-| `S3_SECRET_ACCESS_KEY` | App-scoped secret key |
-| `S3_REGION` | Region (use `us-east-1` for MinIO) |
-| `MINIO_BUCKET` | Target bucket name |
+| `STORAGE_ENDPOINT` | Storage endpoint (required outside development; `S3_ENDPOINT` is a legacy alias) |
+| `STORAGE_ACCESS_KEY` | App-scoped access key (not root key) |
+| `STORAGE_SECRET_KEY` | App-scoped secret key |
+| `STORAGE_REGION` | Region (use `us-east-1` for MinIO) |
+| `STORAGE_BUCKET` | Target bucket name |
+| `INTEGRATIONS_ENCRYPTION_KEY` | Required at startup outside development; encrypts stored integration credentials |
+| `WORKER_SCHEDULED_ORG_IDS` | Required in staging/production for org-scoped scheduled jobs |
+| `PLATFORM_ORG_ID` | Optional; enables the `/api/v1/platform/*` operator plane |
+| `STRIPE_CONNECT_REQUIRED` | Defaults to on outside development; each club uses its own Stripe Connect account |
 
 ### Stripe (Payments)
 | Variable | Description |

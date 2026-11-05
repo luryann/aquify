@@ -4,15 +4,16 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/luryann/aquify/server/internal/testutil"
 	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
 
-	appmiddleware "github.com/luryann/aquify/server/internal/app/middleware"
-	"github.com/luryann/aquify/server/internal/app/volunteer"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
+	appmiddleware "github.com/luryann/aquify/server/internal/app/middleware"
+	"github.com/luryann/aquify/server/internal/app/volunteer"
 )
 
 func cleanupVolunteerFixtures(t *testing.T, pool *pgxpool.Pool, orgID, seasonID string) {
@@ -39,7 +40,8 @@ func cleanupVolunteerFixtures(t *testing.T, pool *pgxpool.Pool, orgID, seasonID 
 func TestDBRepoVolunteer_CapacityAndRoundTrip(t *testing.T) {
 	pool := openTestPool(t)
 	ctx := context.Background()
-	orgID := "vol-db-" + uuid.NewString()[:8]
+	orgID := uuid.NewString()
+	testutil.SeedOrgs(t, pool, orgID)
 	seasonID := uuid.NewString()
 	if _, err := pool.Exec(ctx, `INSERT INTO seasons (id, org_id, name, start_date, end_date, status)
 		VALUES ($1::uuid, $2, 'DB Season', CURRENT_DATE - 30, CURRENT_DATE + 180, 'active')`, seasonID, orgID); err != nil {

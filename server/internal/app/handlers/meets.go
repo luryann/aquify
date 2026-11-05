@@ -4,14 +4,15 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"strconv"
 	"strings"
 
+	"github.com/go-chi/chi/v5"
+	"github.com/go-playground/validator/v10"
 	"github.com/luryann/aquify/server/internal/app/audit"
 	"github.com/luryann/aquify/server/internal/app/httpx"
 	"github.com/luryann/aquify/server/internal/app/meets"
 	appmiddleware "github.com/luryann/aquify/server/internal/app/middleware"
-	"github.com/go-chi/chi/v5"
-	"github.com/go-playground/validator/v10"
 )
 
 // MeetsHandlers handles HTTP requests for meets, commitments, and entries.
@@ -201,7 +202,7 @@ func (h *MeetsHandlers) parseEntryFile(w http.ResponseWriter, r *http.Request) {
 		if errors.Is(err, meets.ErrForbidden) {
 			httpx.WriteError(w, r, http.StatusForbidden, "forbidden", "You are not allowed to parse meet files.", nil)
 		} else {
-			httpx.WriteError(w, r, http.StatusBadRequest, "invalid_meet_file", err.Error(), nil)
+			writeMeetsBadRequest(w, r, "invalid_meet_file", err)
 		}
 		return
 	}
@@ -241,10 +242,12 @@ func (h *MeetsHandlers) createMeet(w http.ResponseWriter, r *http.Request) {
 		case errors.Is(err, meets.ErrForbidden):
 			httpx.WriteError(w, r, http.StatusForbidden, "forbidden", "You are not allowed to create meets.", nil)
 		default:
-			httpx.WriteError(w, r, http.StatusBadRequest, "invalid_meet_request", err.Error(), nil)
+			writeMeetsBadRequest(w, r, "invalid_meet_request", err)
 		}
 		return
 	}
+
+	recordAudit(h.auditService, principal, orgID, audit.ActionMeetCreate, "meet", meet.ID, nil, meet, nil)
 
 	_ = httpx.WriteJSON(w, http.StatusCreated, map[string]any{
 		"status":      "created",
@@ -388,10 +391,12 @@ func (h *MeetsHandlers) transitionMeet(w http.ResponseWriter, r *http.Request) {
 		case errors.Is(err, meets.ErrInvalidTransition):
 			httpx.WriteError(w, r, http.StatusUnprocessableEntity, "invalid_transition", err.Error(), nil)
 		default:
-			httpx.WriteError(w, r, http.StatusBadRequest, "invalid_transition_request", err.Error(), nil)
+			writeMeetsBadRequest(w, r, "invalid_transition_request", err)
 		}
 		return
 	}
+
+	recordAudit(h.auditService, principal, orgID, audit.ActionMeetTransition, "meet", meetID, nil, meet, map[string]string{"status": req.Status})
 
 	_ = httpx.WriteJSON(w, http.StatusOK, map[string]any{
 		"status":      "updated",
@@ -442,7 +447,7 @@ func (h *MeetsHandlers) createMeetSession(w http.ResponseWriter, r *http.Request
 		case errors.Is(err, meets.ErrForbidden):
 			httpx.WriteError(w, r, http.StatusForbidden, "forbidden", "You are not allowed to add sessions.", nil)
 		default:
-			httpx.WriteError(w, r, http.StatusBadRequest, "invalid_session_request", err.Error(), nil)
+			writeMeetsBadRequest(w, r, "invalid_session_request", err)
 		}
 		return
 	}
@@ -548,7 +553,7 @@ func (h *MeetsHandlers) createMeetEvent(w http.ResponseWriter, r *http.Request) 
 		case errors.Is(err, meets.ErrForbidden):
 			httpx.WriteError(w, r, http.StatusForbidden, "forbidden", "You are not allowed to add events.", nil)
 		default:
-			httpx.WriteError(w, r, http.StatusBadRequest, "invalid_event_request", err.Error(), nil)
+			writeMeetsBadRequest(w, r, "invalid_event_request", err)
 		}
 		return
 	}
@@ -587,7 +592,7 @@ func (h *MeetsHandlers) publishCommitmentRequest(w http.ResponseWriter, r *http.
 		case errors.Is(err, meets.ErrInvalidTransition):
 			httpx.WriteError(w, r, http.StatusUnprocessableEntity, "invalid_transition", err.Error(), nil)
 		default:
-			httpx.WriteError(w, r, http.StatusBadRequest, "commitment_request_failed", err.Error(), nil)
+			writeMeetsBadRequest(w, r, "commitment_request_failed", err)
 		}
 		return
 	}
@@ -640,7 +645,7 @@ func (h *MeetsHandlers) respondToCommitment(w http.ResponseWriter, r *http.Reque
 		case errors.Is(err, meets.ErrInvalidTransition):
 			httpx.WriteError(w, r, http.StatusUnprocessableEntity, "invalid_transition", err.Error(), nil)
 		default:
-			httpx.WriteError(w, r, http.StatusBadRequest, "commitment_response_failed", err.Error(), nil)
+			writeMeetsBadRequest(w, r, "commitment_response_failed", err)
 		}
 		return
 	}
@@ -656,7 +661,7 @@ func (h *MeetsHandlers) respondToCommitment(w http.ResponseWriter, r *http.Reque
 
 type selectCommitmentEventRequest struct {
 	MeetEventID string `json:"meet_event_id" validate:"required"`
-	SeedTimeMs  *int   `json:"seed_time_ms"`
+	SeedTimeMs  *int   `json:"seed_time_ms" validate:"omitempty,gt=0,lte=3600000"`
 }
 
 func (h *MeetsHandlers) selectCommitmentEvent(w http.ResponseWriter, r *http.Request) {
@@ -692,7 +697,7 @@ func (h *MeetsHandlers) selectCommitmentEvent(w http.ResponseWriter, r *http.Req
 		case errors.Is(err, meets.ErrDuplicateSelection):
 			httpx.WriteError(w, r, http.StatusConflict, "duplicate_selection", err.Error(), nil)
 		default:
-			httpx.WriteError(w, r, http.StatusBadRequest, "selection_failed", err.Error(), nil)
+			writeMeetsBadRequest(w, r, "selection_failed", err)
 		}
 		return
 	}
@@ -757,7 +762,7 @@ func (h *MeetsHandlers) removeCommitmentEventSelection(w http.ResponseWriter, r 
 		case errors.Is(err, meets.ErrCommitmentLocked):
 			httpx.WriteError(w, r, http.StatusUnprocessableEntity, "commitment_locked", err.Error(), nil)
 		default:
-			httpx.WriteError(w, r, http.StatusBadRequest, "removal_failed", err.Error(), nil)
+			writeMeetsBadRequest(w, r, "removal_failed", err)
 		}
 		return
 	}
@@ -790,7 +795,7 @@ func (h *MeetsHandlers) lockCommitments(w http.ResponseWriter, r *http.Request) 
 		case errors.Is(err, meets.ErrInvalidTransition):
 			httpx.WriteError(w, r, http.StatusUnprocessableEntity, "invalid_transition", err.Error(), nil)
 		default:
-			httpx.WriteError(w, r, http.StatusBadRequest, "lock_failed", err.Error(), nil)
+			writeMeetsBadRequest(w, r, "lock_failed", err)
 		}
 		return
 	}
@@ -814,7 +819,7 @@ type proposeEntryRequest struct {
 	SwimmerID           string `json:"swimmer_id" validate:"required"`
 	MeetEventID         string `json:"meet_event_id" validate:"required"`
 	CommitmentID        string `json:"commitment_id"`
-	SeedTimeMs          *int   `json:"seed_time_ms"`
+	SeedTimeMs          *int   `json:"seed_time_ms" validate:"omitempty,gt=0,lte=3600000"`
 	IsRelay             bool   `json:"is_relay"`
 	OverrideEligibility bool   `json:"override_eligibility"`
 	OverrideReason      string `json:"override_reason"`
@@ -858,10 +863,16 @@ func (h *MeetsHandlers) proposeEntry(w http.ResponseWriter, r *http.Request) {
 		case errors.Is(err, meets.ErrInvalidTransition):
 			httpx.WriteError(w, r, http.StatusUnprocessableEntity, "invalid_state", err.Error(), nil)
 		default:
-			httpx.WriteError(w, r, http.StatusBadRequest, "entry_proposal_failed", err.Error(), nil)
+			writeMeetsBadRequest(w, r, "entry_proposal_failed", err)
 		}
 		return
 	}
+
+	recordAudit(h.auditService, principal, orgID, audit.ActionMeetEntryPropose, "entry", entry.ID, nil, entry, map[string]string{
+		"meet_id":              meetID,
+		"eligibility_override": strconv.FormatBool(req.OverrideEligibility),
+		"reason":               req.OverrideReason,
+	})
 
 	_ = httpx.WriteJSON(w, http.StatusCreated, map[string]any{
 		"status":      "proposed",
@@ -872,7 +883,7 @@ func (h *MeetsHandlers) proposeEntry(w http.ResponseWriter, r *http.Request) {
 
 type overrideEntryRequest struct {
 	NewMeetEventID string `json:"new_meet_event_id" validate:"required"`
-	SeedTimeMs     *int   `json:"seed_time_ms"`
+	SeedTimeMs     *int   `json:"seed_time_ms" validate:"omitempty,gt=0,lte=3600000"`
 	Reason         string `json:"reason" validate:"required"`
 }
 
@@ -912,7 +923,7 @@ func (h *MeetsHandlers) overrideEntry(w http.ResponseWriter, r *http.Request) {
 		case errors.Is(err, meets.ErrEntryNotEditable):
 			httpx.WriteError(w, r, http.StatusUnprocessableEntity, "entry_not_editable", err.Error(), nil)
 		default:
-			httpx.WriteError(w, r, http.StatusBadRequest, "override_failed", err.Error(), nil)
+			writeMeetsBadRequest(w, r, "override_failed", err)
 		}
 		return
 	}
@@ -949,7 +960,7 @@ func (h *MeetsHandlers) approveEntry(w http.ResponseWriter, r *http.Request) {
 		case errors.Is(err, meets.ErrEntryNotEditable):
 			httpx.WriteError(w, r, http.StatusUnprocessableEntity, "entry_not_editable", err.Error(), nil)
 		default:
-			httpx.WriteError(w, r, http.StatusBadRequest, "approval_failed", err.Error(), nil)
+			writeMeetsBadRequest(w, r, "approval_failed", err)
 		}
 		return
 	}
@@ -993,7 +1004,7 @@ func (h *MeetsHandlers) scratchEntry(w http.ResponseWriter, r *http.Request) {
 		case errors.Is(err, meets.ErrEntryNotEditable):
 			httpx.WriteError(w, r, http.StatusUnprocessableEntity, "entry_not_editable", err.Error(), nil)
 		default:
-			httpx.WriteError(w, r, http.StatusBadRequest, "scratch_failed", err.Error(), nil)
+			writeMeetsBadRequest(w, r, "scratch_failed", err)
 		}
 		return
 	}
@@ -1016,4 +1027,15 @@ func (h *MeetsHandlers) decodeAndValidate(w http.ResponseWriter, r *http.Request
 // validateID returns true if the given path parameter value is non-empty.
 func validateID(v string) bool {
 	return len(v) > 0
+}
+
+// writeMeetsBadRequest reports a service error as a client error, except for
+// persistence failures, which are logged and returned as a generic 500 so
+// driver/SQL text never reaches the caller.
+func writeMeetsBadRequest(w http.ResponseWriter, r *http.Request, code string, err error) {
+	if errors.Is(err, meets.ErrPersistence) {
+		httpx.WriteError(w, r, http.StatusInternalServerError, "internal_error", "An internal error occurred.", err)
+		return
+	}
+	httpx.WriteError(w, r, http.StatusBadRequest, code, err.Error(), nil)
 }

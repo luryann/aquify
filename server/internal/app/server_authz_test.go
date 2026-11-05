@@ -433,12 +433,31 @@ func TestAuthRBACHardening(t *testing.T) {
 		t.Fatalf("unknown role: expected 400, got %d: %s", rr.Code, rr.Body.String())
 	}
 
-	// A non-MFA session cannot add a second factor once one exists.
+	// An unverified (abandoned) factor does not gate re-enrollment, but once a
+	// factor is verified a non-MFA session cannot add another.
 	plain := issueSessionToken(t, router, "org-demo", []string{"admin"}, false)
-	if rr := post("/api/v1/auth/mfa/enroll", plain, map[string]any{"factor_type": "backup_code"}); rr.Code != http.StatusCreated {
-		t.Fatalf("first enroll: expected 201, got %d: %s", rr.Code, rr.Body.String())
+	first := post("/api/v1/auth/mfa/enroll", plain, map[string]any{"factor_type": "backup_code"})
+	if first.Code != http.StatusCreated {
+		t.Fatalf("first enroll: expected 201, got %d: %s", first.Code, first.Body.String())
 	}
-	if rr := post("/api/v1/auth/mfa/enroll", plain, map[string]any{"factor_type": "backup_code"}); rr.Code != http.StatusForbidden {
-		t.Fatalf("second enroll without MFA: expected 403, got %d: %s", rr.Code, rr.Body.String())
+	if rr := post("/api/v1/auth/mfa/enroll", plain, map[string]any{"factor_type": "backup_code"}); rr.Code != http.StatusCreated {
+		t.Fatalf("re-enroll over unverified factor: expected 201, got %d: %s", rr.Code, rr.Body.String())
+	}
+	var enrolled struct {
+		Factor struct {
+			ID    string   `json:"id"`
+			Codes []string `json:"codes"`
+		} `json:"factor"`
+	}
+	third := post("/api/v1/auth/mfa/enroll", plain, map[string]any{"factor_type": "backup_code"})
+	if err := json.Unmarshal(third.Body.Bytes(), &enrolled); err != nil || len(enrolled.Factor.Codes) == 0 {
+		t.Fatalf("decode enroll: %v %s", err, third.Body.String())
+	}
+	if rr := post("/api/v1/auth/mfa/challenge", plain, map[string]any{"factor_id": enrolled.Factor.ID, "challenge_code": enrolled.Factor.Codes[0]}); rr.Code != http.StatusOK && rr.Code != http.StatusCreated {
+		t.Fatalf("challenge: expected success, got %d: %s", rr.Code, rr.Body.String())
+	}
+	plainAgain := issueSessionToken(t, router, "org-demo", []string{"admin"}, false)
+	if rr := post("/api/v1/auth/mfa/enroll", plainAgain, map[string]any{"factor_type": "backup_code"}); rr.Code != http.StatusForbidden {
+		t.Fatalf("enroll with a verified factor and no MFA: expected 403, got %d: %s", rr.Code, rr.Body.String())
 	}
 }

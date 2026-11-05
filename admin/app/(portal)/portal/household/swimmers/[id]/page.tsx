@@ -6,6 +6,7 @@ import { useParams } from 'next/navigation'
 import { Icon } from '@/components/ui/icons'
 import { useSession } from '@/lib/session'
 import { SwimmerSignInToggle } from '@/components/members/SwimmerSignInToggle'
+import { GuardianConsentCard } from '@/components/members/GuardianConsentCard'
 import { GoalsPanel } from '@/components/performance/GoalsPanel'
 import { useApiClient } from '@/lib/api'
 import { reportUIError, uiErrorMessage } from '@/lib/frontend-telemetry'
@@ -629,7 +630,10 @@ export default function SwimmerProfilePage() {
 
       {swimmer ? (
         <div className="is-ef7a9df">
-          <SwimmerSignInToggle swimmerId={swimmer.id} disabled={swimmer.portal_access_disabled ?? false} onChange={(next) => setSwimmer((prev) => (prev ? { ...prev, portal_access_disabled: next } : prev))} />
+          <GuardianConsentCard swimmer={swimmer} mode="parent" onChange={(next) => setSwimmer((prev) => (prev ? { ...prev, ...next } : prev))} />
+          <div className="u-mt-16px">
+            <SwimmerSignInToggle swimmerId={swimmer.id} disabled={swimmer.portal_access_disabled ?? false} onChange={(next) => setSwimmer((prev) => (prev ? { ...prev, portal_access_disabled: next } : prev))} />
+          </div>
         </div>
       ) : null}
 

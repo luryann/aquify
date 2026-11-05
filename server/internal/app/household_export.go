@@ -24,11 +24,11 @@ func collectHouseholdExportData(orgID, householdID string, membersSvc *members.S
 	// The collector runs in the worker process, whose caches predate rows the
 	// API wrote since startup; reload from Postgres first (no-op in memory mode).
 	ctx := context.Background()
-	if err := membersSvc.Refresh(ctx); err != nil {
+	if err := membersSvc.RefreshOrg(ctx, orgID); err != nil {
 		return nil, fmt.Errorf("refresh members: %w", err)
 	}
 	if billingSvc != nil {
-		if err := billingSvc.Refresh(ctx); err != nil {
+		if err := billingSvc.RefreshOrg(ctx, orgID); err != nil {
 			return nil, fmt.Errorf("refresh billing: %w", err)
 		}
 	}

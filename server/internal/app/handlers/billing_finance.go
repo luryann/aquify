@@ -9,10 +9,10 @@ import (
 	"strings"
 	"time"
 
+	"github.com/go-chi/chi/v5"
 	"github.com/luryann/aquify/server/internal/app/billing"
 	"github.com/luryann/aquify/server/internal/app/httpx"
 	appmiddleware "github.com/luryann/aquify/server/internal/app/middleware"
-	"github.com/go-chi/chi/v5"
 )
 
 // Audit actions for club-finance writes and exports.
@@ -474,6 +474,10 @@ func (h *BillingHandlers) applyLateFees(w http.ResponseWriter, r *http.Request) 
 		parsed, err := time.Parse("2006-01-02", strings.TrimSpace(input.AsOf))
 		if err != nil {
 			httpx.WriteError(w, r, http.StatusUnprocessableEntity, "validation_error", "as_of must use YYYY-MM-DD.", nil)
+			return
+		}
+		if parsed.After(time.Now().UTC().Truncate(24 * time.Hour)) {
+			httpx.WriteError(w, r, http.StatusUnprocessableEntity, "validation_error", "as_of cannot be in the future.", nil)
 			return
 		}
 		asOf = parsed

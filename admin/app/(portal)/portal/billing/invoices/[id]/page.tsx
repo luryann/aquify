@@ -101,6 +101,12 @@ function InvoiceDetailPageContent() {
   const [reloadKey, setReloadKey] = useState(0)
 
   useEffect(() => {
+    const onPageShow = (e: PageTransitionEvent) => { if (e.persisted) setCheckingOut(false) }
+    window.addEventListener('pageshow', onPageShow)
+    return () => window.removeEventListener('pageshow', onPageShow)
+  }, [])
+
+  useEffect(() => {
     if (!orgId || !invoiceId) {
       setLoading(false)
       setLoadError('We could not find your household details. Sign out and back in, or contact your club if this keeps happening.')

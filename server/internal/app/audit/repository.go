@@ -6,9 +6,10 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/luryann/aquify/server/internal/dbutil"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/luryann/aquify/server/internal/dbutil"
+	"github.com/luryann/aquify/server/internal/tenantdb"
 )
 
 // repository handles DB persistence for audit events. Rows are append-only —
@@ -21,12 +22,15 @@ func newRepository(pool *pgxpool.Pool) *repository {
 	return &repository{pool: pool}
 }
 
+// at binds orgID to every statement so row-level security on audit_events applies.
+func (r *repository) at(orgID string) tenantdb.Scoped { return tenantdb.Pool{P: r.pool}.For(orgID) }
+
 func (r *repository) Insert(ctx context.Context, ev AuditEvent) error {
 	metadata, err := json.Marshal(ev.Metadata)
 	if err != nil {
 		return fmt.Errorf("audit: marshal metadata: %w", err)
 	}
-	_, err = r.pool.Exec(ctx, `
+	_, err = r.at(ev.OrgID).Exec(ctx, `
 		INSERT INTO audit_events (
 			id, org_id, actor_user_id, actor_roles, action, resource_type,
 			resource_id, before_state, after_state, metadata, occurred_at
@@ -90,7 +94,7 @@ func (r *repository) Query(ctx context.Context, f Filter) ([]AuditEvent, error) 
 		args = append(args, f.Limit)
 		query += fmt.Sprintf(" LIMIT $%d", len(args))
 	}
-	rows, err := r.pool.Query(ctx, query, args...)
+	rows, err := r.at(f.OrgID).Query(ctx, query, args...) // an empty org sees nothing under RLS
 	if err != nil {
 		return nil, fmt.Errorf("audit: query events: %w", err)
 	}

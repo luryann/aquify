@@ -18,10 +18,10 @@ import (
 	"strings"
 	"time"
 
-	appmiddleware "github.com/luryann/aquify/server/internal/app/middleware"
-	"github.com/luryann/aquify/server/internal/workers"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
+	appmiddleware "github.com/luryann/aquify/server/internal/app/middleware"
+	"github.com/luryann/aquify/server/internal/workers"
 )
 
 // ─── Errors ───────────────────────────────────────────────────────────────────
@@ -659,6 +659,11 @@ func (s *Service) UpdateJob(ctx context.Context, p *appmiddleware.Principal, org
 	}
 	hc := job.HourCredit
 	in.HourCredit = &hc
+	if up.HourCredit == nil && (up.StartsAt != nil || up.EndsAt != nil) &&
+		math.Abs(job.HourCredit-round2(shiftHours(job.StartsAt, job.EndsAt))) < 0.01 {
+		// Credit was the derived default; re-derive from the new times.
+		in.HourCredit = nil
+	}
 	if up.EventName != nil {
 		in.EventName = *up.EventName
 	}
@@ -1493,10 +1498,11 @@ type ledgerInputs struct {
 	reqs     []*Requirement
 	buyouts  []*Buyout
 	settings *Settings
+	now      time.Time
 }
 
 func (s *Service) loadLedgerInputs(ctx context.Context, orgID, seasonID, householdID string) (*ledgerInputs, error) {
-	in := &ledgerInputs{seasons: s.seasonList(orgID)}
+	in := &ledgerInputs{seasons: s.seasonList(orgID), now: s.now()}
 	var err error
 	if in.settings, err = s.settings(ctx, orgID); err != nil {
 		return nil, err
@@ -1557,7 +1563,9 @@ func (in *ledgerInputs) row(season SeasonRef, hh HouseholdRef) LedgerRow {
 		case StatusWorked:
 			row.WorkedHours += effectiveHours(su, job)
 		case StatusConfirmed:
-			row.ScheduledHours += job.HourCredit
+			if in.now.IsZero() || job.EndsAt.After(in.now) {
+				row.ScheduledHours += job.HourCredit
+			}
 		}
 	}
 	for _, c := range in.credits {
@@ -1770,4 +1778,13 @@ func (s *Service) ListBuyouts(ctx context.Context, p *appmiddleware.Principal, o
 		return nil, ErrForbidden
 	}
 	return s.store.listBuyouts(ctx, orgID, seasonID)
+}
+
+// EraseHouseholdData removes a household's volunteer signups (volunteer names,
+// notes, swimmer links) for an approved data-deletion request. Idempotent.
+func (s *Service) EraseHouseholdData(ctx context.Context, orgID, householdID string) (int, error) {
+	if strings.TrimSpace(orgID) == "" || strings.TrimSpace(householdID) == "" {
+		return 0, nil
+	}
+	return s.store.eraseHousehold(ctx, orgID, householdID)
 }

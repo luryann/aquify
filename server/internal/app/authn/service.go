@@ -48,17 +48,28 @@ import (
 	"sync"
 	"time"
 
-	appmiddleware "github.com/luryann/aquify/server/internal/app/middleware"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
+	appmiddleware "github.com/luryann/aquify/server/internal/app/middleware"
+	"github.com/luryann/aquify/server/internal/dbutil"
+	"github.com/luryann/aquify/server/internal/tenantdb"
 )
 
 var (
-	ErrSessionNotFound      = errors.New("session not found")
-	ErrSessionExpired       = errors.New("session expired")
-	ErrSessionRevoked       = errors.New("session revoked")
+	ErrSessionNotFound = errors.New("session not found")
+	ErrSessionExpired  = errors.New("session expired")
+	ErrSessionRevoked  = errors.New("session revoked")
+	// ErrSessionUnavailable: the session store could not be reached; callers
+	// should answer with a retryable 503, never a 401 that signs users out.
+	ErrSessionUnavailable = errors.New("session store unavailable")
+	// ErrOrgNotActive: the org is unknown to the tenant registry or is not active
+	// (suspended / offboarding / deleted). Sign-in fails closed.
+	ErrOrgNotActive = errors.New("organization is not available")
+	// ErrUserOrgMismatch: the user already belongs to a different org. A user is
+	// never re-homed by a token claim (tenancy decision D3).
+	ErrUserOrgMismatch      = errors.New("user belongs to a different organization")
 	ErrInvalidMFAFactor     = errors.New("invalid mfa factor")
 	ErrInvalidMFACode       = errors.New("invalid mfa challenge code")
 	ErrUnsupportedMFAFactor = errors.New("unsupported mfa factor")
@@ -161,43 +172,92 @@ func (s *Service) SetPool(pool *pgxpool.Pool) {
 	}
 }
 
+// at binds orgID to statements on the tenant-owned auth tables (row-level security).
+func (s *Service) at(orgID string) tenantdb.Scoped { return tenantdb.Pool{P: s.pool}.For(orgID) }
+
+// forSession binds a session token's hash for the lookups made before the club is known
+// (policy session_lookup exposes only the row whose access or refresh hash is presented).
+func (s *Service) forSession(tokenHash string) tenantdb.Scoped {
+	return tenantdb.Pool{P: s.pool}.ForLookup(tenantdb.LookupSessionHash, tokenHash)
+}
+
+// loadMFAFactorsFromDB restores every club's MFA factors at startup, one club at a time
+// under that club's own binding (an unbound read would see nothing under RLS).
 func (s *Service) loadMFAFactorsFromDB() {
 	ctx := context.Background()
-	rows, err := s.pool.Query(ctx, `
-		SELECT id::text, user_id::text, COALESCE(org_id::text, ''), factor_type,
-		       COALESCE(label, ''), is_verified,
-		       COALESCE(totp_secret, ''), COALESCE(backup_codes, '[]'::jsonb),
-		       COALESCE(created_at, now()), last_challenged_at
-		FROM mfa_factors`)
+	orgs, err := dbutil.ListOrgIDs(ctx, s.pool)
 	if err != nil {
-		s.logger.Warn("authn: failed to load MFA factors from DB", "error", err)
+		s.logger.Warn("authn: failed to list orgs for MFA load", "error", err)
 		return
 	}
-	defer rows.Close()
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
-
-	for rows.Next() {
-		var r mfaFactorRecord
-		var backupCodesJSON []byte
-		if err := rows.Scan(
-			&r.Factor.ID, &r.Factor.UserID, &r.Factor.OrgID, &r.Factor.FactorType,
-			&r.Factor.Label, &r.Factor.IsVerified, &r.TOTPSecret,
-			&backupCodesJSON, &r.Factor.CreatedAt, &r.Factor.LastChallengedAt,
-		); err != nil {
-			s.logger.Warn("authn: scan MFA factor row", "error", err)
+	for _, orgID := range orgs {
+		rows, err := s.at(orgID).Query(ctx, `
+			SELECT id::text, user_id::text, COALESCE(org_id::text, ''), factor_type,
+			       COALESCE(label, ''), is_verified,
+			       COALESCE(totp_secret, ''), COALESCE(backup_codes, '[]'::jsonb),
+			       COALESCE(created_at, now()), last_challenged_at
+			FROM mfa_factors WHERE org_id = $1::uuid`, orgID)
+		if err != nil {
+			s.logger.Warn("authn: failed to load MFA factors from DB", "org_id", orgID, "error", err)
 			continue
 		}
-		if len(backupCodesJSON) > 0 {
-			_ = json.Unmarshal(backupCodesJSON, &r.BackupCodes)
+		for rows.Next() {
+			var r mfaFactorRecord
+			var backupCodesJSON []byte
+			if err := rows.Scan(
+				&r.Factor.ID, &r.Factor.UserID, &r.Factor.OrgID, &r.Factor.FactorType,
+				&r.Factor.Label, &r.Factor.IsVerified, &r.TOTPSecret,
+				&backupCodesJSON, &r.Factor.CreatedAt, &r.Factor.LastChallengedAt,
+			); err != nil {
+				s.logger.Warn("authn: scan MFA factor row", "error", err)
+				continue
+			}
+			if len(backupCodesJSON) > 0 {
+				_ = json.Unmarshal(backupCodesJSON, &r.BackupCodes)
+			}
+			s.mfaFactorsByUser[r.Factor.UserID] = append(s.mfaFactorsByUser[r.Factor.UserID], r)
 		}
-		s.mfaFactorsByUser[r.Factor.UserID] = append(s.mfaFactorsByUser[r.Factor.UserID], r)
+		rows.Close()
 	}
+}
+
+// requireActiveOrg rejects sign-in for an org that is not registered or not
+// active. No-op without a database (in-memory/dev mode has no registry) and for
+// non-UUID legacy dev ids, which never reach the database.
+func (s *Service) requireActiveOrg(ctx context.Context, orgID string) error {
+	if s.pool == nil {
+		return nil
+	}
+	orgID = strings.TrimSpace(orgID)
+	if _, err := uuid.Parse(orgID); err != nil {
+		return nil
+	}
+	var status string
+	err := s.pool.QueryRow(ctx, `SELECT status FROM orgs WHERE id = $1::uuid`, orgID).Scan(&status)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return ErrOrgNotActive
+	}
+	if err != nil {
+		return fmt.Errorf("check org status: %w", err)
+	}
+	if status != "active" {
+		return ErrOrgNotActive
+	}
+	return nil
 }
 
 func (s *Service) seedKnownLocalUsers() {
 	ctx := context.Background()
+	// Local dev has a single well-known org; register it so FK-protected tables
+	// accept its rows. Real orgs are created only by provisioning.
+	if s.pool != nil {
+		if _, err := s.pool.Exec(ctx, `INSERT INTO orgs (id, name, status) VALUES ($1::uuid, 'Local Dev Club', 'active') ON CONFLICT (id) DO NOTHING`, LocalDevOrgID); err != nil {
+			s.logger.Warn("authn: failed to register local dev org", "error", err)
+		}
+	}
 	for _, user := range LocalDevUsers() {
 		if err := s.upsertAuthenticatedUser(ctx, user.UserID, user.Email, user.Name, LocalDevOrgID, false); err != nil {
 			s.logger.Warn("authn: failed to seed local dev user", "user_id", user.UserID, "email", user.Email, "error", err)
@@ -206,6 +266,9 @@ func (s *Service) seedKnownLocalUsers() {
 }
 
 func (s *Service) syncAuthenticatedUser(ctx context.Context, input SessionInput) error {
+	if err := s.requireActiveOrg(ctx, input.OrgID); err != nil {
+		return err
+	}
 	return s.upsertAuthenticatedUser(ctx, input.UserID, input.Email, input.Name, input.OrgID, true)
 }
 
@@ -261,22 +324,35 @@ func (s *Service) upsertAuthenticatedUser(ctx context.Context, userID, email, na
 }
 
 func (s *Service) upsertAuthenticatedUserRow(ctx context.Context, userID, email, name, orgID string, lastLoginAt *time.Time, keepExistingEmail bool) error {
-	_, err := s.pool.Exec(ctx, `
+	tag, err := s.at(orgID).Exec(ctx, `
 		INSERT INTO users (
 			id, org_id, email, oidc_subject, display_name, status, last_login_at, created_at, updated_at
 		)
 		VALUES ($1::uuid, $2::uuid, $3, $4, $5, 'active', $6, now(), now())
 		ON CONFLICT (id) DO UPDATE SET
-			org_id        = EXCLUDED.org_id,
+			org_id        = COALESCE(users.org_id, EXCLUDED.org_id),
 			email         = CASE WHEN $7::boolean THEN users.email ELSE EXCLUDED.email END,
 			oidc_subject  = EXCLUDED.oidc_subject,
 			display_name  = EXCLUDED.display_name,
 			status        = 'active',
 			last_login_at = COALESCE(EXCLUDED.last_login_at, users.last_login_at),
-			updated_at    = now()`,
+			updated_at    = now()
+		WHERE users.org_id IS NULL OR users.org_id = EXCLUDED.org_id`,
 		userID, orgID, email, userID, name, lastLoginAt, keepExistingEmail,
 	)
-	return err
+	if err != nil {
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == "42501" {
+			// Row-level security refused the conflict update: the row belongs to another org.
+			return ErrUserOrgMismatch
+		}
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		// The conflict branch was skipped: the row exists under another org.
+		return ErrUserOrgMismatch
+	}
+	return nil
 }
 
 func surrogateSyncedUserEmail(userID string) string {
@@ -319,7 +395,7 @@ func (s *Service) saveMFAFactorToDB(r mfaFactorRecord) error {
 		totpSecret = &r.TOTPSecret
 	}
 	ctx := context.Background()
-	_, err := s.pool.Exec(ctx, `
+	_, err := s.at(r.Factor.OrgID).Exec(ctx, `
 		INSERT INTO mfa_factors (id, user_id, org_id, factor_type, label, is_verified,
 		                         totp_secret, backup_codes, created_at, last_challenged_at)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
@@ -346,7 +422,7 @@ func (s *Service) updateMFAFactorInDB(r mfaFactorRecord) error {
 	// conditional UPDATE (consumeBackupCodeInDB), and writing this process's
 	// copy back would resurrect codes another instance already spent.
 	ctx := context.Background()
-	_, err := s.pool.Exec(ctx, `
+	_, err := s.at(r.Factor.OrgID).Exec(ctx, `
 		UPDATE mfa_factors
 		SET is_verified        = $2,
 		    last_challenged_at = $3
@@ -362,11 +438,11 @@ func (s *Service) updateMFAFactorInDB(r mfaFactorRecord) error {
 // reloadMFAFactorsForUser refreshes one user's factors from Postgres so a
 // factor enrolled, verified or spent on another instance is seen here. The
 // query runs without s.mu; only the swap takes the lock.
-func (s *Service) reloadMFAFactorsForUser(ctx context.Context, userID string) error {
+func (s *Service) reloadMFAFactorsForUser(ctx context.Context, orgID, userID string) error {
 	if s.pool == nil {
 		return nil
 	}
-	rows, err := s.pool.Query(ctx, `
+	rows, err := s.at(orgID).Query(ctx, `
 		SELECT id::text, user_id::text, COALESCE(org_id::text, ''), factor_type,
 		       COALESCE(label, ''), is_verified,
 		       COALESCE(totp_secret, ''), COALESCE(backup_codes, '[]'::jsonb),
@@ -433,6 +509,9 @@ type OIDCCallbackResult struct {
 type LogoutResult struct {
 	LogoutURL   string `json:"logout_url,omitempty"`
 	RedirectURL string `json:"redirect_url"`
+	// RevokeErr is a server-side revocation failure (other than "no such
+	// session"); never serialised.
+	RevokeErr error `json:"-"`
 }
 
 type MFAFactor struct {
@@ -807,6 +886,10 @@ func (s *Service) RefreshSession(refreshToken string) (SessionTokens, error) {
 	}
 
 	now := time.Now().UTC()
+	rotated, err := rotatedPrincipal(now, record)
+	if err != nil {
+		return SessionTokens{}, err
+	}
 	record.RevokedAt = &now
 
 	nextAccess := "atk_" + randomToken(32)
@@ -817,7 +900,7 @@ func (s *Service) RefreshSession(refreshToken string) (SessionTokens, error) {
 		AccessToken:  nextAccess,
 		RefreshToken: nextRefresh,
 		IDToken:      record.IDToken,
-		Principal:    normalizeLocalDevPrincipal(copyPrincipal(record.Principal)),
+		Principal:    normalizeLocalDevPrincipal(rotated),
 		ExpiresAt:    expiresAt,
 	}
 
@@ -833,7 +916,9 @@ func (s *Service) RefreshSession(refreshToken string) (SessionTokens, error) {
 }
 
 // appRoles are the only roles that may appear on an API session principal.
-var appRoles = []string{"admin", "coach", "parent", "swimmer"}
+// platform_admin is honoured only by the operator plane, which additionally
+// requires membership of the dedicated platform org and MFA.
+var appRoles = []string{"admin", "coach", "parent", "swimmer", "platform_admin"}
 
 // filterAppRoles keeps only known app roles (deduplicated, input order).
 func filterAppRoles(in []string) []string {
@@ -849,7 +934,7 @@ func filterAppRoles(in []string) []string {
 
 // RevokeUserSessions revokes every active session (DB rows and in-memory
 // records) belonging to userID and returns how many were revoked.
-func (s *Service) RevokeUserSessions(ctx context.Context, userID string) (int, error) {
+func (s *Service) RevokeUserSessions(ctx context.Context, orgID, userID string) (int, error) {
 	userID = strings.TrimSpace(userID)
 	if userID == "" {
 		return 0, errors.New("user id is required")
@@ -878,7 +963,7 @@ func (s *Service) RevokeUserSessions(ctx context.Context, userID string) (int, e
 		if err != nil {
 			return count, nil
 		}
-		tag, err := s.pool.Exec(ctx, `
+		tag, err := s.at(orgID).Exec(ctx, `
 			UPDATE sessions
 			SET revoked_at = $2, updated_at = now()
 			WHERE user_id = $1 AND revoked_at IS NULL`,
@@ -945,6 +1030,9 @@ func (s *Service) LogoutSessionWithAccess(refreshToken, accessToken string) Logo
 		if err == nil && record != nil {
 			idToken = record.IDToken
 		}
+		if err != nil && !errors.Is(err, ErrSessionNotFound) {
+			result.RevokeErr = err
+		}
 		if logoutURL, ok := s.buildOIDCLogoutURL(idToken); ok {
 			result.LogoutURL = logoutURL
 		}
@@ -982,9 +1070,16 @@ func (s *Service) LogoutSessionWithAccess(refreshToken, accessToken string) Logo
 }
 
 func (s *Service) ResolvePrincipal(token string) (*appmiddleware.Principal, bool) {
+	principal, err := s.ResolvePrincipalErr(token)
+	return principal, err == nil && principal != nil
+}
+
+// ResolvePrincipalErr is ResolvePrincipal that distinguishes an unknown or
+// invalid token (nil, nil) from a session-store outage (ErrSessionUnavailable).
+func (s *Service) ResolvePrincipalErr(token string) (*appmiddleware.Principal, error) {
 	token = strings.TrimSpace(token)
 	if token == "" {
-		return nil, false
+		return nil, nil
 	}
 
 	s.mu.RLock()
@@ -1004,31 +1099,35 @@ func (s *Service) ResolvePrincipal(token string) (*appmiddleware.Principal, bool
 				cloned.SwimmerID = s.swimmerLookup(cloned.UserID)
 			}
 		}
-		return cloned, true
+		return cloned, nil
 	}
 
 	if s.pool != nil {
 		s.mu.RUnlock()
 		record, err := s.loadPersistentSessionByAccessToken(context.Background(), token)
 		if err != nil {
-			return nil, false
+			if errors.Is(err, ErrSessionUnavailable) {
+				s.logger.Error("authn: session lookup failed", "error", err)
+				return nil, err
+			}
+			return nil, nil
 		}
 		principal := clonePrincipal(&record.Principal)
 		if principal != nil {
 			normalized := normalizeLocalDevPrincipal(*principal)
 			principal = &normalized
 		}
-		return principal, true
+		return principal, nil
 	}
 
 	record, ok := s.sessionsByAccess[token]
 	if !ok {
 		s.mu.RUnlock()
-		return nil, false
+		return nil, nil
 	}
 	if record.RevokedAt != nil || time.Now().UTC().After(record.ExpiresAt) {
 		s.mu.RUnlock()
-		return nil, false
+		return nil, nil
 	}
 
 	principal := clonePrincipal(&record.Principal)
@@ -1037,11 +1136,11 @@ func (s *Service) ResolvePrincipal(token string) (*appmiddleware.Principal, bool
 		principal = &normalized
 	}
 	s.mu.RUnlock()
-	return principal, true
+	return principal, nil
 }
 
-func (s *Service) ListMFAFactors(userID string) []MFAFactor {
-	if err := s.reloadMFAFactorsForUser(context.Background(), userID); err != nil {
+func (s *Service) ListMFAFactors(orgID, userID string) []MFAFactor {
+	if err := s.reloadMFAFactorsForUser(context.Background(), orgID, userID); err != nil {
 		// Signature has no error return; serve the cached view and log loudly.
 		s.logger.Warn("authn: MFA factor reload failed; serving cached factors", "user_id", userID, "error", err)
 	}
@@ -1054,6 +1153,28 @@ func (s *Service) ListMFAFactors(userID string) []MFAFactor {
 		out = append(out, record.Factor)
 	}
 	return out
+}
+
+// PurgeUnverifiedMFAFactors drops the user's never-verified factors (memory and
+// DB) of one type so an abandoned enrollment is replaced rather than accumulating. Verified
+// factors are untouched.
+func (s *Service) PurgeUnverifiedMFAFactors(orgID, userID, factorType string) error {
+	if s.pool != nil {
+		if _, err := s.at(orgID).Exec(context.Background(),
+			`DELETE FROM mfa_factors WHERE org_id = $1 AND user_id = $2 AND factor_type = $3 AND is_verified = false`, orgID, userID, factorType); err != nil {
+			return fmt.Errorf("purge unverified MFA factors: %w", err)
+		}
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	kept := s.mfaFactorsByUser[userID][:0:0]
+	for _, rec := range s.mfaFactorsByUser[userID] {
+		if rec.Factor.IsVerified || rec.Factor.FactorType != factorType {
+			kept = append(kept, rec)
+		}
+	}
+	s.mfaFactorsByUser[userID] = kept
+	return nil
 }
 
 func (s *Service) EnrollMFA(userID, email, orgID, factorType, label string) (MFAFactor, error) {
@@ -1155,7 +1276,7 @@ func (s *Service) ChallengeMFA(currentAccessToken string, principal *appmiddlewa
 	currentAccessToken = strings.TrimSpace(currentAccessToken)
 
 	// Pick up factors changed on other instances before deciding anything.
-	if err := s.reloadMFAFactorsForUser(ctx, principal.UserID); err != nil {
+	if err := s.reloadMFAFactorsForUser(ctx, principal.OrgID, principal.UserID); err != nil {
 		return SessionTokens{}, err
 	}
 
@@ -1255,7 +1376,7 @@ func (s *Service) ChallengeMFA(currentAccessToken string, principal *appmiddlewa
 	if s.pool != nil {
 		switch record.Factor.FactorType {
 		case "totp":
-			fresh, err := s.consumeTOTPStepInDB(ctx, record.Factor.ID, totpStep)
+			fresh, err := s.consumeTOTPStepInDB(ctx, record.Factor.OrgID, record.Factor.ID, totpStep)
 			if err != nil {
 				undo()
 				return SessionTokens{}, err
@@ -1264,7 +1385,7 @@ func (s *Service) ChallengeMFA(currentAccessToken string, principal *appmiddlewa
 				return SessionTokens{}, ErrInvalidMFACode // spent on another instance; keep the local claim
 			}
 		case "backup_code":
-			consumed, err := s.consumeBackupCodeInDB(ctx, record.Factor.ID, backupHash)
+			consumed, err := s.consumeBackupCodeInDB(ctx, record.Factor.OrgID, record.Factor.ID, backupHash)
 			if err != nil {
 				undo()
 				return SessionTokens{}, err
@@ -1338,7 +1459,7 @@ func (s *Service) issueSessionRecord(ctx context.Context, principal appmiddlewar
 	}
 
 	if s.pool != nil {
-		if err := insertSessionRecord(ctx, s.pool, record); err != nil {
+		if err := insertSessionRecord(ctx, s.at(record.Principal.OrgID), record); err != nil {
 			return SessionTokens{}, err
 		}
 	} else {
@@ -1356,9 +1477,9 @@ func (s *Service) issueSessionRecord(ctx context.Context, principal appmiddlewar
 }
 
 func (s *Service) refreshPersistentSession(ctx context.Context, refreshToken string) (SessionTokens, error) {
-	tx, err := s.pool.BeginTx(ctx, pgx.TxOptions{})
+	tx, err := s.forSession(hashToken(refreshToken)).Begin(ctx)
 	if err != nil {
-		return SessionTokens{}, fmt.Errorf("begin session refresh tx: %w", err)
+		return SessionTokens{}, fmt.Errorf("%w: begin session refresh tx: %w", ErrSessionUnavailable, err)
 	}
 	defer tx.Rollback(ctx)
 
@@ -1366,8 +1487,16 @@ func (s *Service) refreshPersistentSession(ctx context.Context, refreshToken str
 	if err != nil {
 		return SessionTokens{}, err
 	}
+	// The club is known now: bind it as well, so the rotated session can be written.
+	if _, err := tx.Exec(ctx, `SELECT set_config($1, $2, true)`, tenantdb.Setting, record.Principal.OrgID); err != nil {
+		return SessionTokens{}, fmt.Errorf("bind session org: %w", err)
+	}
 
 	now := time.Now().UTC()
+	rotated, err := rotatedPrincipal(now, record)
+	if err != nil {
+		return SessionTokens{}, err
+	}
 	if _, err := tx.Exec(ctx, `
 		UPDATE sessions
 		SET revoked_at = $2, updated_at = now()
@@ -1385,14 +1514,14 @@ func (s *Service) refreshPersistentSession(ctx context.Context, refreshToken str
 		AccessToken:  nextAccess,
 		RefreshToken: nextRefresh,
 		IDToken:      record.IDToken,
-		Principal:    copyPrincipal(record.Principal),
+		Principal:    rotated,
 		ExpiresAt:    expiresAt,
 	}
 	if err := insertSessionRecord(ctx, tx, next); err != nil {
 		return SessionTokens{}, err
 	}
 	if err := tx.Commit(ctx); err != nil {
-		return SessionTokens{}, fmt.Errorf("commit session refresh: %w", err)
+		return SessionTokens{}, fmt.Errorf("%w: commit session refresh: %w", ErrSessionUnavailable, err)
 	}
 
 	return SessionTokens{
@@ -1400,6 +1529,26 @@ func (s *Service) refreshPersistentSession(ctx context.Context, refreshToken str
 		RefreshToken: nextRefresh,
 		ExpiresAt:    expiresAt,
 	}, nil
+}
+
+// maxSessionAge is the absolute lifetime of a refresh chain. Rotation extends a
+// session by 24h at a time, so without this cap a refresh token used daily
+// would keep stale roles for ever; hitting it forces a fresh Keycloak sign-in
+// that re-reads roles and the enabled state.
+const maxSessionAge = 7 * 24 * time.Hour
+
+// rotatedPrincipal copies the stored principal for the next session in the
+// chain, stamping the original sign-in time and refusing once maxSessionAge has
+// passed. Sessions that predate SessionStartedAt are dated from their expiry.
+func rotatedPrincipal(now time.Time, prev *sessionRecord) (appmiddleware.Principal, error) {
+	p := copyPrincipal(prev.Principal)
+	if p.SessionStartedAt == 0 {
+		p.SessionStartedAt = prev.ExpiresAt.Add(-24 * time.Hour).Unix()
+	}
+	if now.Sub(time.Unix(p.SessionStartedAt, 0)) > maxSessionAge {
+		return appmiddleware.Principal{}, ErrSessionExpired
+	}
+	return p, nil
 }
 
 // refreshedExpiry returns the expiry for a rotated session. An MFA-elevated
@@ -1467,7 +1616,7 @@ func (s *Service) revokePersistentSessionByHash(ctx context.Context, hashColumn,
 		return record, nil
 	}
 	now := time.Now().UTC()
-	tag, err := s.pool.Exec(ctx, `
+	tag, err := s.forSession(hashToken(token)).Exec(ctx, `
 		UPDATE sessions
 		SET revoked_at = $2, updated_at = now()
 		WHERE `+hashColumn+` = $1 AND revoked_at IS NULL`,
@@ -1529,7 +1678,7 @@ func (s *Service) loadPersistentValidatedSession(ctx context.Context, query stri
 }
 
 func (s *Service) loadPersistentSessionAny(ctx context.Context, query string, arg any) (*sessionRecord, error) {
-	return scanSessionRecord(s.pool.QueryRow(ctx, query, arg))
+	return scanSessionRecord(s.forSession(arg.(string)).QueryRow(ctx, query, arg))
 }
 
 // scanSessionRecord reads one (principal, id_token, expires_at, revoked_at) row.
@@ -1540,7 +1689,7 @@ func scanSessionRecord(row pgx.Row) (*sessionRecord, error) {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, ErrSessionNotFound
 		}
-		return nil, fmt.Errorf("load session: %w", err)
+		return nil, fmt.Errorf("%w: load session: %w", ErrSessionUnavailable, err)
 	}
 	if err := json.Unmarshal(principalJSON, &record.Principal); err != nil {
 		return nil, fmt.Errorf("unmarshal session principal: %w", err)
@@ -2093,8 +2242,8 @@ func verifyTOTPStep(secret, challengeCode string, now time.Time) (int64, bool) {
 // consumeTOTPStepInDB atomically records step as used for the factor. It
 // reports false when this or a later step was already consumed (a replay),
 // including by another API instance.
-func (s *Service) consumeTOTPStepInDB(ctx context.Context, factorID string, step int64) (bool, error) {
-	tag, err := s.pool.Exec(ctx, `
+func (s *Service) consumeTOTPStepInDB(ctx context.Context, orgID, factorID string, step int64) (bool, error) {
+	tag, err := s.at(orgID).Exec(ctx, `
 		UPDATE mfa_factors
 		SET totp_last_counter = $2
 		WHERE id = $1 AND (totp_last_counter IS NULL OR totp_last_counter < $2)`,
@@ -2107,8 +2256,8 @@ func (s *Service) consumeTOTPStepInDB(ctx context.Context, factorID string, step
 
 // consumeBackupCodeInDB atomically flips a single unused backup code to used.
 // It reports false when the code is absent or already consumed.
-func (s *Service) consumeBackupCodeInDB(ctx context.Context, factorID, hash string) (bool, error) {
-	tag, err := s.pool.Exec(ctx, `
+func (s *Service) consumeBackupCodeInDB(ctx context.Context, orgID, factorID, hash string) (bool, error) {
+	tag, err := s.at(orgID).Exec(ctx, `
 		UPDATE mfa_factors
 		SET backup_codes = (
 			SELECT jsonb_agg(CASE WHEN e->>'Hash' = $2 THEN jsonb_set(e, '{Used}', 'true'::jsonb) ELSE e END)

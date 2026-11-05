@@ -25,7 +25,7 @@ func (s *Service) stripeTransactionLocked(orgID, invoiceID string, mutate func(*
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	err := s.repo.inTx(ctx, func(tx pgx.Tx) error {
+	err := s.repo.inTx(ctx, orgID, func(tx pgx.Tx) error {
 		var id string
 		err := tx.QueryRow(ctx, `SELECT id::text FROM invoices WHERE id = $1::uuid AND org_id = $2::uuid FOR UPDATE`, invoiceID, orgID).Scan(&id)
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -36,7 +36,7 @@ func (s *Service) stripeTransactionLocked(orgID, invoiceID string, mutate func(*
 		}
 		staged := NewService()
 		staged.repo = &Repository{pool: s.repo.pool, tx: tx}
-		if err := staged.reloadLocked(ctx); err != nil {
+		if err := staged.reloadLocked(ctx, orgID); err != nil {
 			return err
 		}
 		return mutate(staged)
@@ -44,7 +44,7 @@ func (s *Service) stripeTransactionLocked(orgID, invoiceID string, mutate func(*
 	if err != nil {
 		return err
 	}
-	return s.reloadLocked(ctx)
+	return s.reloadLocked(ctx, orgID)
 }
 
 // stripeTransactionResult runs mutate inside stripeTransactionLocked and

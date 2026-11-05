@@ -43,7 +43,7 @@ var errInvoiceStale = errors.New("invoice changed concurrently")
 func lockInvoiceFresh(ctx context.Context, tx pgx.Tx, inv *Invoice) error {
 	var status string
 	var paid, total, due int
-	err := tx.QueryRow(ctx, `SELECT status, amount_paid_cents, total_cents, amount_due_cents FROM invoices WHERE id = $1::uuid FOR UPDATE`, inv.ID).Scan(&status, &paid, &total, &due)
+	err := tx.QueryRow(ctx, `SELECT status, amount_paid_cents, total_cents, amount_due_cents FROM invoices WHERE id = $1::uuid AND org_id = $2::uuid FOR UPDATE`, inv.ID, inv.OrgID).Scan(&status, &paid, &total, &due)
 	if err != nil {
 		return err
 	}
@@ -83,11 +83,11 @@ func (s *Service) ApplyLateFees(orgID, actorID string, principal *appmiddleware.
 	s.runMu.Lock()
 	defer s.runMu.Unlock()
 	sweep := func() error {
-		s.mu.Lock()
-		defer s.mu.Unlock()
-		if err := s.refreshLocked(ctx); err != nil {
+		if err := s.refreshOrg(ctx, orgID); err != nil {
 			return err
 		}
+		s.mu.Lock()
+		defer s.mu.Unlock()
 		settings := s.settingsLocked(orgID)
 		result.Enabled = settings.LateFeeEnabled
 		if !settings.LateFeeEnabled {
@@ -166,7 +166,7 @@ func (s *Service) assessLateFeeLocked(ctx context.Context, inv *Invoice, fee int
 	ev := s.newLedgerEventLocked(inv.OrgID, inv.ID, "", "", inv.HouseholdID, "late_fee_assessed", fee,
 		fmt.Sprintf("Late fee %s assessed on invoice %s", formatCents(fee), inv.InvoiceNumber), actorID)
 	if s.repo != nil {
-		err := s.repo.inTx(ctx, func(tx pgx.Tx) error {
+		err := s.repo.inTx(ctx, inv.OrgID, func(tx pgx.Tx) error {
 			inserted, err := insertLateFee(ctx, tx, app)
 			if err != nil {
 				return err

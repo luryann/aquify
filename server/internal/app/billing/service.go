@@ -33,6 +33,7 @@ import (
 	"fmt"
 	"github.com/luryann/aquify/server/internal/dbutil"
 	"log/slog"
+	"math"
 	"slices"
 	"sort"
 	"strings"
@@ -48,8 +49,11 @@ import (
 // ─── Sentinel errors ──────────────────────────────────────────────────────────
 
 var (
-	ErrForbidden                    = errors.New("forbidden")
+	ErrForbidden = errors.New("forbidden")
+	// ErrPaymentAccountNotConnected means the club has no connected Stripe account.
+	ErrPaymentAccountNotConnected   = errors.New("payment account not connected")
 	ErrInvoiceNotFound              = errors.New("invoice not found")
+	ErrHouseholdNotFound            = errors.New("household not found")
 	ErrInvoiceItemNotFound          = errors.New("invoice item not found")
 	ErrPaymentNotFound              = errors.New("payment not found")
 	ErrRefundNotFound               = errors.New("refund not found")
@@ -115,21 +119,24 @@ type InvoiceItem struct {
 
 // Payment represents a payment record against an invoice.
 type Payment struct {
-	ID                    string     `json:"id"`
-	OrgID                 string     `json:"org_id"`
-	InvoiceID             string     `json:"invoice_id"`
-	AmountCents           int        `json:"amount_cents"`
-	Method                string     `json:"method"`
-	Status                string     `json:"status"`
-	StripePaymentIntentID string     `json:"stripe_payment_intent_id,omitempty"`
-	PaidAt                *time.Time `json:"paid_at,omitempty"`
-	FailedAt              *time.Time `json:"failed_at,omitempty"`
-	ExternalRef           string     `json:"external_ref,omitempty"`
-	Notes                 string     `json:"notes,omitempty"`
-	CreatedAt             time.Time  `json:"created_at"`
-	UpdatedAt             time.Time  `json:"updated_at"`
-	CreatedBy             string     `json:"created_by"`
-	UpdatedBy             string     `json:"updated_by"`
+	ID                    string `json:"id"`
+	OrgID                 string `json:"org_id"`
+	InvoiceID             string `json:"invoice_id"`
+	AmountCents           int    `json:"amount_cents"`
+	Method                string `json:"method"`
+	Status                string `json:"status"`
+	StripePaymentIntentID string `json:"stripe_payment_intent_id,omitempty"`
+	// StripeAccountID is the connected account the payment was taken on ("" = the
+	// platform account). Refunds are issued against it.
+	StripeAccountID string     `json:"stripe_account_id,omitempty"`
+	PaidAt          *time.Time `json:"paid_at,omitempty"`
+	FailedAt        *time.Time `json:"failed_at,omitempty"`
+	ExternalRef     string     `json:"external_ref,omitempty"`
+	Notes           string     `json:"notes,omitempty"`
+	CreatedAt       time.Time  `json:"created_at"`
+	UpdatedAt       time.Time  `json:"updated_at"`
+	CreatedBy       string     `json:"created_by"`
+	UpdatedBy       string     `json:"updated_by"`
 }
 
 // Refund represents a refund request against a payment.
@@ -239,7 +246,7 @@ type HouseholdAutopayStatus struct {
 // CreateInvoiceInput holds fields for creating an invoice.
 type CreateInvoiceInput struct {
 	HouseholdID   string `json:"household_id"`
-	InvoiceNumber string `json:"invoice_number" validate:"required"`
+	InvoiceNumber string `json:"invoice_number" validate:"required,max=200"`
 	DueDate       string `json:"due_date"` // YYYY-MM-DD optional
 	Notes         string `json:"notes"`
 	ExternalRef   string `json:"external_ref"`
@@ -306,10 +313,10 @@ type ListPaymentsFilters struct {
 
 type UpsertHouseholdAutopayInput struct {
 	PaymentMethodType        string `json:"payment_method_type" validate:"required,oneof=card ach"`
-	PaymentMethodBrand       string `json:"payment_method_brand"`
-	PaymentMethodLast4       string `json:"payment_method_last4"`
+	PaymentMethodBrand       string `json:"payment_method_brand" validate:"omitempty,max=32"`
+	PaymentMethodLast4       string `json:"payment_method_last4" validate:"omitempty,len=4,numeric"`
 	PaymentMethodLabel       string `json:"payment_method_label" validate:"required,max=120"`
-	PaymentMethodExternalRef string `json:"payment_method_external_ref"`
+	PaymentMethodExternalRef string `json:"payment_method_external_ref" validate:"omitempty,max=128"`
 	PaymentMethodExpMonth    int    `json:"payment_method_exp_month"`
 	PaymentMethodExpYear     int    `json:"payment_method_exp_year"`
 	TriggerDaysBeforeDue     int    `json:"trigger_days_before_due" validate:"oneof=0 3 7"`
@@ -318,8 +325,67 @@ type UpsertHouseholdAutopayInput struct {
 // ─── Service ─────────────────────────────────────────────────────────────────
 
 // Service is the billing domain service.
+// SetHouseholdChecker installs the check that a household id belongs to the org.
+// Without it (tests, in-memory fixtures) household ids are not validated.
+func (s *Service) SetHouseholdChecker(fn func(orgID, householdID string) bool) {
+	s.mu.Lock()
+	s.householdExists = fn
+	s.mu.Unlock()
+}
+
+// SetHouseholdCheckerDefault installs the check only when none is set, so a
+// service built with its own (e.g. a fixture that uses made-up household ids)
+// keeps it.
+func (s *Service) SetHouseholdCheckerDefault(fn func(orgID, householdID string) bool) {
+	s.mu.Lock()
+	if s.householdExists == nil {
+		s.householdExists = fn
+	}
+	s.mu.Unlock()
+}
+
+// requireHouseholdInOrg refuses ids that are not a household of this org, so a
+// caller cannot create or probe billing state for another org's household.
+func (s *Service) requireHouseholdInOrg(orgID, householdID string) error {
+	s.mu.Lock()
+	fn := s.householdExists
+	s.mu.Unlock()
+	if fn != nil && !fn(orgID, strings.TrimSpace(householdID)) {
+		return ErrHouseholdNotFound
+	}
+	return nil
+}
+
+// SetStripeAccountResolver tells billing which Stripe account an org uses, for
+// reconciliation (connected account id, or "" for the platform account).
+func (s *Service) SetStripeAccountResolver(fn func(orgID string) (string, error)) {
+	s.mu.Lock()
+	s.stripeAccountFor = fn
+	s.mu.Unlock()
+}
+
+// StripeAccountFor returns the Stripe account the org transacts on ("" = platform).
+//
+// A lookup failure, or a club with no connected account while Connect is required,
+// is returned as an error: callers must never fall back to the platform account.
+func (s *Service) StripeAccountFor(orgID string) (string, error) {
+	s.mu.Lock()
+	fn := s.stripeAccountFor
+	s.mu.Unlock()
+	if fn == nil {
+		return "", nil
+	}
+	return fn(orgID)
+}
+
 type Service struct {
-	mu                sync.RWMutex
+	// orgCache bounds how many clubs' rows stay cached (idle TTL + LRU cap).
+	syncHook          func()              // test hook: runs between a lock-free read and its swap
+	foreign           dbutil.ForeignClock // what foreign-write count each club's cache was last loaded at
+	orgCache          dbutil.OrgCache
+	stripeAccountFor  func(orgID string) (string, error)
+	householdExists   func(orgID, householdID string) bool
+	mu                dbutil.GenMutex // counts writers so refreshForRead can reload without the lock
 	repo              *Repository
 	invoices          map[string]*Invoice
 	items             map[string][]*InvoiceItem // invoiceID → []InvoiceItem
@@ -361,17 +427,15 @@ func NewService() *Service {
 	}
 }
 
-// NewServiceWithPool creates a DB-backed billing Service and loads existing
-// data from Postgres into memory on startup.
+// NewServiceWithPool creates a DB-backed billing Service. Each club is loaded on demand.
 func NewServiceWithPool(pool *pgxpool.Pool) *Service {
 	s := NewService()
 	if pool == nil {
 		return s
 	}
 	s.repo = newRepository(pool)
-	if err := s.loadFromDB(context.Background()); err != nil {
-		slog.Error("billing: failed to load from DB", "err", err)
-	}
+	// No eager load: every request path loads its own org on demand (syncFromDB(ctx, orgID)),
+	// so the process holds only the clubs it has served, not every club's data.
 	return s
 }
 
@@ -380,64 +444,191 @@ func NewServiceWithPool(pool *pgxpool.Pool) *Service {
 func (s *Service) Refresh(ctx context.Context) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return s.refreshLocked(ctx)
+	return s.refreshLocked(ctx, "")
 }
 
-func (s *Service) loadFromDB(ctx context.Context) error {
+// RefreshOrg reloads one club from Postgres. Prefer it to Refresh on any path that already
+// knows its club: Refresh reads every club.
+func (s *Service) RefreshOrg(ctx context.Context, orgID string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return s.reloadLocked(ctx)
+	return s.refreshLocked(ctx, orgID)
 }
 
-// reloadLocked replaces the in-memory cache with the canonical Postgres state.
+// reloadLocked replaces the in-memory cache with the canonical Postgres state: all
+// orgs when orgID is empty, otherwise only that org's rows.
 // Finance reads (runs, reports, statements, credits) call it so a second API
 // instance or the worker process observes writes made elsewhere.
 // Must be called with s.mu held (write).
-func (s *Service) reloadLocked(ctx context.Context) error {
+func (s *Service) reloadLocked(ctx context.Context, orgID string) error {
 	if s.repo == nil {
 		return nil
 	}
-	invoices, items, payments, refunds, ledger, autopayProfiles, err := s.repo.LoadAll(ctx)
-	if err != nil {
-		return err
-	}
-	s.invoices = make(map[string]*Invoice, len(invoices))
-	s.items = make(map[string][]*InvoiceItem)
-	s.payments = make(map[string][]*Payment)
-	s.refunds = make(map[string][]*Refund)
-	s.autopayProfiles = make(map[string]*HouseholdAutopayProfile, len(autopayProfiles))
-	for _, inv := range invoices {
-		s.invoices[inv.ID] = inv
-	}
-	for _, item := range items {
-		s.items[item.InvoiceID] = append(s.items[item.InvoiceID], item)
-	}
-	for _, p := range payments {
-		s.payments[p.InvoiceID] = append(s.payments[p.InvoiceID], p)
-	}
-	for _, r := range refunds {
-		s.refunds[r.InvoiceID] = append(s.refunds[r.InvoiceID], r)
-	}
-	s.ledger = ledger
-	for _, profile := range autopayProfiles {
-		s.autopayProfiles[autopayProfileKey(profile.OrgID, profile.HouseholdID)] = profile
+	if orgID == "" {
+		// Every club, one at a time under that club's own row-level-security binding.
+		orgs, err := s.repo.OrgIDs(ctx)
+		if err != nil {
+			return err
+		}
+		s.invoices = make(map[string]*Invoice)
+		s.items = make(map[string][]*InvoiceItem)
+		s.payments = make(map[string][]*Payment)
+		s.refunds = make(map[string][]*Refund)
+		s.autopayProfiles = make(map[string]*HouseholdAutopayProfile)
+		s.ledger = nil
+		s.finance = newFinanceState()
+		for _, o := range orgs {
+			if err := s.loadOrgIntoCaches(ctx, o, false); err != nil {
+				return err
+			}
+		}
+	} else {
+		// Load first so a failed read leaves the cached club untouched.
+		if err := s.loadOrgIntoCaches(ctx, orgID, true); err != nil {
+			return err
+		}
+		s.orgCache.Touch(orgID, s.dropOrgLocked)
 	}
 	s.rebuildIndexesLocked()
-	// Finance tables load independently so a missing finance migration never
-	// hides core invoice data.
-	finance, err := s.repo.loadFinanceState(ctx)
-	if err != nil {
-		return fmt.Errorf("billing: load finance state: %w", err)
-	}
-	s.finance = finance
 	s.rebuildStripeCreditIndexLocked()
 	return nil
 }
 
-// rebuildIndexesLocked derives every lookup index and the derived paid/due
-// amounts from the primary maps (invoices, items, payments, refunds). Both the
-// DB loader and the runtime-snapshot loader install state through it so they
-// start with identical invariants. Caller holds s.mu (write).
+// loadOrgIntoCaches reads one club's billing state and merges it into the caches, first
+// dropping the club's cached rows when replace is set. Caller holds s.mu (write).
+func (s *Service) loadOrgIntoCaches(ctx context.Context, orgID string, replace bool) error {
+	apply, err := s.fetchOrg(ctx, orgID)
+	if err != nil {
+		return err
+	}
+	apply(replace)
+	return nil
+}
+
+// fetchOrg reads one club's billing state from Postgres without touching the caches and
+// returns the function that merges it in (call it under s.mu, write). The read can
+// therefore run without the service lock.
+func (s *Service) fetchOrg(ctx context.Context, orgID string) (apply func(replace bool), err error) {
+	invoices, items, payments, refunds, ledger, autopayProfiles, err := s.repo.LoadAll(ctx, orgID)
+	if err != nil {
+		return nil, err
+	}
+	// Finance tables load independently so a missing finance migration never
+	// hides core invoice data.
+	finance, err := s.repo.loadFinanceState(ctx, orgID)
+	if err != nil {
+		return nil, fmt.Errorf("billing: load finance state: %w", err)
+	}
+	return func(replace bool) {
+		if replace {
+			s.dropOrgLocked(orgID)
+		}
+		for _, inv := range invoices {
+			s.invoices[inv.ID] = inv
+		}
+		for _, item := range items {
+			s.items[item.InvoiceID] = append(s.items[item.InvoiceID], item)
+		}
+		for _, p := range payments {
+			s.payments[p.InvoiceID] = append(s.payments[p.InvoiceID], p)
+		}
+		for _, r := range refunds {
+			s.refunds[r.InvoiceID] = append(s.refunds[r.InvoiceID], r)
+		}
+		s.ledger = append(s.ledger, ledger...)
+		for _, profile := range autopayProfiles {
+			s.autopayProfiles[autopayProfileKey(profile.OrgID, profile.HouseholdID)] = profile
+		}
+		s.mergeFinanceLocked(finance)
+	}, nil
+}
+
+// SetOrgCacheLimits bounds the per-org cache: idle clubs older than ttl and the least
+// recently served clubs beyond maxOrgs are evicted (0 = unlimited).
+func (s *Service) SetOrgCacheLimits(ttl time.Duration, maxOrgs int) {
+	s.orgCache.ConfigureLocked(&s.mu, ttl, maxOrgs)
+}
+
+// dropOrgLocked removes one org's cached billing rows so a scoped reload replaces
+// exactly them and leaves every other org's cache untouched.
+func (s *Service) dropOrgLocked(orgID string) {
+	s.foreign.Forget(orgID)
+	for id, inv := range s.invoices {
+		if inv.OrgID == orgID {
+			delete(s.items, id)
+			delete(s.payments, id)
+			delete(s.refunds, id)
+			delete(s.invoices, id)
+		}
+	}
+	kept := s.ledger[:0]
+	for _, ev := range s.ledger {
+		if ev.OrgID != orgID {
+			kept = append(kept, ev)
+		}
+	}
+	s.ledger = kept
+	dbutil.DropByOrg(s.autopayProfiles, orgID, func(p *HouseholdAutopayProfile) string { return p.OrgID })
+	f := s.finance
+	dbutil.DropByOrg(f.schedules, orgID, func(v *FeeSchedule) string { return v.OrgID })
+	dbutil.DropByOrg(f.rules, orgID, func(v *DiscountRule) string { return v.OrgID })
+	dbutil.DropByOrg(f.adjustments, orgID, func(v *Adjustment) string { return v.OrgID })
+	dbutil.DropByOrg(f.runs, orgID, func(v *BillingRun) string { return v.OrgID })
+	dbutil.DropByOrg(f.chargeKeys, orgID, func(v *BillingCharge) string { return v.OrgID })
+	dbutil.DropByOrg(f.lateFees, orgID, func(v *LateFeeApplication) string { return v.OrgID })
+	delete(f.settings, orgID)
+	for k := range f.balances {
+		if strings.HasPrefix(k, orgID+"|") {
+			delete(f.balances, k)
+		}
+	}
+	charges := f.charges[:0]
+	for _, c := range f.charges {
+		if c.OrgID != orgID {
+			charges = append(charges, c)
+		}
+	}
+	f.charges = charges
+	credits := f.credits[:0]
+	for _, c := range f.credits {
+		if c.OrgID != orgID {
+			credits = append(credits, c)
+		}
+	}
+	f.credits = credits
+}
+
+// mergeFinanceLocked adds freshly loaded finance rows to the cache (the caller has
+// already cleared the rows being replaced).
+func (s *Service) mergeFinanceLocked(loaded *financeState) {
+	f := s.finance
+	for k, v := range loaded.schedules {
+		f.schedules[k] = v
+	}
+	for k, v := range loaded.rules {
+		f.rules[k] = v
+	}
+	for k, v := range loaded.adjustments {
+		f.adjustments[k] = v
+	}
+	for k, v := range loaded.runs {
+		f.runs[k] = v
+	}
+	for k, v := range loaded.settings {
+		f.settings[k] = v
+	}
+	for k, v := range loaded.lateFees {
+		f.lateFees[k] = v
+	}
+	for k, v := range loaded.balances {
+		f.balances[k] = v
+	}
+	for _, c := range loaded.charges {
+		f.indexCharge(c)
+	}
+	f.credits = append(f.credits, loaded.credits...)
+}
+
 func (s *Service) rebuildIndexesLocked() {
 	s.itemsByID = make(map[string]*InvoiceItem)
 	for _, items := range s.items {
@@ -703,6 +894,10 @@ func (s *Service) buildAutopayStatusLocked(orgID, householdID string, profile *H
 		status.TriggerDaysBeforeDue = profile.TriggerDaysBeforeDue
 	}
 
+	if profile == nil || !profile.Enabled {
+		return status
+	}
+
 	var nextInvoice *Invoice
 	for _, invoice := range s.invoices {
 		if invoice.OrgID != orgID || invoice.HouseholdID != householdID {
@@ -752,12 +947,27 @@ func (s *Service) CreateInvoice(orgID, actorID string, principal *appmiddleware.
 	if err := s.requireAdmin(principal); err != nil {
 		return nil, err
 	}
+	if len(input.InvoiceNumber) > 200 {
+		return nil, fmt.Errorf("%w: invoice_number is too long", ErrInvalidFinanceInput)
+	}
+	if input.DueDate != "" {
+		if _, err := time.Parse("2006-01-02", input.DueDate); err != nil {
+			return nil, fmt.Errorf("%w: due_date must use YYYY-MM-DD", ErrInvalidFinanceInput)
+		}
+	}
+	if input.HouseholdID != "" {
+		if s.repo != nil {
+			if _, err := uuid.Parse(input.HouseholdID); err != nil {
+				return nil, fmt.Errorf("%w: household_id must be a UUID", ErrInvalidFinanceInput)
+			}
+		}
+	}
 
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if err := s.refreshLocked(context.Background()); err != nil {
+	if err := s.refreshForRead(orgID); err != nil {
 		return nil, err
 	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
 
 	key := invoiceNumKey(orgID, input.InvoiceNumber)
 	if s.invoiceNums[key] {
@@ -806,11 +1016,11 @@ func (s *Service) InvoicesByExternalRef(orgID string, principal *appmiddleware.P
 	if ref == "" {
 		return nil, nil
 	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if err := s.refreshLocked(context.Background()); err != nil {
+	if err := s.refreshForRead(orgID); err != nil {
 		return nil, err
 	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	var out []*Invoice
 	for _, inv := range s.invoices {
 		if inv.OrgID == orgID && inv.ExternalRef == ref {
@@ -829,11 +1039,11 @@ func (s *Service) GetInvoice(orgID string, principal *appmiddleware.Principal, i
 		return nil, err
 	}
 
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if err := s.refreshLocked(context.Background()); err != nil {
+	if err := s.refreshForRead(orgID); err != nil {
 		return nil, err
 	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
 
 	inv, ok := s.invoices[invoiceID]
 	if !ok || inv.OrgID != orgID {
@@ -864,11 +1074,11 @@ func (s *Service) ListInvoices(orgID string, principal *appmiddleware.Principal,
 		filters.HouseholdID = scopedHouseholdID
 	}
 
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if err := s.refreshLocked(context.Background()); err != nil {
+	if err := s.refreshForRead(orgID); err != nil {
 		return nil, err
 	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
 
 	var out []*Invoice
 	for _, inv := range s.invoices {
@@ -900,6 +1110,10 @@ func (s *Service) AddInvoiceItem(orgID, actorID string, principal *appmiddleware
 	if err := s.requireAdmin(principal); err != nil {
 		return nil, err
 	}
+	if input.Quantity > 10000 || input.UnitAmountCents > 100000000 ||
+		int64(input.Quantity)*int64(input.UnitAmountCents) > math.MaxInt32 {
+		return nil, fmt.Errorf("%w: line item amount is too large", ErrInvalidFinanceInput)
+	}
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -917,11 +1131,6 @@ func (s *Service) AddInvoiceItem(orgID, actorID string, principal *appmiddleware
 			return nil, err
 		}
 		return added, nil
-	}
-	if s.repo == nil || s.repo.tx == nil {
-		if err := s.refreshLocked(context.Background()); err != nil {
-			return nil, err
-		}
 	}
 
 	inv, ok := s.invoices[invoiceID]
@@ -968,7 +1177,7 @@ func (s *Service) AddInvoiceItem(orgID, actorID string, principal *appmiddleware
 		if err := s.repo.UpsertInvoice(context.Background(), &next); err != nil {
 			s.items[invoiceID] = slices.DeleteFunc(s.items[invoiceID], func(i *InvoiceItem) bool { return i.ID == item.ID })
 			delete(s.itemsByID, item.ID)
-			if delErr := s.repo.DeleteInvoiceItem(context.Background(), item.ID); delErr != nil {
+			if delErr := s.repo.DeleteInvoiceItem(context.Background(), item.OrgID, item.ID); delErr != nil {
 				slog.Error("billing: remove orphaned invoice item failed", "item_id", item.ID, "error", delErr)
 			}
 			return nil, fmt.Errorf("persist invoice after item add: %w", err)
@@ -1009,7 +1218,7 @@ func (s *Service) RemoveInvoiceItem(orgID, actorID string, principal *appmiddlew
 	}
 
 	if s.repo != nil {
-		if err := s.repo.DeleteInvoiceItem(context.Background(), itemID); err != nil {
+		if err := s.repo.DeleteInvoiceItem(context.Background(), item.OrgID, itemID); err != nil {
 			return fmt.Errorf("delete invoice item: %w", err)
 		}
 	}
@@ -1039,11 +1248,11 @@ func (s *Service) ListInvoiceItems(orgID string, principal *appmiddleware.Princi
 		return nil, err
 	}
 
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if err := s.refreshLocked(context.Background()); err != nil {
+	if err := s.refreshForRead(orgID); err != nil {
 		return nil, err
 	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
 
 	inv, ok := s.invoices[invoiceID]
 	if !ok || inv.OrgID != orgID {
@@ -1079,11 +1288,6 @@ func (s *Service) IssueInvoice(orgID, actorID string, principal *appmiddleware.P
 		return stripeTransactionResult(s, orgID, invoiceID, func(staged *Service) (*Invoice, *LedgerEvent, error) {
 			return staged.IssueInvoice(orgID, actorID, principal, invoiceID)
 		})
-	}
-	if s.repo == nil {
-		if err := s.refreshLocked(context.Background()); err != nil {
-			return nil, nil, err
-		}
 	}
 
 	inv, ok := s.invoices[invoiceID]
@@ -1140,11 +1344,6 @@ func (s *Service) VoidInvoice(orgID, actorID string, principal *appmiddleware.Pr
 		return stripeTransactionResult(s, orgID, invoiceID, func(staged *Service) (*Invoice, *LedgerEvent, error) {
 			return staged.VoidInvoice(orgID, actorID, principal, invoiceID)
 		})
-	}
-	if s.repo == nil {
-		if err := s.refreshLocked(context.Background()); err != nil {
-			return nil, nil, err
-		}
 	}
 
 	inv, ok := s.invoices[invoiceID]
@@ -1204,11 +1403,6 @@ func (s *Service) WriteOffInvoice(orgID, actorID string, principal *appmiddlewar
 		return stripeTransactionResult(s, orgID, invoiceID, func(staged *Service) (*Invoice, *LedgerEvent, error) {
 			return staged.WriteOffInvoice(orgID, actorID, principal, invoiceID)
 		})
-	}
-	if s.repo == nil {
-		if err := s.refreshLocked(context.Background()); err != nil {
-			return nil, nil, err
-		}
 	}
 
 	inv, ok := s.invoices[invoiceID]
@@ -1288,7 +1482,7 @@ func (s *Service) RecordPayment(orgID, actorID string, principal *appmiddleware.
 	if input.PaidAt != "" {
 		parsedPaidAt, err := time.Parse("2006-01-02", strings.TrimSpace(input.PaidAt))
 		if err != nil {
-			return nil, nil, fmt.Errorf("paid_at must use YYYY-MM-DD format: %w", err)
+			return nil, nil, fmt.Errorf("%w: paid_at must use YYYY-MM-DD format", ErrInvalidFinanceInput)
 		}
 		paidAt = parsedPaidAt.UTC()
 	}
@@ -1358,11 +1552,11 @@ func (s *Service) ListPayments(orgID string, principal *appmiddleware.Principal,
 		return nil, err
 	}
 
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if err := s.refreshLocked(context.Background()); err != nil {
+	if err := s.refreshForRead(orgID); err != nil {
 		return nil, err
 	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
 
 	inv, ok := s.invoices[invoiceID]
 	if !ok || inv.OrgID != orgID {
@@ -1372,10 +1566,14 @@ func (s *Service) ListPayments(orgID string, principal *appmiddleware.Principal,
 		return nil, err
 	}
 
+	_, parentScoped := s.parentHouseholdScope(principal)
 	pyts := s.payments[invoiceID]
 	out := make([]*Payment, len(pyts))
 	for i, p := range pyts {
 		cp := *p
+		if parentScoped {
+			redactPaymentForParent(&cp)
+		}
 		out[i] = &cp
 	}
 	return out, nil
@@ -1387,11 +1585,11 @@ func (s *Service) ListPaymentsForOrg(orgID string, principal *appmiddleware.Prin
 		return nil, err
 	}
 
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if err := s.refreshLocked(context.Background()); err != nil {
+	if err := s.refreshForRead(orgID); err != nil {
 		return nil, err
 	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
 
 	scopedHouseholdID, parentScoped := s.parentHouseholdScope(principal)
 	if parentScoped && scopedHouseholdID == "" {
@@ -1416,6 +1614,9 @@ func (s *Service) ListPaymentsForOrg(orgID string, principal *appmiddleware.Prin
 			continue
 		}
 		cp := *payment
+		if parentScoped {
+			redactPaymentForParent(&cp)
+		}
 		out = append(out, &cp)
 	}
 	sort.Slice(out, func(i, j int) bool {
@@ -1439,11 +1640,11 @@ func (s *Service) GetPayment(orgID string, principal *appmiddleware.Principal, i
 		return nil, err
 	}
 
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if err := s.refreshLocked(context.Background()); err != nil {
+	if err := s.refreshForRead(orgID); err != nil {
 		return nil, err
 	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
 
 	inv, ok := s.invoices[invoiceID]
 	if !ok || inv.OrgID != orgID {
@@ -1458,7 +1659,20 @@ func (s *Service) GetPayment(orgID string, principal *appmiddleware.Principal, i
 	}
 
 	cp := *payment
+	if _, parentScoped := s.parentHouseholdScope(principal); parentScoped {
+		redactPaymentForParent(&cp)
+	}
 	return &cp, nil
+}
+
+// redactPaymentForParent blanks staff-only fields on a payment copy.
+func redactPaymentForParent(p *Payment) {
+	p.Notes, p.ExternalRef, p.CreatedBy, p.UpdatedBy = "", "", "", ""
+}
+
+// redactRefundForParent blanks staff-only fields on a refund copy.
+func redactRefundForParent(r *Refund) {
+	r.Reason, r.RequestedBy, r.ApprovedBy, r.CreatedBy, r.UpdatedBy = "", "", "", "", ""
 }
 
 // ─── Refunds ─────────────────────────────────────────────────────────────────
@@ -1468,12 +1682,15 @@ func (s *Service) GetHouseholdAutopayStatus(orgID string, principal *appmiddlewa
 	if err := s.requireAutopayReadAccess(principal, householdID); err != nil {
 		return nil, err
 	}
-
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if err := s.refreshLocked(context.Background()); err != nil {
+	if err := s.requireHouseholdInOrg(orgID, householdID); err != nil {
 		return nil, err
 	}
+
+	if err := s.refreshForRead(orgID); err != nil {
+		return nil, err
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
 
 	return s.buildAutopayStatusLocked(orgID, householdID, s.autopayProfiles[autopayProfileKey(orgID, householdID)]), nil
 }
@@ -1492,11 +1709,11 @@ func (s *Service) ListHouseholdAutopayStatuses(orgID string, principal *appmiddl
 		householdIDs = []string{scopedHouseholdID}
 	}
 
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if err := s.refreshLocked(context.Background()); err != nil {
+	if err := s.refreshForRead(orgID); err != nil {
 		return nil, err
 	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
 
 	seen := make(map[string]struct{}, len(householdIDs))
 	normalized := make([]string, 0, len(householdIDs))
@@ -1544,6 +1761,9 @@ func (s *Service) UpsertHouseholdAutopay(orgID, actorID string, principal *appmi
 	if err := s.requireAutopayWriteAccess(principal, householdID); err != nil {
 		return nil, err
 	}
+	if err := s.requireHouseholdInOrg(orgID, householdID); err != nil {
+		return nil, err
+	}
 
 	input = normalizeAutopayInput(input)
 	if input.PaymentMethodLabel == "" || input.PaymentMethodType == "" {
@@ -1567,11 +1787,11 @@ func (s *Service) UpsertHouseholdAutopay(orgID, actorID string, principal *appmi
 		}
 	}
 
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if err := s.refreshLocked(context.Background()); err != nil {
+	if err := s.refreshForRead(orgID); err != nil {
 		return nil, err
 	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
 
 	now := time.Now().UTC()
 	key := autopayProfileKey(orgID, householdID)
@@ -1603,12 +1823,15 @@ func (s *Service) OptOutHouseholdAutopay(orgID, actorID string, principal *appmi
 	if err := s.requireAutopayWriteAccess(principal, householdID); err != nil {
 		return nil, err
 	}
-
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if err := s.refreshLocked(context.Background()); err != nil {
+	if err := s.requireHouseholdInOrg(orgID, householdID); err != nil {
 		return nil, err
 	}
+
+	if err := s.refreshForRead(orgID); err != nil {
+		return nil, err
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
 
 	now := time.Now().UTC()
 	key := autopayProfileKey(orgID, householdID)
@@ -1656,11 +1879,11 @@ func (s *Service) ValidateRefundPreflight(orgID string, principal *appmiddleware
 		return nil, ErrRefundRequiresReason
 	}
 
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if err := s.refreshLocked(context.Background()); err != nil {
+	if err := s.refreshForRead(orgID); err != nil {
 		return nil, err
 	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
 
 	inv, ok := s.invoices[invoiceID]
 	if !ok || inv.OrgID != orgID {
@@ -1735,6 +1958,34 @@ func (s *Service) CreateRefund(orgID, actorID string, principal *appmiddleware.P
 			if existing.StripeRefundID == input.StripeRefundID {
 				cp := *existing
 				return &cp, nil, nil
+			}
+		}
+	}
+
+	// Adopt a webhook-synthesized refund for the same Stripe refund: the
+	// charge.refunded webhook may record the refund before this request does,
+	// under a "<pi>-cumulative-N" id because the real re_ id was unavailable.
+	if input.StripeRefundID != "" && payment.StripePaymentIntentID != "" {
+		synthPrefix := payment.StripePaymentIntentID + "-cumulative-"
+		for _, existing := range s.refunds[invoiceID] {
+			if existing.PaymentID == payment.ID && existing.Status == "processed" &&
+				existing.AmountCents == input.AmountCents &&
+				strings.HasPrefix(existing.StripeRefundID, synthPrefix) &&
+				time.Since(existing.CreatedAt) < 10*time.Minute {
+				adopted := *existing
+				adopted.StripeRefundID = input.StripeRefundID
+				adopted.UpdatedAt = time.Now().UTC()
+				if s.repo != nil {
+					ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+					err := s.repo.UpsertRefund(ctx, &adopted)
+					cancel()
+					if err != nil {
+						return nil, nil, fmt.Errorf("persist adopted refund id: %w", err)
+					}
+				}
+				existing.StripeRefundID = adopted.StripeRefundID
+				existing.UpdatedAt = adopted.UpdatedAt
+				return &adopted, nil, nil
 			}
 		}
 	}
@@ -1825,11 +2076,11 @@ func (s *Service) ListRefunds(orgID string, principal *appmiddleware.Principal, 
 		return nil, err
 	}
 
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if err := s.refreshLocked(context.Background()); err != nil {
+	if err := s.refreshForRead(orgID); err != nil {
 		return nil, err
 	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
 
 	inv, ok := s.invoices[invoiceID]
 	if !ok || inv.OrgID != orgID {
@@ -1839,10 +2090,14 @@ func (s *Service) ListRefunds(orgID string, principal *appmiddleware.Principal, 
 		return nil, err
 	}
 
+	_, parentScoped := s.parentHouseholdScope(principal)
 	rfs := s.refunds[invoiceID]
 	out := make([]*Refund, len(rfs))
 	for i, r := range rfs {
 		cp := *r
+		if parentScoped {
+			redactRefundForParent(&cp)
+		}
 		out[i] = &cp
 	}
 	return out, nil
@@ -1856,11 +2111,11 @@ func (s *Service) ListLedgerEvents(orgID string, principal *appmiddleware.Princi
 		return nil, err
 	}
 
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if err := s.refreshLocked(context.Background()); err != nil {
+	if err := s.refreshForRead(orgID); err != nil {
 		return nil, err
 	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
 
 	var out []*LedgerEvent
 	for _, ev := range s.ledger {
@@ -1895,11 +2150,11 @@ func (s *Service) LedgerEvents() []*LedgerEvent {
 // and returns invoices, items, payments, refunds and ledger events for the org
 // taken under a single lock so they are mutually consistent.
 func (s *Service) IntegritySnapshot(ctx context.Context, orgID string) ([]Invoice, []InvoiceItem, []Payment, []Refund, []LedgerEvent, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if err := s.refreshLocked(ctx); err != nil {
+	if err := s.refreshOrg(ctx, orgID); err != nil {
 		return nil, nil, nil, nil, nil, err
 	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	var (
 		invs []Invoice
 		its  []InvoiceItem
@@ -2150,12 +2405,22 @@ func (s *Service) HandleStripePaymentIntentSucceeded(
 	amountCents int,
 	actorID string,
 ) (*Payment, *LedgerEvent, error) {
+	return s.HandleStripePaymentIntentSucceededOn(orgID, "", paymentIntentID, invoiceID, amountCents, actorID)
+}
+
+// HandleStripePaymentIntentSucceededOn is HandleStripePaymentIntentSucceeded for a
+// payment taken on a connected account (stripeAccountID, "" = platform account).
+func (s *Service) HandleStripePaymentIntentSucceededOn(
+	orgID, stripeAccountID, paymentIntentID, invoiceID string,
+	amountCents int,
+	actorID string,
+) (*Payment, *LedgerEvent, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
 	if s.repo != nil && s.repo.tx == nil {
 		return stripeTransactionResult(s, orgID, invoiceID, func(staged *Service) (*Payment, *LedgerEvent, error) {
-			return staged.HandleStripePaymentIntentSucceeded(orgID, paymentIntentID, invoiceID, amountCents, actorID)
+			return staged.HandleStripePaymentIntentSucceededOn(orgID, stripeAccountID, paymentIntentID, invoiceID, amountCents, actorID)
 		})
 	}
 
@@ -2207,6 +2472,7 @@ func (s *Service) HandleStripePaymentIntentSucceeded(
 		Method:                "stripe",
 		Status:                "succeeded",
 		StripePaymentIntentID: paymentIntentID,
+		StripeAccountID:       strings.TrimSpace(stripeAccountID),
 		PaidAt:                &now,
 		CreatedAt:             now,
 		UpdatedAt:             now,
@@ -2350,11 +2616,17 @@ func (s *Service) rebuildStripeCreditIndexLocked() {
 // as failed. If no payment exists for the given paymentIntentID, this is a
 // no-op (the PaymentIntent may have never touched our system).
 func (s *Service) HandleStripePaymentIntentFailed(paymentIntentID string) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if err := s.refreshLocked(context.Background()); err != nil {
+	return s.HandleStripePaymentIntentFailedFor("", paymentIntentID)
+}
+
+// HandleStripePaymentIntentFailedFor is HandleStripePaymentIntentFailed for an event
+// whose org is known (Connect events are attributed by account), loading only that org.
+func (s *Service) HandleStripePaymentIntentFailedFor(orgID, paymentIntentID string) error {
+	if err := s.refreshForRead(orgID); err != nil {
 		return err
 	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
 
 	payment, ok := s.stripeIntentIndex[paymentIntentID]
 	if !ok || payment.Status != "pending" {
@@ -2533,13 +2805,21 @@ func (s *Service) GetReconciliationReport(
 		return nil, err
 	}
 
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if err := s.refreshLocked(context.Background()); err != nil {
+	if err := s.refreshForRead(orgID); err != nil {
 		return nil, err
 	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
 
-	// Sum ledger events: payment_succeeded events for Stripe method payments.
+	// Sum ledger events: payment_succeeded events for Stripe method payments taken
+	// on the org's current Stripe account (connected account, or "" = platform).
+	account := ""
+	if s.stripeAccountFor != nil {
+		var err error
+		if account, err = s.stripeAccountFor(orgID); err != nil {
+			return nil, err
+		}
+	}
 	ledgerTotal := 0
 	for _, ev := range s.ledger {
 		if ev.OrgID != orgID || ev.EventType != "payment_succeeded" {
@@ -2549,11 +2829,23 @@ func (s *Service) GetReconciliationReport(
 			continue
 		}
 		// Check if the payment was made via Stripe.
-		if p, ok := s.paymentsByID[ev.PaymentID]; ok && p.Method == "stripe" {
+		if p, ok := s.paymentsByID[ev.PaymentID]; ok && p.Method == "stripe" && p.StripeAccountID == account {
 			// Ledger stores payment_succeeded as a negative amount (credit).
 			// Use the absolute value for the total.
 			ledgerTotal += -ev.AmountCents
 		}
+	}
+	// Stripe cash that was credited to the household instead of a Payment row
+	// (overpayment excess, or charges on settled/voided invoices) is real
+	// Stripe volume too; those entries carry the PaymentIntent id as StripeRef.
+	for _, c := range s.finance.credits {
+		if c.OrgID != orgID || c.Kind != CreditKindOverpayment || c.AmountCents <= 0 {
+			continue
+		}
+		if c.StripeRef == "" || strings.HasPrefix(c.StripeRef, "refund|") {
+			continue
+		}
+		ledgerTotal += c.AmountCents
 	}
 
 	mismatch := ledgerTotal - stripeTotalCents

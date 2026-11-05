@@ -19,6 +19,17 @@ type ScheduledJob struct {
 	Interval time.Duration
 	// Payload is static JSON payload passed to the handler on each invocation.
 	Payload any
+	// FanOut, when set, is called at every firing and one task is enqueued per
+	// returned item (Payload is ignored). It lets org-scoped jobs follow the
+	// live set of active orgs instead of a list fixed at startup.
+	FanOut func(ctx context.Context) ([]FanOutItem, error)
+}
+
+// FanOutItem is one task produced by a fan-out job. Key distinguishes items in
+// deduplication (e.g. the org id).
+type FanOutItem struct {
+	Key     string
+	Payload any
 }
 
 // Scheduler manages periodic task enqueueing.
@@ -88,6 +99,25 @@ func (s *Scheduler) Stop() {
 }
 
 func (s *Scheduler) fire(ctx context.Context, job ScheduledJob) {
+	if job.FanOut != nil {
+		items, err := job.FanOut(ctx)
+		if err != nil {
+			s.logger.Error("scheduler: fan-out", "job", job.Name, "error", err)
+			return
+		}
+		for _, item := range items {
+			task, err := NewTask(job.TaskType, item.Payload)
+			if err != nil {
+				s.logger.Error("scheduler: build task", "job", job.Name, "key", item.Key, "error", err)
+				continue
+			}
+			if _, err := s.queue.Enqueue(ctx, task, WithQueue(job.Queue)); err != nil {
+				s.logger.Error("scheduler: enqueue", "job", job.Name, "key", item.Key, "error", err)
+			}
+		}
+		s.logger.Info("scheduler: enqueued", "job", job.Name, "type", job.TaskType, "fan_out", len(items))
+		return
+	}
 	task, err := NewTask(job.TaskType, job.Payload)
 	if err != nil {
 		s.logger.Error("scheduler: build task", "job", job.Name, "error", err)

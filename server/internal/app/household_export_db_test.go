@@ -4,12 +4,12 @@ import (
 	"context"
 	"testing"
 
+	"github.com/google/uuid"
 	"github.com/luryann/aquify/server/internal/app/comms"
 	"github.com/luryann/aquify/server/internal/app/documents"
 	"github.com/luryann/aquify/server/internal/app/members"
 	appmiddleware "github.com/luryann/aquify/server/internal/app/middleware"
 	"github.com/luryann/aquify/server/internal/testutil"
-	"github.com/google/uuid"
 )
 
 // The API and the worker are separate processes sharing Postgres. A household
@@ -18,6 +18,7 @@ import (
 func TestDBWorkerCollectsHouseholdCreatedAfterStartup(t *testing.T) {
 	pool := testutil.IsolatedSchemaPool(t)
 	org := uuid.NewString()
+	testutil.SeedOrgs(t, pool, org)
 	admin := &appmiddleware.Principal{UserID: "admin-1", OrgID: org, Roles: []string{"admin"}}
 
 	apiMembers := members.NewServiceWithPool(pool)

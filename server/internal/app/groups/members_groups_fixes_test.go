@@ -77,3 +77,37 @@ func TestParentOwnsHouseholdViaDurableKeycloakLink(t *testing.T) {
 		t.Fatal("unexpected ownership")
 	}
 }
+
+func TestEvalRuleIsCaseInsensitive(t *testing.T) {
+	svc := NewService()
+	sw := swimmerRef{Gender: "female", RegistrationStatus: "active"}
+	for _, rt := range []string{"gender", "registration_status"} {
+		allowed := []any{" Female ", "Active"}
+		if eval := svc.evalRule(EligibilityRule{RuleType: rt, Parameters: map[string]any{"allowed": allowed}}, sw); !eval.Passed {
+			t.Fatalf("%s: expected pass, got %s", rt, eval.Reason)
+		}
+	}
+}
+
+func TestCreateRegistrationRejectsBadDate(t *testing.T) {
+	svc := NewService()
+	svc.groups["g1"] = Group{ID: "g1", OrgID: "o", IsActive: true}
+	svc.SeedSwimmer("o", "s1", "h1", "2012-01-01", "F", "active")
+	admin := &appmiddleware.Principal{UserID: "a", OrgID: "o", Roles: []string{"admin"}}
+	_, err := svc.CreateRegistration(admin, "o", CreateRegistrationInput{SwimmerID: "s1", HouseholdID: "h1", GroupID: "g1", Season: "2026", RegistrationDate: "11/04/2026"})
+	if !errors.Is(err, ErrInvalidInput) {
+		t.Fatalf("got %v", err)
+	}
+}
+
+func TestListRegistrationsHonoursDurableKeycloakLink(t *testing.T) {
+	svc := NewService()
+	svc.households["h1"] = householdRef{ID: "h1", OrgID: "o", KeycloakUserID: "p1"}
+	svc.registrations["r1"] = Registration{ID: "r1", OrgID: "o", HouseholdID: "h1"}
+	svc.registrations["r2"] = Registration{ID: "r2", OrgID: "o", HouseholdID: "h2"}
+	parent := &appmiddleware.Principal{UserID: "p1", OrgID: "o", Roles: []string{"parent"}}
+	got, err := svc.ListRegistrations(parent, "o")
+	if err != nil || len(got) != 1 || got[0].ID != "r1" {
+		t.Fatalf("got %+v %v", got, err)
+	}
+}

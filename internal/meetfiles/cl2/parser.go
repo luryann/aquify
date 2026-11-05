@@ -26,6 +26,11 @@ import (
 	"github.com/luryann/aquify/meetfiles/sdif"
 )
 
+const (
+	maxRecordedParseErrors = 100
+	maxTotalParseErrors    = 10000
+)
+
 var utf8BOM = []byte("\xef\xbb\xbf")
 
 // Parse performs a best-effort parse of a CL2 file.
@@ -72,15 +77,21 @@ func Parse(data []byte) (*meetfiles.ParseResult, error) {
 		default:
 			// Unrecognised line: record as a parse error so administrators
 			// can review the raw content.
-			result.ParseErrors = append(result.ParseErrors, meetfiles.ParseError{
-				LineNumber: lineNumber,
-				Raw:        truncate(line, 120),
-				Code:       meetfiles.ErrCodeMalformedRecord,
-				Message: fmt.Sprintf(
-					"CL2 line %d could not be classified (proprietary format — extend cl2.Parse with column layout from actual CL2 samples)",
-					lineNumber,
-				),
-			})
+			result.TotalParseErrors++
+			if result.TotalParseErrors > maxTotalParseErrors {
+				return nil, fmt.Errorf("cl2: too many malformed records (more than %d)", maxTotalParseErrors)
+			}
+			if len(result.ParseErrors) < maxRecordedParseErrors {
+				result.ParseErrors = append(result.ParseErrors, meetfiles.ParseError{
+					LineNumber: lineNumber,
+					Raw:        truncate(line, 120),
+					Code:       meetfiles.ErrCodeMalformedRecord,
+					Message: fmt.Sprintf(
+						"CL2 line %d could not be classified (proprietary format — extend cl2.Parse with column layout from actual CL2 samples)",
+						lineNumber,
+					),
+				})
+			}
 		}
 	}
 

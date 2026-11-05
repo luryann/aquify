@@ -11,6 +11,8 @@ import {
   fetchSwimmerCutQualification,
   fetchSwimmers,
   fetchSwimmerBestTimes,
+  fetchSwimmerProgression,
+  type ProgressionResultRecord,
   fetchTimeStandards,
   type BestTimeRecord,
 } from '@/lib/adminData'
@@ -110,27 +112,21 @@ function pivotBestTimes(records: BestTimeRecord[]): BestTimeRow[] {
   return Array.from(map.values())
 }
 
-// Build progression data from BestTimeRecord[] for a given event+course key
-function buildProgressionData(records: BestTimeRecord[], eventKey: string): Array<{ date: string; time: number; meet?: string }> {
+// Build progression data from the swimmer's full result history for a given event+course key.
+// Results carry no swim date, so created_at (when the swim was recorded) orders the points.
+function buildProgressionData(records: ProgressionResultRecord[], eventKey: string): Array<{ date: string; time: number; meet?: string }> {
   const courseMatch = /(SCY|SCM|LCM)$/.exec(eventKey)
   if (!courseMatch) return []
-  const course = courseMatch[1].toLowerCase()
+  const course = courseMatch[1]
   const filteredEvent = eventKey.replace(/ (SCY|SCM|LCM)$/, '')
 
   return records
-    .filter(r => {
-      const ev = eventName(r.event_distance, r.stroke)
-      const c = r.course?.toUpperCase()
-      return ev === filteredEvent && c === course.toUpperCase() && r.best_time_ms
-    })
-    .sort((a, b) => {
-      const da = a.recorded_at ? new Date(a.recorded_at).getTime() : 0
-      const db = b.recorded_at ? new Date(b.recorded_at).getTime() : 0
-      return da - db
-    })
+    .filter(r => r.is_official && r.fin_time_ms != null && r.fin_time_ms > 0
+      && eventName(r.distance, r.stroke) === filteredEvent && r.course?.toUpperCase() === course)
+    .sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime())
     .map(r => ({
-      date: r.recorded_at ? new Date(r.recorded_at).toLocaleDateString('en-US', { month: 'short', year: '2-digit' }) : '',
-      time: r.best_time_ms! / 1000,
+      date: r.created_at ? new Date(r.created_at).toLocaleDateString('en-US', { month: 'short', year: '2-digit' }) : '',
+      time: r.fin_time_ms! / 1000,
     }))
 }
 
@@ -176,6 +172,7 @@ export default function PerformancePage() {
   const swimmerId = session?.user.swimmerId ?? ''
 
   const [rawRecords, setRawRecords] = useState<BestTimeRecord[]>([])
+  const [progressionRecords, setProgressionRecords] = useState<ProgressionResultRecord[]>([])
   const [cutCards, setCutCards] = useState<SwimmerCutQualificationCard[]>([])
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState<string | null>(null)
@@ -212,6 +209,7 @@ export default function PerformancePage() {
       setLoadError(null)
       setCutError(null)
       setRawRecords([])
+      setProgressionRecords([])
       setCutCards([])
 
       try {
@@ -224,13 +222,15 @@ export default function PerformancePage() {
           return
         }
 
-        const [records, standards] = await Promise.all([
+        const [records, history, standards] = await Promise.all([
           fetchSwimmerBestTimes(api, orgId, mySwimmer.id),
+          fetchSwimmerProgression(api, orgId, mySwimmer.id),
           fetchTimeStandards(api, orgId, { active_only: 'true' }),
         ])
         if (cancelled) return
 
         setRawRecords(records)
+        setProgressionRecords(history)
 
         const firstSCY = records.find((record) => record.course?.toUpperCase() === 'SCY' && record.best_time_ms)
         if (firstSCY) {
@@ -314,7 +314,7 @@ export default function PerformancePage() {
     )
   )
 
-  const eventData = progressEvent ? buildProgressionData(rawRecords, progressEvent) : []
+  const eventData = progressEvent ? buildProgressionData(progressionRecords, progressEvent) : []
   const allTimes = eventData.map(d => d.time)
   const minTime = allTimes.length ? Math.min(...allTimes) * 0.98 : 0
   const maxTime = allTimes.length ? Math.max(...allTimes) * 1.01 : 1

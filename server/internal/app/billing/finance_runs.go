@@ -187,7 +187,7 @@ func (s *Service) normalizeRunInput(orgID string, input RunInput) (normalizedRun
 	if len(input.ScheduleIDs) > 0 {
 		// Schedules may have been created by another instance; validate
 		// against freshly loaded state rather than a stale in-memory cache.
-		if err := s.refreshForRead(); err != nil {
+		if err := s.refreshForRead(orgID); err != nil {
 			return out, err
 		}
 	}
@@ -657,11 +657,11 @@ func (s *Service) PreviewBillingRun(orgID string, principal *appmiddleware.Princ
 	if err != nil {
 		return nil, err
 	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if err := s.refreshLocked(ctx); err != nil {
+	if err := s.refreshOrg(ctx, orgID); err != nil {
 		return nil, err
 	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	return s.buildRunPreviewLocked(orgID, roster, in), nil
 }
 
@@ -701,11 +701,11 @@ func (s *Service) CommitBillingRun(orgID, actorID string, principal *appmiddlewa
 		if err != nil {
 			return err
 		}
-		s.mu.Lock()
-		defer s.mu.Unlock()
-		if err := s.refreshLocked(ctx); err != nil {
+		if err := s.refreshOrg(ctx, orgID); err != nil {
 			return err
 		}
+		s.mu.Lock()
+		defer s.mu.Unlock()
 		preview := s.buildRunPreviewLocked(orgID, roster, in)
 		if in.Expected != "" && in.Expected != preview.Fingerprint {
 			return &StalePreviewError{Preview: preview}
@@ -747,7 +747,7 @@ func (s *Service) commitPreviewLocked(ctx context.Context, orgID, actorID, trigg
 		CreatedAt: now, CreatedBy: actorID,
 	}
 	if s.repo != nil {
-		if err := upsertRun(ctx, s.repo.pool, run); err != nil {
+		if err := upsertRun(ctx, s.repo.at(run.OrgID), run); err != nil {
 			return nil, fmt.Errorf("persist billing run: %w", err)
 		}
 	}
@@ -802,7 +802,7 @@ func (s *Service) commitPreviewLocked(ctx context.Context, orgID, actorID, trigg
 	}
 	run.SkippedCount = len(result.Skipped)
 	if s.repo != nil {
-		if err := upsertRun(ctx, s.repo.pool, run); err != nil {
+		if err := upsertRun(ctx, s.repo.at(run.OrgID), run); err != nil {
 			slog.Error("billing run: persist totals failed", "run_id", run.ID, "err", err)
 		}
 	}
@@ -886,7 +886,7 @@ func (s *Service) commitHouseholdLocked(ctx context.Context, orgID, actorID stri
 	}
 
 	if s.repo != nil {
-		err := s.repo.inTx(ctx, func(tx pgx.Tx) error {
+		err := s.repo.inTx(ctx, orgID, func(tx pgx.Tx) error {
 			if err := upsertInvoice(ctx, tx, inv); err != nil {
 				return err
 			}
@@ -946,11 +946,11 @@ func (s *Service) ListBillingRuns(orgID string, principal *appmiddleware.Princip
 	if err := s.requireAdmin(principal); err != nil {
 		return nil, err
 	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if err := s.refreshLocked(context.Background()); err != nil {
+	if err := s.refreshForRead(orgID); err != nil {
 		return nil, err
 	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	out := make([]*BillingRun, 0)
 	for _, run := range s.finance.runs {
 		if run.OrgID == orgID {
@@ -967,11 +967,11 @@ func (s *Service) GetBillingRun(orgID string, principal *appmiddleware.Principal
 	if err := s.requireAdmin(principal); err != nil {
 		return nil, err
 	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if err := s.refreshLocked(context.Background()); err != nil {
+	if err := s.refreshForRead(orgID); err != nil {
 		return nil, err
 	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	run, ok := s.finance.runs[runID]
 	if !ok || run.OrgID != orgID {
 		return nil, ErrRunNotFound
@@ -1013,11 +1013,10 @@ func (s *Service) RunScheduledBilling(orgID string, today time.Time) (*RunResult
 	// Day-of-month gating and the as-of date must use the same (UTC) calendar day.
 	today = today.UTC()
 	principal := systemFinancePrincipal(orgID)
-	s.mu.Lock()
-	if err := s.refreshLocked(context.Background()); err != nil {
-		s.mu.Unlock()
+	if err := s.refreshForRead(orgID); err != nil {
 		return nil, err
 	}
+	s.mu.Lock()
 	settings := *s.settingsLocked(orgID)
 	scheduleIDs := make([]string, 0)
 	for _, sc := range s.finance.schedules {

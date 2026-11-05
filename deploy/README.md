@@ -37,7 +37,7 @@ After first-time setup the server has the following layout:
     backup.sh                     # Daily backup routine
     smoke.sh                      # Post-deploy smoke tests
   keycloak/
-    production-realm.json         # Keycloak realm config
+    production-realm.json         # Keycloak realm config (host-provisioned, NOT in repo; see below)
     staging-realm.json
 
 /var/log/aquify/
@@ -81,6 +81,14 @@ scp -r deploy/grafana/ aquify@your-vps:/opt/aquify/grafana/
 scp -r deploy/loki/ aquify@your-vps:/opt/aquify/loki/
 chmod +x /opt/aquify/scripts/*.sh
 ```
+
+### 3b. Provision the Keycloak realm files
+
+`keycloak/production-realm.json` and `keycloak/staging-realm.json` are not in the repo; Compose bind-mounts them
+and Keycloak imports them on first start (`start --import-realm`). If the file is missing, Docker creates an empty
+directory and OIDC will not work. Derive each from `deploy/keycloak/realm-aquify-local.json`, but remove the
+`users` array and the service-account user, replace the `aquify-id`/`aquify-admin` client secrets and redirect URIs
+with the real hostnames, and point `smtpServer` at the real provider. Never ship the local seed users or secrets.
 
 ### 4. Create .env.production
 

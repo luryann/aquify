@@ -328,9 +328,10 @@ export default function ParentDashboardPage() {
         const swimmerIds = new Set(hhSwimmers.map((s) => s.id))
 
         // Sort meets by start_date, filter upcoming
-        const now = new Date()
+        const todayStart = new Date()
+        todayStart.setHours(0, 0, 0, 0)
         const upcoming = allMeets
-          .filter((m) => m.start_date && parseBackendDate(m.start_date) >= now)
+          .filter((m) => m.start_date && parseBackendDate(m.end_date ?? m.start_date) >= todayStart)
           .sort((a, b) => parseBackendDate(a.start_date!).getTime() - parseBackendDate(b.start_date!).getTime())
           .slice(0, 5)
 

@@ -148,7 +148,7 @@ func ExportSDIFRoster(input RosterExportInput) ([]byte, error) {
 	var sb strings.Builder
 
 	// A0: file description (file type 5 = roster / SDIF record)
-	sb.WriteString(buildA0("5"))
+	sb.WriteString(buildA0("10"))
 
 	// B1: meet info
 	sb.WriteString(buildB1(ExportInput{
@@ -299,7 +299,7 @@ func exportEntries(input ExportInput, variant ExportVariant) ([]byte, error) {
 	var sb strings.Builder
 
 	// A0: file description (file type 1 = entries)
-	sb.WriteString(buildA0("1"))
+	sb.WriteString(buildA0("01"))
 
 	// B1: meet info
 	sb.WriteString(buildB1(input))
@@ -534,9 +534,13 @@ func formatName(last, first string) string {
 
 // ─── Record builders ──────────────────────────────────────────────────────────
 
-func buildA0(fileTypeCode string) string {
+// buildA0 builds the SDIF A0 record: org code at col 3, SDIF version in cols
+// 4-11 and the two-digit file code in cols 12-13.
+func buildA0(fileCode string) string {
 	buf := newBuf("A0")
-	place(buf, 4, 1, fileTypeCode) // file type at col 4 (after org code at 3)
+	place(buf, 3, 1, "1") // ORG code: USS
+	place(buf, 4, 8, "V3")
+	place(buf, 12, 2, fileCode)
 	// Software name, version, contact — left blank for interoperability
 	return finalizeLine(buf)
 }

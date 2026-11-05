@@ -224,3 +224,33 @@ func isTrustedIP(ip string, trustedNets []*net.IPNet) bool {
 	}
 	return false
 }
+
+// NewOrgRateLimiter limits authenticated requests per organization, across all of
+// its users and IPs (tenancy tracker item 7.4). It must run after RequireOrgScope,
+// which has already proven the org belongs to the caller, so an attacker cannot
+// burn another club's budget by naming it. limit <= 0 disables the limiter.
+func NewOrgRateLimiter(limit int, window time.Duration) func(http.Handler) http.Handler {
+	if limit <= 0 {
+		return func(next http.Handler) http.Handler { return next }
+	}
+	if window <= 0 {
+		window = time.Minute
+	}
+	rl := &rateLimiter{entries: make(map[string]*rateLimitEntry), limit: limit, window: window, sweepInterval: window}
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			orgID, ok := OrgIDFromContext(r.Context())
+			if !ok || orgID == "" {
+				next.ServeHTTP(w, r)
+				return
+			}
+			allowed, retryAfter := rl.allow(orgID, time.Now().UTC())
+			if !allowed {
+				w.Header().Set("Retry-After", strconv.Itoa(int(math.Ceil(retryAfter.Seconds()))))
+				httpx.WriteError(w, r, http.StatusTooManyRequests, "org_rate_limited", "Your club is sending too many requests. Please try again shortly.", nil)
+				return
+			}
+			next.ServeHTTP(w, r)
+		})
+	}
+}

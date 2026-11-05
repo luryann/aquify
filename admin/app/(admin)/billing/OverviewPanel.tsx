@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { useSession } from '@/lib/session'
 import { useApiClient } from '@/lib/api'
-import { formatDateOnly, parseBackendDate } from '@/lib/dates'
+import { formatDateOnly, localToday } from '@/lib/dates'
 import {
   fetchHouseholds,
   fetchInvoices,
@@ -94,12 +94,13 @@ export function OverviewPanel({ onNavigateTab }: { onNavigateTab: (tab: 'invoice
   }, [api, session?.user.orgId])
 
   const metrics = useMemo(() => {
-    const totalReceivables = invoices.reduce((sum, invoice) => sum + invoice.total_cents, 0)
-    const outstanding = invoices.reduce((sum, invoice) => sum + invoice.amount_due_cents, 0)
-    const overdueInvoices = invoices.filter((invoice) => invoice.due_date && invoice.amount_due_cents > 0 && parseBackendDate(invoice.due_date) < new Date())
+    const open = invoices.filter((invoice) => invoice.status === 'issued' || invoice.status === 'partially_paid')
+    const totalReceivables = open.reduce((sum, invoice) => sum + invoice.total_cents, 0)
+    const outstanding = open.reduce((sum, invoice) => sum + invoice.amount_due_cents, 0)
+    const overdueInvoices = open.filter((invoice) => invoice.due_date && invoice.amount_due_cents > 0 && invoice.due_date.slice(0, 10) < localToday())
     const overdue = overdueInvoices.reduce((sum, invoice) => sum + invoice.amount_due_cents, 0)
     const collected30d = payments
-      .filter((payment) => payment.paid_at && new Date(payment.paid_at).getTime() >= Date.now() - 30 * 24 * 60 * 60 * 1000)
+      .filter((payment) => payment.status === 'succeeded' && payment.paid_at && new Date(payment.paid_at).getTime() >= Date.now() - 30 * 24 * 60 * 60 * 1000)
       .reduce((sum, payment) => sum + payment.amount_cents, 0)
 
     return {

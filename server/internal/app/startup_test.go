@@ -9,8 +9,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/luryann/aquify/server/internal/storage"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/luryann/aquify/server/internal/storage"
 )
 
 type fakeObjectStorage struct{}
@@ -419,5 +419,16 @@ func TestValidateMetricsConfigWarnsForWildcardExposureOutsideDevelopment(t *test
 	}
 	if !strings.Contains(logOutput, "wildcard") || !strings.Contains(logOutput, "restrict the metrics listener") {
 		t.Fatalf("expected warning to describe wildcard exposure risk, got %q", logOutput)
+	}
+}
+
+func TestValidateIntegrationsKeyStartupDependency(t *testing.T) {
+	t.Setenv("INTEGRATIONS_ENCRYPTION_KEY", "")
+	if err := validateIntegrationsKeyStartupDependency(); err == nil || !strings.Contains(err.Error(), "INTEGRATIONS_ENCRYPTION_KEY") {
+		t.Fatalf("missing key = %v, want actionable error", err)
+	}
+	t.Setenv("INTEGRATIONS_ENCRYPTION_KEY", "0123456789abcdef0123456789abcdef")
+	if err := validateIntegrationsKeyStartupDependency(); err != nil {
+		t.Fatalf("with key = %v", err)
 	}
 }

@@ -17,7 +17,7 @@ const COURSE_OPTIONS = ['SCY', 'SCM', 'LCM']
 const STROKE_OPTIONS = ['free', 'back', 'breast', 'fly', 'im']
 const DISTANCE_OPTIONS = [25, 50, 100, 200, 400, 500, 800, 1000, 1500, 1650]
 
-type LeaderboardRow = BestTimeRecord & { swimmerName: string }
+type LeaderboardRow = BestTimeRecord & { swimmerName: string; rank: number }
 
 export default function BestTimesPage() {
   const { session } = useSession()
@@ -83,6 +83,7 @@ export default function BestTimesPage() {
       .map((record) => ({ ...record, swimmerName: swimmerNameById.get(record.swimmer_id) ?? 'Unknown swimmer' }))
       .filter((record) => (q ? record.swimmerName.toLowerCase().includes(q) : true))
       .sort((a, b) => (a.best_time_ms ?? Infinity) - (b.best_time_ms ?? Infinity))
+      .map((r, i) => ({ ...r, rank: i + 1 }))
   }, [bestTimes, distanceFilter, swimmerSearch, swimmerNameById])
 
   const manualOverrides = useMemo(() => bestTimes.filter((record) => record.is_manual_override).length, [bestTimes])
@@ -97,7 +98,7 @@ export default function BestTimesPage() {
       label: '#',
       sortable: false,
       width: '48px',
-      render: (_row, index) => <span className="u-ff-font-body" style={{ color: 'var(--text-muted)' }}>{index + 1}</span>,
+      render: (row) => <span className="u-ff-font-body" style={{ color: 'var(--text-muted)' }}>{row.rank}</span>,
     }),
     col<LeaderboardRow>({
       key: 'swimmerName',

@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Billing | aquify</title>
+<meta name="description" content="Dues, sibling discounts, autopay and one-run invoicing for swim clubs.">
+<meta name="theme-color" content="#04080b">
+<link rel="icon" href="assets/icon.svg" type="image/svg+xml">
+<link rel="preload" href="assets/fonts/inter-tight-latin-500-normal.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="assets/styles.css">
+</head>
+<body>
+<header class="nav">
+  <a class="brand" href="index.html" aria-label="aquify home">aquify<i>.</i></a>
+  <button class="burger" aria-label="Menu" aria-expanded="false"><span></span><span></span></button>
+  <nav class="links" aria-label="Main">
+    <div class="dd"><button class="dd-btn" aria-expanded="false" style="color:var(--chalk)">Features</button><div class="dd-menu"><a href="coaches.html"><b>Coaches</b><span>Workouts, roll call and the pool-deck view</span></a><a href="meets.html"><b>Meets</b><span>Commitments, entries, results and records</span></a><a href="billing.html" aria-current="page"><b>Billing</b><span>Dues, discounts, autopay and invoices</span></a><a href="registration.html"><b>Registration</b><span>Sign-ups, waivers, groups and rosters</span></a><a href="communication.html"><b>Communication</b><span>Announcements, email and messages</span></a><a href="volunteers.html"><b>Volunteers and events</b><span>Shifts, hours, RSVPs and fees</span></a><a href="performance.html"><b>Performance</b><span>Best times, cuts, records and goals</span></a><a href="families.html"><b>Families</b><span>Parent and swimmer portals</span></a><a href="website.html"><b>Team website</b><span>A public page and a phone app</span></a></div></div>
+    <a href="season.html">A season</a><a href="switch.html">Switching</a><a href="safety.html">Safety</a><a href="faq.html">FAQ</a>
+    <a class="btn" href="waitlist.html">Join the waitlist</a>
+  </nav>
+</header>
+<main>
+
+<section class="page-hero"><canvas id="water" aria-hidden="true"></canvas><div class="fallback"></div><div class="in"><h1 class="d1" style="max-width:11ch">Bill every household in one run.</h1><p class="lede">Set the dues once. Preview the run. Send the invoices.</p></div></section>
+
+<section class="stage rise" data-len="300vh" aria-label="Invoice list with household, amount and due date">
+  <div class="pin">
+    <div class="shot" data-r="0.02,0.55"><div class="win"><picture><source media="(max-width:760px)" srcset="assets/img/m-billing.jpg"><img src="assets/img/invoices.jpg" alt="Invoice list with household, amount and due date" decoding="async"></picture></div></div>
+    <div class="calls"><div class="call" data-r="0.55,0.68">Every household’s invoice<span>Amount, due date and status.</span></div><div class="call" data-r="0.66,0.79">Paid, due or overdue<span>Spot late balances at a glance.</span></div><div class="call" data-r="0.77,0.9">One run, one preview<span>Check it before it goes out.</span></div></div>
+  </div>
+</section>
+<section class="stage say" data-len="280vh"><div class="pin"><p>Set the dues. Preview the run. Send the invoices. Get paid by card.</p></div></section>
+
+<section class="stage" data-len="460vh" data-steps="3">
+  <div class="pin"><div class="split">
+    <div class="txt"><h2 class="d2">From dues to deposits.</h2><div class="steps"><div class="step">Set dues, discounts and late fees<small>A monthly fee for each group, or a one-time sign-up fee. Brothers and sisters get a discount, and discounts never pile on top of each other.</small></div><div class="step">Preview first. Then bill.<small>See exactly who will be charged before anything goes out. If something changes while you’re deciding, aquify asks you to look again. No family is ever billed twice for the same month.</small></div><div class="step">Know who owes what<small>See who’s behind and by how long. Send the numbers to QuickBooks.</small></div></div></div>
+    <div class="layers"><div class="win" ><img src="assets/img/schedules.jpg" alt="Fee schedules, sibling discounts and late fees" loading="lazy" decoding="async"></div><div class="win" ><img src="assets/img/invoices.jpg" alt="Invoice list" loading="lazy" decoding="async"></div><div class="win" ><img src="assets/img/reports.jpg" alt="Receivables aging report" loading="lazy" decoding="async"></div></div>
+  </div></div>
+</section>
+<section class="sect tight"><div class="wrap row flip">
+  <div data-par="0.04"><div class="win" ><img src="assets/img/portal-billing.jpg" alt="Parent billing page with an outstanding balance and a Pay Now button" loading="lazy" decoding="async"></div></div>
+  <div class="txt"><h2 class="d2">Parents pay in two taps.</h2><p class="copy">Families see what they owe, what’s coming and what they’ve paid, then pay by card. The invoice marks itself paid.</p><ul class="facts"><li>Turn on autopay and they see the date and amount before every charge.</li><li>A statement for each household shows every charge and payment.</li><li>Card details go straight to Stripe. aquify never stores them.</li></ul></div>
+</div></section>
+<section class="sect tight"><div class="wrap"><ul class="index"><li><b>Autopay</b><span>Families choose it, and always see the date and amount of the next charge.</span></li><li><b>Late fees</b><span>One per invoice, added for you after the grace period you choose.</span></li><li><b>Credit on account</b><span>If a family overpays, the extra is taken off their next invoice.</span></li><li><b>Refunds</b><span>Refund a payment, or turn it into credit for the next invoice.</span></li><li><b>Joining mid-season</b><span>Charge for the days left, half the fee, or nothing. You choose.</span></li><li><b>Meet and event fees</b><span>Meet entry fees land on the family’s invoice, and event tickets get an invoice of their own.</span></li><li><b>Reports</b><span>Money owed by age, revenue, deposits and a QuickBooks file.</span></li></ul></div></section>
+
+<section class="stage" data-len="260vh" aria-label="Receivables aging report">
+  <div class="pin" style="display:grid;place-items:center">
+    <div class="zoomwin" style="--ox:20%;--oy:18%" data-r="0.08,0.85"><div class="win" ><img src="assets/img/reports.jpg" alt="Receivables aging report" loading="lazy" decoding="async"></div></div>
+    <div class="cap" data-r="0.5,0.72"><h2 class="d3">Open balances, sorted by how late they are.</h2></div>
+  </div>
+</section>
+
+<section class="cta"><div class="in">
+  <h2 class="d1" style="max-width:9ch">Ready when your club is.</h2>
+  <p class="lede">We’re opening aquify to clubs in order. Leave your email and we’ll tell you when it’s your turn.</p>
+  <a class="btn" href="waitlist.html" style="height:60px;padding:0 34px;font-size:18px">Join the waitlist</a>
+</div></section>
+
+</main>
+<footer class="foot">
+  <div class="foot-grid">
+    <div class="foot-lead">
+      <p class="lede">Swim club software for coaches and admins.</p>
+      <a class="btn" href="waitlist.html">Join the waitlist</a>
+    </div>
+    <nav aria-label="Footer">
+      <div><b>Run the team</b><a href="coaches.html">Coaches</a><a href="meets.html">Meets</a><a href="registration.html">Registration</a><a href="communication.html">Communication</a></div>
+      <div><b>More features</b><a href="billing.html">Billing</a><a href="volunteers.html">Volunteers and events</a><a href="performance.html">Performance</a><a href="families.html">Families</a><a href="website.html">Team website</a></div>
+      <div><b>Learn more</b><a href="season.html">A season</a><a href="switch.html">Switching</a><a href="safety.html">Safety</a><a href="faq.html">FAQ</a><a href="people.html">Who it’s for</a></div>
+    </nav>
+  </div>
+  <div class="foot-mark" aria-hidden="true">aquify.</div>
+  <small>Every screen on this site shows sample data for a made-up club. No real swimmers, families or payments.</small>
+</footer>
+<script src="assets/main.js" defer></script>
+</body>
+</html>

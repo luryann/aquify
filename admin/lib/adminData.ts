@@ -56,6 +56,8 @@ export type SwimmerRecord = {
   emergency_contact_relationship?: string
   allergies?: string
   portal_access_disabled?: boolean
+  guardian_consent_at?: string
+  guardian_consent_version?: string
 }
 
 export type SwimmerGroupLinkRecord = {
@@ -1156,18 +1158,28 @@ export async function fetchRoleAssignments(api: ApiClient, orgId: string): Promi
   return res.assignments ?? []
 }
 
+// assignRole grants the role through POST /users/{id}/roles (Keycloak role
+// assignment + session revoke). The legacy /auth/roles/assign endpoint only
+// recorded an in-memory history row and changed nothing, so it is not used.
+// The returned record is local to this call (the server keeps no history).
 export async function assignRole(api: ApiClient, orgId: string, input: {
   target_user_id: string
   role: string
   reason: string
   scope_type?: string
   scope_id?: string
-}): Promise<RoleAssignmentRecord> {
-  const res = await api.post<{ assignment: RoleAssignmentRecord }>('/api/v1/auth/roles/assign', {
+}, actorUserId = ''): Promise<RoleAssignmentRecord> {
+  await api.post(`/api/v1/users/${encodeURIComponent(input.target_user_id)}/roles`, { role: input.role }, orgHeaders(orgId))
+  return {
     org_id: orgId,
-    ...input,
-  }, orgHeaders(orgId))
-  return res.assignment
+    target_user_id: input.target_user_id,
+    role: input.role,
+    scope_type: input.scope_type ?? 'org',
+    scope_id: input.scope_id,
+    reason: input.reason,
+    actor_user_id: actorUserId,
+    assigned_at: new Date().toISOString(),
+  }
 }
 
 export async function fetchMFAFactors(api: ApiClient, orgId: string): Promise<MFAFactorRecord[]> {
@@ -2037,6 +2049,7 @@ export async function updateSwimmer(
     emergency_contact_relationship?: string
     allergies?: string
     portal_access_disabled?: boolean
+    guardian_consent?: boolean
   },
 ): Promise<SwimmerRecord> {
   const res = await api.patch<{ swimmer: SwimmerRecord }>(
@@ -2316,6 +2329,9 @@ export type OrgSettingsRecord = {
   public_contact_email?: string
   public_contact_phone?: string
   swimmer_accounts_enabled?: boolean
+  timezone?: string
+  currency?: string
+  legal_name?: string
   updated_at?: string
   updated_by?: string
 }
@@ -2332,7 +2348,7 @@ export async function fetchOrgSettings(api: ApiClient, orgId: string): Promise<O
 export async function updateOrgSettings(
   api: ApiClient,
   orgId: string,
-  input: { team_code?: string; team_name?: string; lsc_code?: string; email_sender_name?: string; email_sender_address?: string } & Partial<Pick<OrgSettingsRecord, 'public_slug' | 'public_site_enabled' | 'public_show_coaches' | 'public_about' | 'public_contact_email' | 'public_contact_phone' | 'swimmer_accounts_enabled'>>,
+  input: { team_code?: string; team_name?: string; lsc_code?: string; email_sender_name?: string; email_sender_address?: string } & Partial<Pick<OrgSettingsRecord, 'public_slug' | 'public_site_enabled' | 'public_show_coaches' | 'public_about' | 'public_contact_email' | 'public_contact_phone' | 'swimmer_accounts_enabled' | 'timezone' | 'currency' | 'legal_name'>>,
 ): Promise<OrgSettingsRecord> {
   const res = await api.put<{ org_settings: OrgSettingsRecord }>(
     '/api/v1/org-settings',
@@ -2376,7 +2392,7 @@ export async function fetchUsers(
   api: ApiClient,
   orgId: string,
   params?: { search?: string; role?: string; status?: string; limit?: number; offset?: number },
-): Promise<{ users: UserRecord[]; count: number; source: UserListSource; isStubbed: boolean }> {
+): Promise<{ users: UserRecord[]; count: number; total: number; source: UserListSource; isStubbed: boolean }> {
   const qs = new URLSearchParams()
   if (params?.search) qs.set('search', params.search)
   if (params?.role) qs.set('role', params.role)
@@ -2384,13 +2400,32 @@ export async function fetchUsers(
   if (params?.limit) qs.set('limit', String(params.limit))
   if (params?.offset) qs.set('offset', String(params.offset))
   const query = qs.toString() ? `?${qs.toString()}` : ''
-  const res = await api.get<{ status: string; count: number; source?: UserListSource; is_stubbed?: boolean; users: UserRecord[] }>(
+  const res = await api.get<{ status: string; count: number; total?: number; source?: UserListSource; is_stubbed?: boolean; users: UserRecord[] }>(
     `/api/v1/users${query}`,
     undefined,
     orgHeaders(orgId),
   )
   const source = res.source === 'stub' ? 'stub' : 'keycloak'
-  return { users: res.users ?? [], count: res.count ?? 0, source, isStubbed: res.is_stubbed ?? source === 'stub' }
+  return { users: res.users ?? [], count: res.count ?? 0, total: res.total ?? res.count ?? 0, source, isStubbed: res.is_stubbed ?? source === 'stub' }
+}
+
+const USERS_PAGE_SIZE = 200
+
+/** Walks every page of GET /users (hard max 200 per page) so callers never silently truncate. */
+export async function fetchAllUsers(
+  api: ApiClient,
+  orgId: string,
+  params?: { search?: string; role?: string; status?: string },
+): Promise<{ users: UserRecord[]; count: number; total: number; source: UserListSource; isStubbed: boolean }> {
+  const users: UserRecord[] = []
+  let first: Awaited<ReturnType<typeof fetchUsers>> | null = null
+  for (;;) {
+    const page = await fetchUsers(api, orgId, { ...params, limit: USERS_PAGE_SIZE, offset: users.length })
+    first ??= page
+    users.push(...page.users)
+    if (page.users.length === 0 || users.length >= page.total) break
+  }
+  return { users, count: users.length, total: Math.max(first.total, users.length), source: first.source, isStubbed: first.isStubbed }
 }
 
 export async function fetchUser(
@@ -2550,6 +2585,14 @@ export async function setSwimmerAccountsEnabled(api: ApiClient, orgId: string, e
 /** Allow or block one swimmer's own sign-in. Records are always kept. */
 export async function setSwimmerPortalAccess(api: ApiClient, orgId: string, swimmerId: string, allowed: boolean): Promise<SwimmerRecord> {
   return updateSwimmer(api, orgId, swimmerId, { portal_access_disabled: !allowed })
+}
+
+/**
+ * Record (parent only) or withdraw a parent's consent to a swimmer under 13 having
+ * their own account. Withdrawing also unlinks the swimmer's sign-in.
+ */
+export async function setGuardianConsent(api: ApiClient, orgId: string, swimmerId: string, granted: boolean): Promise<SwimmerRecord> {
+  return updateSwimmer(api, orgId, swimmerId, { guardian_consent: granted })
 }
 
 // ── Time standards file import ────────────────────────────────────────────────

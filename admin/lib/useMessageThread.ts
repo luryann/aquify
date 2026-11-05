@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState, type FormEvent } from 'react'
+import { useEffect, useRef, useState, type FormEvent } from 'react'
 import type { ApiClient } from './api'
 import {
   addReaction,
@@ -13,6 +13,7 @@ import {
   type MessageRecord,
 } from './adminData'
 import { reportUIError, uiErrorMessage } from './frontend-telemetry'
+import { mergeStreamMessage } from './message-format'
 import { useMessageStream } from './useMessageStream'
 
 type PendingAttachment = { object_key: string; file_name: string; file_mime: string }
@@ -56,6 +57,8 @@ export function useMessageThread({
   const [sending, setSending] = useState(false)
   const [sendError, setSendError] = useState<string | null>(null)
 
+  const threadKeyRef = useRef(`${householdId}:${swimmerId}`)
+  threadKeyRef.current = `${householdId}:${swimmerId}`
   const [editingId, setEditingId] = useState<string | null>(null)
   const [editDraft, setEditDraft] = useState('')
   const [reactionPickerId, setReactionPickerId] = useState<string | null>(null)
@@ -63,19 +66,40 @@ export function useMessageThread({
   const [attachError, setAttachError] = useState<string | null>(null)
   const [uploading, setUploading] = useState(false)
 
+  const loadedKeyRef = useRef<string | null>(null)
+
+  // Per-thread UI state must not leak from one swimmer's thread into another's.
+  useEffect(() => {
+    setPendingAttachment(null)
+    setDraft('')
+    setEditingId(null)
+    setEditDraft('')
+    setReactionPickerId(null)
+    setAttachError(null)
+    setSendError(null)
+  }, [householdId, swimmerId])
+
   useEffect(() => {
     if (!hasThread) {
       setLoading(false)
       return
     }
-    setLoading(true)
+    let cancelled = false
+    const key = `${householdId}:${swimmerId}`
+    // Only blank the thread on a thread switch; a reload after send/retry keeps the messages on screen.
+    if (loadedKeyRef.current !== key) {
+      setMessages([])
+      setLoading(true)
+    }
     setLoadError(null)
     fetchMessages(api, orgId, householdId, swimmerId)
-      .then(setMessages)
+      .then((m) => { if (!cancelled) { loadedKeyRef.current = key; setMessages(m) } })
       .catch((error) => {
-        setLoadError(reportUIError(loadErrorScope, error, loadErrorMessage, { orgId, householdId, swimmerId }))
+        const message = reportUIError(loadErrorScope, error, loadErrorMessage, { orgId, householdId, swimmerId })
+        if (!cancelled) setLoadError(message)
       })
-      .finally(() => setLoading(false))
+      .finally(() => { if (!cancelled) setLoading(false) })
+    return () => { cancelled = true }
   }, [api, orgId, householdId, swimmerId, hasThread, reloadKey, loadErrorScope, loadErrorMessage])
 
   useEffect(() => {
@@ -89,13 +113,7 @@ export function useMessageThread({
     enabled: hasThread,
     onEvent: (event) => {
       if (event.household_id !== householdId || event.swimmer_id !== swimmerId) return
-      setMessages((prev) => {
-        const idx = prev.findIndex((m) => m.id === event.message.id)
-        if (idx === -1) return [...prev, event.message]
-        const next = [...prev]
-        next[idx] = event.message
-        return next
-      })
+      setMessages((prev) => mergeStreamMessage(prev, event.message))
       if (event.type === 'message.created' && event.message.sender_user_id !== userId) {
         markThreadRead(api, orgId, householdId, swimmerId).catch((error) => { reportUIError(`${loadErrorScope}.mark-read`, error, 'Couldn’t mark this thread read.') })
       }
@@ -138,6 +156,7 @@ export function useMessageThread({
       })
       const putResp = await fetch(upload_url, { method: 'PUT', body: file, headers: { 'Content-Type': file.type } })
       if (!putResp.ok) throw new Error('Upload failed')
+      if (threadKeyRef.current !== `${householdId}:${swimmerId}`) return
       setPendingAttachment({ object_key, file_name: expected_file_name, file_mime: file.type })
     } catch {
       setAttachError('Couldn’t upload that image. Try a smaller file or a different format.')
@@ -163,13 +182,15 @@ export function useMessageThread({
     if (!hasThread) return
     const already = message.reactions?.some((r) => r.emoji === emoji && r.reacted_by_me)
     setSendError(null)
+    const threadKey = `${householdId}:${swimmerId}`
     try {
       if (already) await removeReaction(api, orgId, message.id, emoji)
       else await addReaction(api, orgId, message.id, emoji)
       // Realtime (when connected) will also deliver this update, but don't
       // depend on it — refetch so the reaction shows immediately even
       // without Redis configured.
-      setMessages(await fetchMessages(api, orgId, householdId, swimmerId))
+      const refreshed = await fetchMessages(api, orgId, householdId, swimmerId)
+      if (threadKeyRef.current === threadKey) setMessages(refreshed)
     } catch (err) {
       setSendError(reportUIError(`${loadErrorScope}.reaction`, err, 'Couldn’t update that reaction. Try again.'))
     }

@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"strings"
 
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/luryann/aquify/server/internal/app/audit"
 	"github.com/luryann/aquify/server/internal/app/billing"
 	"github.com/luryann/aquify/server/internal/app/handlers"
@@ -19,7 +20,6 @@ import (
 	"github.com/luryann/aquify/server/internal/app/volunteer"
 	"github.com/luryann/aquify/server/internal/postmark"
 	"github.com/luryann/aquify/server/internal/workers"
-	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 // volunteerDeps groups the services the volunteer domain borrows from.

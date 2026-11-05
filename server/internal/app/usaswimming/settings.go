@@ -51,6 +51,43 @@ func (c *Cipher) Encrypt(plain string) (string, error) {
 	return base64.StdEncoding.EncodeToString(c.aead.Seal(nonce, nonce, []byte(plain), nil)), nil
 }
 
+// boundPrefix marks ciphertexts whose AES-GCM associated data is the org id, so a
+// stored secret copied into another org's row (or another purpose) does not
+// decrypt. Legacy unbound values stay readable and are re-sealed on next write.
+const boundPrefix = "v2:"
+
+// EncryptFor seals plain for one org.
+func (c *Cipher) EncryptFor(orgID, plain string) (string, error) {
+	if c == nil {
+		return "", ErrEncryptionUnavailable
+	}
+	nonce := make([]byte, c.aead.NonceSize())
+	if _, err := rand.Read(nonce); err != nil {
+		return "", err
+	}
+	return boundPrefix + base64.StdEncoding.EncodeToString(c.aead.Seal(nonce, nonce, []byte(plain), []byte(orgID))), nil
+}
+
+// DecryptFor opens a value sealed for orgID (or a legacy unbound value).
+func (c *Cipher) DecryptFor(orgID, enc string) (string, error) {
+	if c == nil {
+		return "", ErrEncryptionUnavailable
+	}
+	if !strings.HasPrefix(enc, boundPrefix) {
+		return c.Decrypt(enc)
+	}
+	raw, err := base64.StdEncoding.DecodeString(strings.TrimPrefix(enc, boundPrefix))
+	if err != nil || len(raw) < c.aead.NonceSize() {
+		return "", errors.New("stored api key is unreadable")
+	}
+	n := c.aead.NonceSize()
+	plain, err := c.aead.Open(nil, raw[:n], raw[n:], []byte(orgID))
+	if err != nil {
+		return "", errors.New("stored api key could not be decrypted (wrong organization or changed encryption key)")
+	}
+	return string(plain), nil
+}
+
 func (c *Cipher) Decrypt(enc string) (string, error) {
 	if c == nil {
 		return "", ErrEncryptionUnavailable
@@ -239,7 +276,7 @@ func (s *Service) Update(orgID string, u Updates, by string) (*View, error) {
 		if k == "" {
 			r.APIKeyEnc, r.APIKeyHint = "", ""
 		} else {
-			enc, err := s.cipher.Encrypt(k)
+			enc, err := s.cipher.EncryptFor(r.OrgID, k)
 			if err != nil {
 				return nil, err
 			}
@@ -323,7 +360,7 @@ func (s *Service) buildClient(r *Settings) (Client, error) {
 	if r.BaseURL == "" || r.APIKeyEnc == "" {
 		return nil, ErrNotConfigured
 	}
-	key, err := s.cipher.Decrypt(r.APIKeyEnc)
+	key, err := s.cipher.DecryptFor(r.OrgID, r.APIKeyEnc)
 	if err != nil {
 		return nil, err
 	}

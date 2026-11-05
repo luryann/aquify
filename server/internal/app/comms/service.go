@@ -35,7 +35,6 @@ import (
 	"slices"
 	"sort"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/google/uuid"
@@ -362,7 +361,10 @@ var notificationPreferenceDefinitions = []notificationPreferenceDefinition{
 
 // Service is the in-memory communications service.
 type Service struct {
-	mu                 sync.RWMutex
+	mu                 dbutil.GenMutex
+	orgCache           dbutil.OrgCache
+	senderPolicy       SenderPolicy
+	dailyEmailCap      int
 	repo               *Repository
 	announcements      map[string]*Announcement
 	campaigns          map[string]*EmailCampaign
@@ -445,17 +447,14 @@ func (s *Service) PostmarkClient() postmark.Client {
 	return s.postmarkClient
 }
 
-// NewServiceWithPool creates a DB-backed comms Service and loads existing data
-// from Postgres into memory on startup.
+// NewServiceWithPool creates a DB-backed comms Service. Each club is loaded on demand.
 func NewServiceWithPool(pool *pgxpool.Pool) *Service {
 	s := NewService()
 	if pool == nil {
 		return s
 	}
 	s.repo = newRepository(pool)
-	if err := s.loadFromDB(context.Background(), ""); err != nil {
-		slog.Error("comms: failed to load from DB", "err", err)
-	}
+	// No eager load: every request path loads its own club on demand (loadFromDB(ctx, orgID)).
 	return s
 }
 
@@ -479,11 +478,92 @@ func (s *Service) loadFromDB(ctx context.Context, orgID string) error {
 	if s.repo == nil {
 		return nil
 	}
-	// Load under the write lock so a concurrent write cannot be overwritten by
-	// an older snapshot.
+	// Scoped reloads read Postgres WITHOUT holding the service lock so one
+	// club's slow load does not block every other club. A writer that finished
+	// during the read bumps the write generation and the stale snapshot is
+	// re-read; after a few conflicts fall back to loading under the lock.
+	if orgID != "" {
+		done, err := dbutil.ReloadUnlocked(&s.mu, nil, func() (func(), error) {
+			snap, err := s.fetchOrgSnapshot(ctx, orgID)
+			if err != nil {
+				return nil, err
+			}
+			return func() { s.applyOrgSnapshotLocked(orgID, snap) }, nil
+		})
+		if done || err != nil {
+			return err
+		}
+	}
+	// Full reload (or repeated conflicts): load under the write lock so a
+	// concurrent write cannot be overwritten by an older snapshot.
 	s.mu.Lock()
-	defer s.mu.Unlock()
+	defer s.mu.UnlockWithoutBump()
 	return s.reloadLocked(ctx, orgID)
+}
+
+// SetOrgCacheLimits bounds the per-club cache (0 = unlimited); see dbutil.OrgCache.
+func (s *Service) SetOrgCacheLimits(ttl time.Duration, maxOrgs int) {
+	s.orgCache.ConfigureLocked(&s.mu, ttl, maxOrgs)
+}
+
+// dropOrgLocked removes one club's cached rows. Message children carry no org id, so they
+// are resolved through the (still cached) parent message first. Caller holds s.mu (write).
+func (s *Service) dropOrgLocked(orgID string) {
+	inOrg := func(messageID string) bool {
+		m, ok := s.messages[messageID]
+		return ok && m.OrgID == orgID
+	}
+	for k, v := range s.messageEdits {
+		if inOrg(v.MessageID) {
+			delete(s.messageEdits, k)
+		}
+	}
+	for k, v := range s.messageReactions {
+		if inOrg(v.MessageID) {
+			delete(s.messageReactions, k)
+		}
+	}
+	for k, v := range s.messageAttachments {
+		if inOrg(v.MessageID) {
+			delete(s.messageAttachments, k)
+		}
+	}
+	for k, v := range s.messages {
+		if v.OrgID == orgID {
+			delete(s.messages, k)
+		}
+	}
+	for k, v := range s.announcements {
+		if v.OrgID == orgID {
+			delete(s.announcements, k)
+		}
+	}
+	for k, v := range s.campaigns {
+		if v.OrgID == orgID {
+			delete(s.campaigns, k)
+		}
+	}
+	for k, v := range s.deliveries {
+		if v.OrgID == orgID {
+			delete(s.deliveries, k)
+		}
+	}
+	for k, v := range s.suppression {
+		if v.OrgID == orgID {
+			delete(s.suppression, k)
+		}
+	}
+	for k, v := range s.preferences {
+		if v.OrgID == orgID {
+			delete(s.preferences, k)
+		}
+	}
+	for k, v := range s.messageReads {
+		if v.OrgID == orgID {
+			delete(s.messageReads, k)
+		}
+	}
+
 }
 
 // reloadLocked replaces the cached collections (for orgID, or all orgs when
@@ -492,11 +572,42 @@ func (s *Service) reloadLocked(ctx context.Context, orgID string) error {
 	if s.repo == nil {
 		return nil
 	}
-	announcements, campaigns, deliveries, suppressions, preferences, messages,
-		messageEdits, messageReactions, messageAttachments, messageReads, err := s.repo.LoadAll(ctx, orgID)
+	snap, err := s.fetchOrgSnapshot(ctx, orgID)
 	if err != nil {
 		return err
 	}
+	s.applyOrgSnapshotLocked(orgID, snap)
+	return nil
+}
+
+// orgSnapshot is one LoadAll result, read without any lock held.
+type orgSnapshot struct {
+	announcements      []*Announcement
+	campaigns          []*EmailCampaign
+	deliveries         []*EmailDelivery
+	suppressions       []*SuppressionEntry
+	preferences        []*NotificationPreference
+	messages           []*Message
+	messageEdits       []*MessageEdit
+	messageReactions   []*MessageReaction
+	messageAttachments []*MessageAttachment
+	messageReads       []*MessageRead
+}
+
+func (s *Service) fetchOrgSnapshot(ctx context.Context, orgID string) (*orgSnapshot, error) {
+	a, c, d, sup, pref, m, me, mr, ma, mrd, err := s.repo.LoadAll(ctx, orgID)
+	if err != nil {
+		return nil, err
+	}
+	return &orgSnapshot{a, c, d, sup, pref, m, me, mr, ma, mrd}, nil
+}
+
+// applyOrgSnapshotLocked swaps a loaded snapshot into the cache; caller holds s.mu (write).
+func (s *Service) applyOrgSnapshotLocked(orgID string, snap *orgSnapshot) {
+	announcements, campaigns, deliveries, suppressions, preferences, messages :=
+		snap.announcements, snap.campaigns, snap.deliveries, snap.suppressions, snap.preferences, snap.messages
+	messageEdits, messageReactions, messageAttachments, messageReads :=
+		snap.messageEdits, snap.messageReactions, snap.messageAttachments, snap.messageReads
 	if orgID == "" {
 		s.announcements = make(map[string]*Announcement, len(announcements))
 		s.campaigns = make(map[string]*EmailCampaign, len(campaigns))
@@ -509,62 +620,7 @@ func (s *Service) reloadLocked(ctx context.Context, orgID string) error {
 		s.messageAttachments = make(map[string]*MessageAttachment, len(messageAttachments))
 		s.messageReads = make(map[string]*MessageRead, len(messageReads))
 	} else {
-		// Drop only this org's cached rows. Message children carry no org id,
-		// so resolve it through the (still cached) parent message first.
-		inOrg := func(messageID string) bool {
-			m, ok := s.messages[messageID]
-			return ok && m.OrgID == orgID
-		}
-		for k, v := range s.messageEdits {
-			if inOrg(v.MessageID) {
-				delete(s.messageEdits, k)
-			}
-		}
-		for k, v := range s.messageReactions {
-			if inOrg(v.MessageID) {
-				delete(s.messageReactions, k)
-			}
-		}
-		for k, v := range s.messageAttachments {
-			if inOrg(v.MessageID) {
-				delete(s.messageAttachments, k)
-			}
-		}
-		for k, v := range s.messages {
-			if v.OrgID == orgID {
-				delete(s.messages, k)
-			}
-		}
-		for k, v := range s.announcements {
-			if v.OrgID == orgID {
-				delete(s.announcements, k)
-			}
-		}
-		for k, v := range s.campaigns {
-			if v.OrgID == orgID {
-				delete(s.campaigns, k)
-			}
-		}
-		for k, v := range s.deliveries {
-			if v.OrgID == orgID {
-				delete(s.deliveries, k)
-			}
-		}
-		for k, v := range s.suppression {
-			if v.OrgID == orgID {
-				delete(s.suppression, k)
-			}
-		}
-		for k, v := range s.preferences {
-			if v.OrgID == orgID {
-				delete(s.preferences, k)
-			}
-		}
-		for k, v := range s.messageReads {
-			if v.OrgID == orgID {
-				delete(s.messageReads, k)
-			}
-		}
+		s.dropOrgLocked(orgID)
 	}
 	for _, a := range announcements {
 		s.announcements[a.ID] = a
@@ -596,7 +652,9 @@ func (s *Service) reloadLocked(ctx context.Context, orgID string) error {
 	for _, read := range messageReads {
 		s.messageReads[messageReadKey(read.OrgID, read.HouseholdID, read.SwimmerID, read.UserID)] = read
 	}
-	return nil
+	if orgID != "" {
+		s.orgCache.Touch(orgID, s.dropOrgLocked)
+	}
 }
 
 // reloadSuppressionLocked replaces one org's suppression cache; caller holds s.mu (write).
@@ -990,9 +1048,9 @@ func (s *Service) SendMessage(inp CreateMessageInput) (*Message, error) {
 			CreatedAt: now,
 		}
 		if s.repo != nil {
-			if err := s.repo.InsertMessageAttachment(context.Background(), a); err != nil {
+			if err := s.repo.InsertMessageAttachment(context.Background(), m.OrgID, a); err != nil {
 				// Roll back the partially-written message so a retry can't duplicate it.
-				_ = s.repo.DeleteMessage(context.Background(), m.ID)
+				_ = s.repo.DeleteMessage(context.Background(), m.OrgID, m.ID)
 				delete(s.messages, m.ID)
 				for id, att := range s.messageAttachments {
 					if att.MessageID == m.ID {
@@ -1162,7 +1220,7 @@ func (s *Service) EditMessage(orgID, messageID, userID, newBody string) (*Messag
 	m.UpdatedAt = now
 
 	if s.repo != nil {
-		if err := s.repo.EditMessageTx(context.Background(), edit, m.Body, now); err != nil {
+		if err := s.repo.EditMessageTx(context.Background(), m.OrgID, edit, m.Body, now); err != nil {
 			s.mu.Unlock()
 			return nil, fmt.Errorf("persist message edit: %w", err)
 		}
@@ -1201,7 +1259,7 @@ func (s *Service) AddReaction(orgID, messageID, userID, emoji string) error {
 	}
 	react := &MessageReaction{ID: s.newID(), MessageID: messageID, UserID: userID, Emoji: emoji, CreatedAt: time.Now().UTC()}
 	if s.repo != nil {
-		if err := s.repo.UpsertMessageReaction(context.Background(), react); err != nil {
+		if err := s.repo.UpsertMessageReaction(context.Background(), orgID, react); err != nil {
 			s.mu.Unlock()
 			return fmt.Errorf("persist reaction: %w", err)
 		}
@@ -1228,7 +1286,7 @@ func (s *Service) RemoveReaction(orgID, messageID, userID, emoji string) error {
 		return ErrMessageNotFound
 	}
 	if s.repo != nil {
-		if err := s.repo.DeleteMessageReaction(context.Background(), messageID, userID, emoji); err != nil {
+		if err := s.repo.DeleteMessageReaction(context.Background(), orgID, messageID, userID, emoji); err != nil {
 			s.mu.Unlock()
 			return fmt.Errorf("delete reaction: %w", err)
 		}
@@ -1279,8 +1337,50 @@ func (s *Service) MarkThreadRead(orgID, householdID, swimmerID, userID string) e
 
 // ─── Campaign operations ──────────────────────────────────────────────────────
 
+// ErrEmailQuotaExceeded: sending this campaign would take the org past its rolling
+// 24-hour email allowance. The campaign returns to its previous state untouched,
+// so an admin can send it later (or ask the platform to raise the cap).
+var ErrEmailQuotaExceeded = errors.New("this campaign would exceed your club's daily email limit; try again later")
+
+// SetDailyEmailCap limits how many emails one org may send per rolling 24 hours
+// across all campaigns (0 = unlimited). One club's bulk mail must not be able to
+// damage the shared sender reputation for every other club.
+func (s *Service) SetDailyEmailCap(n int) {
+	s.mu.Lock()
+	s.dailyEmailCap = n
+	s.mu.Unlock()
+}
+
+// ErrSenderNotConfigured: the org has no verified sender address, so campaigns
+// cannot be created (a shared mail account must never send as an arbitrary address).
+var ErrSenderNotConfigured = errors.New("set the club's email sender address in Settings before creating campaigns")
+
+// SenderPolicy returns the org's configured sender. ok is false when none is set.
+type SenderPolicy func(orgID string) (name, email string, ok bool)
+
+// SetSenderPolicy pins every campaign's From address to the org's configured
+// sender (tenancy tracker 5.2). Nil leaves From free-form (dev/test).
+func (s *Service) SetSenderPolicy(p SenderPolicy) {
+	s.mu.Lock()
+	s.senderPolicy = p
+	s.mu.Unlock()
+}
+
 // CreateCampaign creates a new email campaign in draft state.
 func (s *Service) CreateCampaign(inp CreateCampaignInput) (*EmailCampaign, error) {
+	s.mu.RLock()
+	policy := s.senderPolicy
+	s.mu.RUnlock()
+	if policy != nil {
+		name, email, ok := policy(inp.OrgID)
+		if !ok {
+			return nil, ErrSenderNotConfigured
+		}
+		inp.FromEmail = email
+		if strings.TrimSpace(inp.FromName) == "" {
+			inp.FromName = name
+		}
+	}
 	if inp.Audience == "group" && strings.TrimSpace(inp.GroupID) == "" {
 		return nil, errors.New("group_id is required when audience is 'group'")
 	}
@@ -1493,7 +1593,30 @@ func (s *Service) RunCampaignSend(ctx context.Context, orgID, campaignID string,
 			prior[existing.RecipientEmail] = existing.Status
 		}
 	}
+	cap := s.dailyEmailCap
+	var alreadyToday int
+	if cap > 0 {
+		cutoff := time.Now().UTC().Add(-24 * time.Hour)
+		for _, d := range s.deliveries {
+			if d.OrgID == orgID && d.Status != "failed" && d.Status != "suppressed" && !d.CreatedAt.Before(cutoff) {
+				alreadyToday++
+			}
+		}
+	}
 	s.mu.Unlock()
+	if cap > 0 {
+		fresh := map[string]struct{}{}
+		for _, r := range inp.Recipients {
+			if e := strings.ToLower(strings.TrimSpace(r.Email)); e != "" {
+				if _, done := prior[e]; !done {
+					fresh[e] = struct{}{}
+				}
+			}
+		}
+		if alreadyToday+len(fresh) > cap {
+			return nil, s.revertCampaignSendFailure(c, inp.ActorID, ErrEmailQuotaExceeded)
+		}
+	}
 
 	var (
 		sentCount       int
@@ -1572,6 +1695,7 @@ func (s *Service) RunCampaignSend(ctx context.Context, orgID, campaignID string,
 			Metadata: map[string]string{
 				"org_id":      orgID,
 				"campaign_id": campaignID,
+				"delivery_id": d.ID,
 			},
 		}})
 	}
@@ -1615,6 +1739,17 @@ func (s *Service) RunCampaignSend(ctx context.Context, orgID, campaignID string,
 		reqs := make([]postmark.SendEmailRequest, len(chunk))
 		for i, p := range chunk {
 			reqs[i] = p.req
+		}
+		// Persist a "pending" marker per recipient BEFORE handing the batch to
+		// Postmark. If we crash or fail to persist after the send, the retry's
+		// prior-delivery filter sees the row and skips it (at-most-once)
+		// instead of mailing the recipient twice.
+		for _, p := range chunk {
+			p.d.Status = "pending"
+			p.d.UpdatedAt = time.Now().UTC()
+			if err := persist(p.d); err != nil {
+				return nil, s.revertCampaignSendFailure(c, inp.ActorID, err)
+			}
 		}
 		batchCtx, cancel := context.WithTimeout(sendCtx, sendBatchTimeout)
 		results, batchErr := client.SendBatch(batchCtx, reqs)

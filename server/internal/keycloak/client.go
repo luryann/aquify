@@ -531,6 +531,11 @@ func (c *AdminClient) ListUsers(ctx context.Context, orgID, search string, limit
 	if err != nil {
 		return nil, err
 	}
+	// An empty page past the first one is just the end of the org's users (the
+	// q= filter already worked on an earlier page): do not rescan the realm.
+	if orgID != "" && len(users) == 0 && offset > 0 {
+		return []User{}, nil
+	}
 	users, err = c.hydrateUsersMissingOrg(ctx, users, orgID)
 	if err != nil {
 		return nil, err

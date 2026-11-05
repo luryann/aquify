@@ -11,13 +11,14 @@ import (
 	"strings"
 	"time"
 
+	"github.com/go-chi/chi/v5"
+	"github.com/go-playground/validator/v10"
 	"github.com/luryann/aquify/server/internal/app/billing"
 	"github.com/luryann/aquify/server/internal/app/httpx"
 	appmiddleware "github.com/luryann/aquify/server/internal/app/middleware"
+	"github.com/luryann/aquify/server/internal/app/payments"
 	stripelib "github.com/luryann/aquify/server/internal/stripe"
 	"github.com/luryann/aquify/server/internal/telemetry"
-	"github.com/go-chi/chi/v5"
-	"github.com/go-playground/validator/v10"
 )
 
 // ─── StripeHandlers ───────────────────────────────────────────────────────────
@@ -40,6 +41,66 @@ type StripeHandlers struct {
 	allowedReturnOrigins []string
 	// metrics, when set, receives webhook receipt-to-processing lag.
 	metrics *telemetry.Metrics
+	// Stripe Connect: each club transacts on its own connected account.
+	accounts *payments.Service
+	// orgCurrency returns the club's own billing currency ("" = the deployment default).
+	orgCurrency          func(orgID string) string
+	connectRequired      bool
+	connectWebhookSecret string
+}
+
+// SetConnect wires per-club connected accounts. With required set, a club that
+// has not finished onboarding cannot take payments (it never falls back to the
+// platform account); connectWebhookSecret verifies the Connect webhook endpoint.
+func (h *StripeHandlers) SetConnect(accounts *payments.Service, required bool, connectWebhookSecret string) {
+	h.accounts = accounts
+	h.connectRequired = required
+	h.connectWebhookSecret = connectWebhookSecret
+}
+
+// SetOrgCurrency lets each club bill in its own currency.
+func (h *StripeHandlers) SetOrgCurrency(fn func(orgID string) string) { h.orgCurrency = fn }
+
+// currencyFor is the club's currency, else the deployment default.
+func (h *StripeHandlers) currencyFor(orgID string) string {
+	if h.orgCurrency != nil {
+		if c := strings.TrimSpace(h.orgCurrency(orgID)); c != "" {
+			return c
+		}
+	}
+	return h.currency
+}
+
+var errPaymentsNotEnabled = errors.New("payments are not enabled for this organization")
+
+// stripeAccountForOrg returns the connected account to transact on ("" = platform
+// account, only when Connect is not required).
+func (h *StripeHandlers) stripeAccountForOrg(ctx context.Context, orgID string) (string, error) {
+	if h.accounts == nil {
+		return "", nil
+	}
+	a, err := h.accounts.Get(ctx, orgID)
+	if errors.Is(err, payments.ErrNotFound) {
+		if h.connectRequired {
+			return "", errPaymentsNotEnabled
+		}
+		return "", nil
+	}
+	if err != nil {
+		return "", err
+	}
+	if !a.ChargesEnabled {
+		return "", errPaymentsNotEnabled
+	}
+	return a.StripeAccountID, nil
+}
+
+func (h *StripeHandlers) writeAccountError(w http.ResponseWriter, r *http.Request, err error) {
+	if errors.Is(err, errPaymentsNotEnabled) {
+		httpx.WriteError(w, r, http.StatusConflict, "payments_not_enabled", "Online payments are not set up for this club yet. A club administrator must finish Stripe onboarding.", nil)
+		return
+	}
+	httpx.WriteError(w, r, http.StatusInternalServerError, "internal_error", "Failed to resolve the club's payment account.", err)
 }
 
 // SetMetrics enables recording of aquify_webhook_processing_lag_seconds.
@@ -166,13 +227,20 @@ func stripeMetadata(extra map[string]string, invoiceID, orgID string) map[string
 	return meta
 }
 
-func stripeIdempotencyKeyFromRequest(w http.ResponseWriter, r *http.Request) (string, bool) {
+// stripeIdempotencyKeyFromRequest reads the caller's Idempotency-Key and scopes
+// it to the org. Stripe keys are unique per Stripe account, so without the org
+// prefix two clubs choosing the same key would replay each other's payments.
+func stripeIdempotencyKeyFromRequest(w http.ResponseWriter, r *http.Request, orgID string) (string, bool) {
 	key := strings.TrimSpace(r.Header.Get(stripeIdempotencyHeader))
 	if key == "" {
 		httpx.WriteError(w, r, http.StatusBadRequest, "missing_idempotency_key", "Idempotency-Key header is required.", nil)
 		return "", false
 	}
-	return key, true
+	if len(key) > 128 {
+		httpx.WriteError(w, r, http.StatusBadRequest, "invalid_idempotency_key", "Idempotency-Key must be at most 128 characters.", nil)
+		return "", false
+	}
+	return orgID + ":" + key, true
 }
 
 // errCheckoutDenied means the principal may not pay this invoice for this amount.
@@ -221,7 +289,7 @@ func (h *StripeHandlers) createPaymentIntent(w http.ResponseWriter, r *http.Requ
 	if !h.decodeAndValidate(w, r, &req) {
 		return
 	}
-	idempotencyKey, ok := stripeIdempotencyKeyFromRequest(w, r)
+	idempotencyKey, ok := stripeIdempotencyKeyFromRequest(w, r, orgID)
 	if !ok {
 		return
 	}
@@ -249,10 +317,16 @@ func (h *StripeHandlers) createPaymentIntent(w http.ResponseWriter, r *http.Requ
 
 	// Build metadata for Stripe so webhook handlers can route the event back.
 	meta := stripeMetadata(req.Metadata, req.InvoiceID, orgID)
+	stripeAccount, err := h.stripeAccountForOrg(r.Context(), orgID)
+	if err != nil {
+		h.writeAccountError(w, r, err)
+		return
+	}
 
 	result, err := h.client.CreatePaymentIntent(r.Context(), stripelib.PaymentIntentParams{
+		StripeAccount:  stripeAccount,
 		AmountCents:    req.AmountCents,
-		Currency:       h.currency,
+		Currency:       h.currencyFor(orgID),
 		Description:    req.Description,
 		Metadata:       meta,
 		IdempotencyKey: idempotencyKey,
@@ -279,7 +353,7 @@ func (h *StripeHandlers) createCheckoutSession(w http.ResponseWriter, r *http.Re
 	if !h.decodeAndValidate(w, r, &req) {
 		return
 	}
-	idempotencyKey, ok := stripeIdempotencyKeyFromRequest(w, r)
+	idempotencyKey, ok := stripeIdempotencyKeyFromRequest(w, r, orgID)
 	if !ok {
 		return
 	}
@@ -304,6 +378,11 @@ func (h *StripeHandlers) createCheckoutSession(w http.ResponseWriter, r *http.Re
 	}
 
 	meta := stripeMetadata(req.Metadata, req.InvoiceID, orgID)
+	stripeAccount, err := h.stripeAccountForOrg(r.Context(), orgID)
+	if err != nil {
+		h.writeAccountError(w, r, err)
+		return
+	}
 
 	description := req.Description
 	if invoice != nil {
@@ -313,8 +392,9 @@ func (h *StripeHandlers) createCheckoutSession(w http.ResponseWriter, r *http.Re
 		}
 	}
 	result, err := h.client.CreateCheckoutSession(r.Context(), stripelib.CheckoutSessionParams{
+		StripeAccount:  stripeAccount,
 		AmountCents:    req.AmountCents,
-		Currency:       h.currency,
+		Currency:       h.currencyFor(orgID),
 		Description:    description,
 		Metadata:       meta,
 		SuccessURL:     req.SuccessURL,
@@ -363,7 +443,24 @@ func (h *StripeHandlers) reconcile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	stripeCents, err := h.client.FetchBalanceCents(r.Context())
+	if err := h.billing.RequireBillingWriteAccess(principal); err != nil {
+		if errors.Is(err, billing.ErrForbidden) {
+			httpx.WriteError(w, r, http.StatusForbidden, "forbidden", "Insufficient permissions.", nil)
+			return
+		}
+		httpx.WriteError(w, r, http.StatusInternalServerError, "internal_error", "Reconciliation failed.", err)
+		return
+	}
+
+	stripeAccount, err := h.billing.StripeAccountFor(orgID)
+	if err != nil {
+		if errors.Is(err, billing.ErrPaymentAccountNotConnected) {
+			err = errPaymentsNotEnabled
+		}
+		h.writeAccountError(w, r, err)
+		return
+	}
+	stripeCents, err := h.client.FetchBalanceCents(r.Context(), stripeAccount)
 	if err != nil {
 		h.logger.Error("stripe: fetch balance failed", "error", err)
 		writeStripeError(w, r, err, "Failed to fetch Stripe balance.")
@@ -417,6 +514,10 @@ func (h *StripeHandlers) handleWebhook(w http.ResponseWriter, r *http.Request) {
 
 	// Parse + verify webhook. Stub client skips signature check; real client enforces it.
 	event, err := h.client.ParseWebhookEvent(body, sigHeader, h.webhookSecret)
+	if err != nil && errors.Is(err, stripelib.ErrInvalidSignature) && h.connectWebhookSecret != "" {
+		// The Connect endpoint (events on connected accounts) has its own secret.
+		event, err = h.client.ParseWebhookEvent(body, sigHeader, h.connectWebhookSecret)
+	}
 	if err != nil {
 		switch {
 		case errors.Is(err, stripelib.ErrInvalidSignature),
@@ -431,7 +532,15 @@ func (h *StripeHandlers) handleWebhook(w http.ResponseWriter, r *http.Request) {
 
 	// Persist the webhook event and check for duplicates.
 	// orgID may be empty for events without metadata; RecordWebhookEvent accepts this.
-	eventOrgID := event.Metadata["org_id"]
+	// Connect events are attributed by the connected account the event came from,
+	// never by metadata alone: the account row is the authority for the org.
+	attributionErr := h.attributeConnectEvent(r.Context(), event)
+	// Only trust the org once attribution succeeded; a rejected Connect event
+	// must not be stored under an org named by forged metadata.
+	eventOrgID := ""
+	if attributionErr == nil {
+		eventOrgID = event.Metadata["org_id"]
+	}
 	isNew, err := h.billing.RecordWebhookEvent("stripe", eventOrgID, event.ID, event.Type, event.RawPayload)
 	if errors.Is(err, billing.ErrWebhookInFlight) {
 		httpx.WriteError(w, r, http.StatusServiceUnavailable, "webhook_in_flight", "Webhook processing is in progress; retry later.", nil)
@@ -449,7 +558,10 @@ func (h *StripeHandlers) handleWebhook(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Dispatch to the appropriate domain handler.
-	processErr := h.dispatchWebhookEvent(r.Context(), event)
+	processErr := attributionErr
+	if processErr == nil {
+		processErr = h.dispatchWebhookEvent(r.Context(), event)
+	}
 	if h.metrics != nil {
 		h.metrics.WebhookProcessingLag.WithLabelValues(event.Type).Observe(time.Since(receivedAt).Seconds())
 	}
@@ -494,6 +606,7 @@ const webhookLagGrace = time.Hour
 // by isPermanentWebhookError, with the lag grace above.
 var permanentWebhookErrors = []error{
 	errWebhookUnattributable,
+	errWebhookOrgMismatch,
 	billing.ErrInvoiceItemNotFound,
 	billing.ErrRefundNotFound,
 	billing.ErrInvalidTransition,
@@ -531,6 +644,8 @@ func (h *StripeHandlers) dispatchWebhookEvent(ctx context.Context, event *stripe
 		return h.onPaymentIntentFailed(ctx, event)
 	case "charge.refunded":
 		return h.onChargeRefunded(ctx, event)
+	case "account.updated":
+		return h.onAccountUpdated(ctx, event)
 	default:
 		// Unknown event types are silently acknowledged.
 		h.logger.Info("stripe webhook: unhandled event type", "type", event.Type)
@@ -564,8 +679,8 @@ func (h *StripeHandlers) onPaymentIntentSucceeded(_ context.Context, event *stri
 		return err
 	}
 
-	_, _, err = h.billing.HandleStripePaymentIntentSucceeded(
-		orgID, paymentIntentID, invoiceID, amountCents, "stripe-webhook",
+	_, _, err = h.billing.HandleStripePaymentIntentSucceededOn(
+		orgID, event.Account, paymentIntentID, invoiceID, amountCents, "stripe-webhook",
 	)
 	return err
 }
@@ -576,7 +691,7 @@ func (h *StripeHandlers) onPaymentIntentFailed(_ context.Context, event *stripel
 	if paymentIntentID == "" {
 		return errors.New("payment_intent.payment_failed: missing payment intent ID")
 	}
-	return h.billing.HandleStripePaymentIntentFailed(paymentIntentID)
+	return h.billing.HandleStripePaymentIntentFailedFor(event.Metadata["org_id"], paymentIntentID)
 }
 
 // onChargeRefunded handles a charge.refunded event.
@@ -600,6 +715,60 @@ func (h *StripeHandlers) onChargeRefunded(_ context.Context, event *stripelib.We
 		orgID, paymentIntentID, invoiceID, amountRefunded,
 		stripeRefundID, "", "stripe-webhook",
 	)
+	return err
+}
+
+var errWebhookOrgMismatch = errors.New("webhook metadata org does not match the connected account's org")
+
+// attributeConnectEvent makes the connected account authoritative for the org of a
+// Connect event: metadata naming a different org is rejected (a forged or
+// mis-routed event), and metadata is overwritten with the account's org. Platform
+// events (no account) are left to the metadata routing used before Connect.
+func (h *StripeHandlers) attributeConnectEvent(ctx context.Context, event *stripelib.WebhookEventData) error {
+	if event.Account == "" {
+		return nil
+	}
+	if h.accounts == nil {
+		return fmt.Errorf("%w: connect event for account %s but connected accounts are not configured", errWebhookUnattributable, event.Account)
+	}
+	acct, err := h.accounts.ByStripeAccount(ctx, event.Account)
+	if errors.Is(err, payments.ErrNotFound) {
+		return fmt.Errorf("%w: connected account %s belongs to no organization", errWebhookUnattributable, event.Account)
+	}
+	if err != nil {
+		return err
+	}
+	if m := event.Metadata["org_id"]; m != "" && m != acct.OrgID {
+		h.logger.Error("stripe webhook: metadata org differs from the connected account's org",
+			"event_id", event.ID, "account", event.Account, "metadata_org_id", m, "account_org_id", acct.OrgID)
+		return errWebhookOrgMismatch
+	}
+	if event.Metadata == nil {
+		event.Metadata = map[string]string{}
+	}
+	event.Metadata["org_id"] = acct.OrgID
+	return nil
+}
+
+// onAccountUpdated keeps a club's capability flags in step with Stripe.
+func (h *StripeHandlers) onAccountUpdated(ctx context.Context, event *stripelib.WebhookEventData) error {
+	id, _ := event.Object["id"].(string)
+	if id == "" {
+		return nil
+	}
+	if h.accounts == nil {
+		return nil
+	}
+	// Stripe does not guarantee event ordering, so ignore the payload flags and
+	// apply the account's live state; a failed fetch is retried by Stripe.
+	live, err := h.client.GetConnectedAccount(ctx, id)
+	if err != nil {
+		return fmt.Errorf("account.updated: fetch live account %s: %w", id, err)
+	}
+	_, err = h.accounts.UpdateStatus(ctx, id, live.ChargesEnabled, live.PayoutsEnabled, live.DetailsSubmitted)
+	if errors.Is(err, payments.ErrNotFound) {
+		return fmt.Errorf("%w: account.updated for unknown account %s", errWebhookUnattributable, id)
+	}
 	return err
 }
 

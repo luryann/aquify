@@ -6,7 +6,7 @@ import { useSession } from '@/lib/session'
 import { parseBackendDate, localToday } from '@/lib/dates'
 import { useApiClient } from '@/lib/api'
 import { Icon } from '@/components/ui/icons'
-import { displayNameForUser, fetchAuditEvents, fetchGroups, fetchHouseholds, fetchInvoices, fetchMeetCommitments, fetchMeetEntries, fetchMeets, fetchPerformanceBestTimes, fetchPractices, fetchSeasons, fetchSwimmers, fetchUsers, type AuditEventRecord, type BestTimeRecord, type GroupRecord, type HouseholdRecord, type InvoiceRecord, type MeetRecord, type PracticeRecord, type SeasonRecord, type SwimmerRecord, type UserRecord } from '@/lib/adminData'
+import { displayNameForUser, fetchAuditEvents, fetchGroups, fetchHouseholds, fetchInvoices, fetchMeetCommitments, fetchMeetEntries, fetchMeets, fetchPerformanceBestTimes, fetchPractices, fetchSeasons, fetchSwimmers, fetchAllUsers, type AuditEventRecord, type BestTimeRecord, type GroupRecord, type HouseholdRecord, type InvoiceRecord, type MeetRecord, type PracticeRecord, type SeasonRecord, type SwimmerRecord, type UserRecord } from '@/lib/adminData'
 import './page.inline.css'
 
 // A dev-stub/system principal ID renders as all zeros (e.g.
@@ -224,12 +224,12 @@ export default function DashboardPage() {
           fetchGroups(api, session.user.orgId).catch(() => [] as GroupRecord[]),
           isAdmin ? fetchAuditEvents(api, session.user.orgId).catch(() => ({ events: [] as AuditEventRecord[] })) : Promise.resolve({ events: [] as AuditEventRecord[] }),
           fetchPerformanceBestTimes(api, session.user.orgId).catch(() => [] as BestTimeRecord[]),
-          isAdmin ? fetchUsers(api, session.user.orgId, { limit: 200 }).catch(() => ({ users: [] as UserRecord[] })) : Promise.resolve({ users: [] as UserRecord[] }),
+          isAdmin ? fetchAllUsers(api, session.user.orgId).catch(() => ({ users: [] as UserRecord[] })) : Promise.resolve({ users: [] as UserRecord[] }),
           fetchSeasons(api, session.user.orgId).catch(() => [] as SeasonRecord[]),
           fetchPractices(api, session.user.orgId).catch(() => [] as PracticeRecord[]),
         ])
         const orgId = session.user.orgId
-        const live = mm.filter((m) => UPCOMING_STATUSES.has(m.status)).slice(0, 6)
+        const live = mm.filter((m) => UPCOMING_STATUSES.has(m.status))
         const entryLists = await Promise.all(live.map((m) => fetchMeetEntries(api, orgId, m.id).catch(() => [])))
         const openMeets = live.filter((m) => m.status === 'commitment_open')
         const commitmentLists = await Promise.all(openMeets.map((m) => fetchMeetCommitments(api, orgId, m.id).catch(() => [])))
@@ -264,7 +264,7 @@ export default function DashboardPage() {
     .slice(0, 3)
   const openInvoices = invoices.filter((i) => i.status === 'issued' || i.status === 'partially_paid')
   const openInvoiceAmount = openInvoices.reduce((sum, i) => sum + i.amount_due_cents, 0)
-  const overdueInvoices = openInvoices.filter((i) => i.due_date && parseBackendDate(i.due_date) < new Date())
+  const overdueInvoices = openInvoices.filter((i) => i.due_date && i.due_date.slice(0, 10) < localToday())
   const overdueAmount = overdueInvoices.reduce((sum, i) => sum + i.amount_due_cents, 0)
   const activeGroups = groups.filter((g) => g.is_active).length
   const pendingRegistrations = swimmers.filter((s) => s.registration_status === 'pending').length
@@ -272,8 +272,8 @@ export default function DashboardPage() {
   const recentBestTimes = bestTimes.filter((bt) => bt.recorded_at && new Date(bt.recorded_at).getTime() >= thirtyDaysAgo).length
   const nextCommitmentDeadlineDays = meets
     .filter((m) => UPCOMING_STATUSES.has(m.status) && m.commitment_deadline)
+    .filter((m) => m.status === 'commitment_open' && new Date(m.commitment_deadline as string).getTime() >= Date.now())
     .map((m) => Math.ceil((new Date(m.commitment_deadline as string).getTime() - Date.now()) / (24 * 60 * 60 * 1000)))
-    .filter((days) => days >= 0)
     .sort((a, b) => a - b)[0]
 
   // Performance snapshot derivations

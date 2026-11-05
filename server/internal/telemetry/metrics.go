@@ -2,6 +2,7 @@ package telemetry
 
 import (
 	"net/http"
+	"sync"
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/collectors"
@@ -26,7 +27,49 @@ type Metrics struct {
 
 	// Webhooks
 	WebhookProcessingLag *prometheus.HistogramVec
+
+	// Per-tenant usage. The org label is bounded (see BoundedLabel): beyond
+	// MaxOrgLabels distinct orgs the rest share the value "other", so a growing
+	// tenant count can never explode Prometheus cardinality.
+	OrgHTTPRequestsTotal  *prometheus.CounterVec
+	OrgJobExecutionsTotal *prometheus.CounterVec
+	orgLabels             *BoundedLabel
 }
+
+// MaxOrgLabels is how many distinct orgs get their own metric series.
+const MaxOrgLabels = 200
+
+// BoundedLabel hands out label values for an unbounded key space: the first Max
+// distinct keys keep their own value and every later key maps to "other".
+type BoundedLabel struct {
+	mu   sync.Mutex
+	max  int
+	seen map[string]struct{}
+}
+
+func NewBoundedLabel(max int) *BoundedLabel {
+	return &BoundedLabel{max: max, seen: map[string]struct{}{}}
+}
+
+// Value returns key itself while there is room (or it was already admitted), else "other".
+func (b *BoundedLabel) Value(key string) string {
+	if key == "" {
+		return "none"
+	}
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if _, ok := b.seen[key]; ok {
+		return key
+	}
+	if len(b.seen) >= b.max {
+		return "other"
+	}
+	b.seen[key] = struct{}{}
+	return key
+}
+
+// OrgLabel returns the bounded metric label for an org id.
+func (m *Metrics) OrgLabel(orgID string) string { return m.orgLabels.Value(orgID) }
 
 // NewMetrics creates and registers all platform metrics with a fresh registry.
 func NewMetrics() *Metrics {
@@ -72,6 +115,22 @@ func NewMetrics() *Metrics {
 			Help:      "Total number of import files processed, labelled by status (success|failure|conflict).",
 		}, []string{"status"}),
 
+		OrgHTTPRequestsTotal: prometheus.NewCounterVec(prometheus.CounterOpts{
+			Namespace: "aquify",
+			Subsystem: "http",
+			Name:      "org_requests_total",
+			Help:      "Authenticated HTTP requests per org (bounded label) and status class (2xx|3xx|4xx|5xx).",
+		}, []string{"org", "class"}),
+
+		OrgJobExecutionsTotal: prometheus.NewCounterVec(prometheus.CounterOpts{
+			Namespace: "aquify",
+			Subsystem: "job",
+			Name:      "org_executions_total",
+			Help:      "Org-scoped background job executions per org (bounded label) and status (success|failure).",
+		}, []string{"org", "status"}),
+
+		orgLabels: NewBoundedLabel(MaxOrgLabels),
+
 		WebhookProcessingLag: prometheus.NewHistogramVec(prometheus.HistogramOpts{
 			Namespace: "aquify",
 			Subsystem: "webhook",
@@ -90,6 +149,8 @@ func NewMetrics() *Metrics {
 		m.JobDurationSeconds,
 		m.ImportFilesTotal,
 		m.WebhookProcessingLag,
+		m.OrgHTTPRequestsTotal,
+		m.OrgJobExecutionsTotal,
 	)
 
 	return m

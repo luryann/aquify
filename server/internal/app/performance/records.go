@@ -366,6 +366,10 @@ func (s *Service) appendAuditLocked(orgID, actorID, action, resource, resourceID
 // complete (for example a failed database write). The result itself is saved;
 // callers can tell detection was incomplete and an admin can run a records
 // rebuild to repair the slot.
+// ErrDuplicateMeetResult is returned by UpsertResultWithRecords when
+// SkipIfMeetResultExists is set and the swim is already recorded.
+var ErrDuplicateMeetResult = errors.New("meet result already recorded")
+
 var ErrRecordDetection = errors.New("team record detection incomplete")
 
 // slotVerdict is the outcome of evaluating one swim against one record slot.
@@ -488,6 +492,9 @@ func (s *Service) detectRecordBreaksLocked(orgID, actorID string, result *Result
 // ListRecords returns the current team record for each slot matching filters.
 // Readable by every club role; pending counts are only shown to staff.
 func (s *Service) ListRecords(orgID string, principal *appmiddleware.Principal, filters ListRecordsFilters) ([]TeamRecord, error) {
+	if err := s.ensureOrg(orgID); err != nil {
+		return nil, err
+	}
 	if err := s.requireReadAccess(principal); err != nil {
 		return nil, err
 	}
@@ -553,6 +560,9 @@ func redactEntry(e *RecordEntry) {
 // GetRecordHistory returns the progression (and, for staff, pending and
 // rejected entries) for one slot.
 func (s *Service) GetRecordHistory(orgID string, principal *appmiddleware.Principal, key RecordKey) (*RecordHistory, error) {
+	if err := s.ensureOrg(orgID); err != nil {
+		return nil, err
+	}
 	if err := s.requireReadAccess(principal); err != nil {
 		return nil, err
 	}
@@ -593,6 +603,9 @@ func (s *Service) GetRecordHistory(orgID string, principal *appmiddleware.Princi
 
 // ListPendingRecords returns pending record entries awaiting admin approval.
 func (s *Service) ListPendingRecords(orgID string, principal *appmiddleware.Principal) ([]*RecordEntry, error) {
+	if err := s.ensureOrg(orgID); err != nil {
+		return nil, err
+	}
 	if err := s.requireAdminOrCoach(principal); err != nil {
 		return nil, err
 	}
@@ -610,6 +623,9 @@ func (s *Service) ListPendingRecords(orgID string, principal *appmiddleware.Prin
 
 // GetRecordEntry returns one entry (staff only).
 func (s *Service) GetRecordEntry(orgID string, principal *appmiddleware.Principal, entryID string) (*RecordEntry, error) {
+	if err := s.ensureOrg(orgID); err != nil {
+		return nil, err
+	}
 	if err := s.requireAdminOrCoach(principal); err != nil {
 		return nil, err
 	}
@@ -640,6 +656,9 @@ func validSwimDate(v string) (string, error) {
 
 // CreateManualRecord adds a historical record entry (admin only).
 func (s *Service) CreateManualRecord(orgID, actorID string, principal *appmiddleware.Principal, input CreateManualRecordInput) (*RecordEntry, error) {
+	if err := s.ensureOrg(orgID); err != nil {
+		return nil, err
+	}
 	if err := s.requireAdmin(principal); err != nil {
 		return nil, err
 	}
@@ -706,6 +725,9 @@ func (s *Service) CreateManualRecord(orgID, actorID string, principal *appmiddle
 // UpdateRecordEntry patches lock/verify/notes, and for manual entries the swim
 // facts (admin only).
 func (s *Service) UpdateRecordEntry(orgID, actorID, entryID string, principal *appmiddleware.Principal, input UpdateRecordEntryInput) (*RecordEntry, *RecordEntry, error) {
+	if err := s.ensureOrg(orgID); err != nil {
+		return nil, nil, err
+	}
 	if err := s.requireAdmin(principal); err != nil {
 		return nil, nil, err
 	}
@@ -758,6 +780,17 @@ func (s *Service) UpdateRecordEntry(orgID, actorID, entryID string, principal *a
 		if *input.Locked && e.Status != RecordStatusAccepted {
 			return nil, nil, fmt.Errorf("%w: only accepted entries can be locked", ErrRecordInvalid)
 		}
+		if *input.Locked && !e.Locked {
+			var slot []*RecordEntry
+			for _, o := range s.recordEntries {
+				if o.OrgID == orgID && o.key() == e.key() {
+					slot = append(slot, o)
+				}
+			}
+			if cur := currentRecordOf(slot); cur == nil || cur.ID != e.ID {
+				return nil, nil, fmt.Errorf("%w: only the current record can be locked", ErrRecordInvalid)
+			}
+		}
 		next.Locked = *input.Locked
 	}
 	if input.Verified != nil && *input.Verified != e.Verified {
@@ -783,6 +816,9 @@ func (s *Service) UpdateRecordEntry(orgID, actorID, entryID string, principal *a
 // DecideRecordEntry approves (pending → accepted) or rejects (pending or
 // accepted result entry → rejected) a record entry. Admin only.
 func (s *Service) DecideRecordEntry(orgID, actorID, entryID string, principal *appmiddleware.Principal, approve bool, notes string) (*RecordEntry, error) {
+	if err := s.ensureOrg(orgID); err != nil {
+		return nil, err
+	}
 	if err := s.requireAdmin(principal); err != nil {
 		return nil, err
 	}
@@ -835,6 +871,9 @@ func (s *Service) DecideRecordEntry(orgID, actorID, entryID string, principal *a
 // DeleteManualRecord removes a manual entry (admin only). Result-sourced
 // entries must be rejected so a rebuild does not re-create them.
 func (s *Service) DeleteManualRecord(orgID, actorID, entryID string, principal *appmiddleware.Principal) (*RecordEntry, error) {
+	if err := s.ensureOrg(orgID); err != nil {
+		return nil, err
+	}
 	if err := s.requireAdmin(principal); err != nil {
 		return nil, err
 	}
@@ -861,6 +900,9 @@ func (s *Service) DeleteManualRecord(orgID, actorID, entryID string, principal *
 // result. Slots whose current record is locked are left untouched; manual,
 // verified and rejected entries are preserved (rejected swims stay excluded).
 func (s *Service) RebuildRecords(orgID, actorID string, principal *appmiddleware.Principal) (RebuildRecordsSummary, error) {
+	if err := s.ensureOrg(orgID); err != nil {
+		return RebuildRecordsSummary{}, err
+	}
 	var summary RebuildRecordsSummary
 	if err := s.requireAdmin(principal); err != nil {
 		return summary, err
@@ -968,6 +1010,9 @@ func FormatSwimTime(ms int) string {
 // RecordAnnouncementDraft builds an announcement title/body celebrating a
 // record entry (staff only). The entry must be accepted.
 func (s *Service) RecordAnnouncementDraft(orgID string, principal *appmiddleware.Principal, entryID string) (string, string, error) {
+	if err := s.ensureOrg(orgID); err != nil {
+		return "", "", err
+	}
 	if err := s.requireAdminOrCoach(principal); err != nil {
 		return "", "", err
 	}

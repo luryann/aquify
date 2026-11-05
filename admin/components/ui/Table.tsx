@@ -244,7 +244,6 @@ export function Table<T extends Record<string, unknown>>({
   const [sort, setSort] = useState<SortState | null>(defaultSort ?? null)
   const [internalPage, setInternalPage] = useState(1)
 
-  const page = controlledPage ?? internalPage
   const isServerPaginated = controlledPage !== undefined
 
   // ── Sort handler
@@ -276,6 +275,8 @@ export function Table<T extends Record<string, unknown>>({
   // ── Client-side pagination
   const totalCount = totalItems ?? sortedData.length
   const totalPages = Math.max(1, Math.ceil(totalCount / pageSize))
+  // Clamp so filtering down to fewer rows never strands the user on an empty page.
+  const page = Math.min(controlledPage ?? internalPage, totalPages)
 
   const displayData = useMemo(() => {
     if (!paginated || isServerPaginated) return sortedData

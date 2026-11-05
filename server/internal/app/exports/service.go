@@ -12,11 +12,12 @@ import (
 	"log/slog"
 	"sort"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
+
+	"github.com/luryann/aquify/server/internal/dbutil"
 
 	appmiddleware "github.com/luryann/aquify/server/internal/app/middleware"
 	"github.com/luryann/aquify/server/internal/storage"
@@ -63,7 +64,8 @@ type ExportAuditEvent struct {
 }
 
 type Service struct {
-	mu             sync.RWMutex
+	mu             dbutil.GenMutex
+	orgCache       dbutil.OrgCache
 	repo           *Repository
 	exports        map[string]*FileExport
 	store          storage.ObjectStorage
@@ -95,23 +97,67 @@ func NewServiceWithPool(pool *pgxpool.Pool, store storage.ObjectStorage) *Servic
 		return s
 	}
 	s.repo = newRepository(pool)
-	if err := s.loadFromDB(context.Background()); err != nil {
-		slog.Error("exports: failed to load from DB", "err", err)
-	}
 	return s
 }
 
-func (s *Service) loadFromDB(ctx context.Context) error {
-	fileExports, err := s.repo.LoadAll(ctx)
-	if err != nil {
+// SetOrgCacheLimits bounds the per-club cache (0 = unlimited); see dbutil.OrgCache.
+func (s *Service) SetOrgCacheLimits(ttl time.Duration, maxOrgs int) {
+	s.orgCache.ConfigureLocked(&s.mu, ttl, maxOrgs)
+}
+
+func (s *Service) dropOrgLocked(orgID string) {
+	dbutil.DropByOrg(s.exports, orgID, func(e *FileExport) string { return e.OrgID })
+}
+
+// syncOrg refreshes one club's exports from Postgres (no-op in memory mode). The read
+// runs without the service lock; a writer that finished meanwhile forces a re-read and
+// repeated conflicts load under the lock, so an older snapshot never overwrites a write.
+// An in-flight job keeps its in-memory pending input across the swap.
+func (s *Service) syncOrg(orgID string) error {
+	if s.repo == nil || orgID == "" {
+		return nil
+	}
+	ctx := context.Background()
+	swap := func(fresh []*FileExport) {
+		pending := map[string]*ReportInput{}
+		for id, ex := range s.exports {
+			if ex.OrgID == orgID && ex.pendingInput != nil {
+				pending[id] = ex.pendingInput
+			}
+		}
+		s.dropOrgLocked(orgID)
+		for _, ex := range fresh {
+			ex.pendingInput = pending[ex.ID]
+			s.exports[ex.ID] = ex
+		}
+		s.orgCache.Touch(orgID, s.dropOrgLocked)
+	}
+	done, err := dbutil.ReloadUnlocked(&s.mu, nil, func() (func(), error) {
+		fresh, err := s.repo.LoadFileExports(ctx, orgID)
+		if err != nil {
+			return nil, err
+		}
+		return func() { swap(fresh) }, nil
+	})
+	if done || err != nil {
 		return err
 	}
 	s.mu.Lock()
-	defer s.mu.Unlock()
-	for _, ex := range fileExports {
-		s.exports[ex.ID] = ex
+	defer s.mu.UnlockWithoutBump()
+	fresh, err := s.repo.LoadFileExports(ctx, orgID)
+	if err != nil {
+		return err
 	}
+	swap(fresh)
 	return nil
+}
+
+// syncOrgOrLog is for read paths that cannot return an error: a failed refresh serves
+// the last cached view and is logged.
+func (s *Service) syncOrgOrLog(orgID string) {
+	if err := s.syncOrg(orgID); err != nil {
+		slog.Error("exports: refresh from database", "org_id", orgID, "err", err)
+	}
 }
 
 func (s *Service) newID(prefix string) string {
@@ -307,6 +353,7 @@ func (s *Service) ListExportsForViewer(principal *appmiddleware.Principal, orgID
 }
 
 func (s *Service) ListExportsForAuthorizedMeet(orgID, meetID string) []FileExport {
+	s.syncOrgOrLog(orgID)
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
@@ -330,6 +377,9 @@ func (s *Service) GetExport(principal *appmiddleware.Principal, orgID, exportID 
 	if !appmiddleware.HasAnyRole(principal, "admin", "coach") {
 		return nil, ErrForbidden
 	}
+	if err := s.syncOrg(orgID); err != nil {
+		return nil, err
+	}
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
@@ -343,6 +393,9 @@ func (s *Service) GetExport(principal *appmiddleware.Principal, orgID, exportID 
 func (s *Service) DownloadExport(principal *appmiddleware.Principal, orgID, exportID string) (*FileExport, []byte, error) {
 	if !appmiddleware.HasAnyRole(principal, "admin", "coach") {
 		return nil, nil, ErrForbidden
+	}
+	if err := s.syncOrg(orgID); err != nil {
+		return nil, nil, err
 	}
 
 	s.mu.RLock()
@@ -383,11 +436,36 @@ func (s *Service) DownloadExport(principal *appmiddleware.Principal, orgID, expo
 // delete leaves the export "ready" and retryable on the next sweep. Object
 // storage I/O happens outside the service lock.
 func (s *Service) ExpireArtifacts(cutoff time.Time) []FileExport {
+	return s.expireArtifacts("", cutoff)
+}
+
+// ExpireArtifactsForOrg is ExpireArtifacts for one club: it refreshes that club's exports
+// from Postgres first (the cache only holds clubs that were served) and ignores the rest.
+func (s *Service) ExpireArtifactsForOrg(orgID string, cutoff time.Time) ([]FileExport, error) {
+	if s.repo != nil && orgID == "" {
+		return nil, fmt.Errorf("expire artifacts: org id required")
+	}
+	if err := s.syncOrg(orgID); err != nil {
+		return nil, err
+	}
+	return s.expireArtifacts(orgID, cutoff), nil
+}
+
+// ProcessExportFor is ProcessExport for a job that arrives without the export cached
+// (the worker path): the club's exports are loaded first.
+func (s *Service) ProcessExportFor(ctx context.Context, orgID, exportID string) error {
+	if err := s.syncOrg(orgID); err != nil {
+		return err
+	}
+	return s.ProcessExport(ctx, exportID)
+}
+
+func (s *Service) expireArtifacts(orgID string, cutoff time.Time) []FileExport {
 	type candidate struct{ id, key string }
 	s.mu.RLock()
 	var cands []candidate
 	for _, ex := range s.exports {
-		if ex == nil || ex.StorageKey == "" || ex.Status == "expired" {
+		if ex == nil || ex.StorageKey == "" || ex.Status == "expired" || (orgID != "" && ex.OrgID != orgID) {
 			continue
 		}
 		if ex.ExpiresAt.IsZero() || ex.ExpiresAt.After(cutoff) {
@@ -448,6 +526,7 @@ func (s *Service) cloneForResponse(ex *FileExport) *FileExport {
 }
 
 type GenerateExportTaskPayload struct {
+	OrgID    string `json:"org_id"`
 	ExportID string `json:"export_id"`
 }
 

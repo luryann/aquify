@@ -6,13 +6,13 @@ import (
 	"strings"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/luryann/aquify/server/internal/app/handlers"
 	"github.com/luryann/aquify/server/internal/keycloak"
 	"github.com/luryann/aquify/server/internal/postmark"
 	"github.com/luryann/aquify/server/internal/storage"
 	stripelib "github.com/luryann/aquify/server/internal/stripe"
 	"github.com/luryann/aquify/server/internal/workers"
-	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 type dependencyReadinessCheck struct {

@@ -23,7 +23,7 @@ import {
   type SwimmerRecord,
 } from '@/lib/adminData'
 import { uiErrorMessage } from '@/lib/frontend-telemetry'
-import { QUICK_REACTIONS } from '@/lib/message-format'
+import { QUICK_REACTIONS, mergeStreamMessage } from '@/lib/message-format'
 import { PageSkeleton } from '@/components/ui/PageSkeleton'
 
 function formatDateTime(value?: string) {
@@ -68,6 +68,7 @@ export default function MessagesInboxPage() {
 
   const [editingId, setEditingId] = useState<string | null>(null)
   const [editDraft, setEditDraft] = useState('')
+  const [editError, setEditError] = useState<string | null>(null)
   const [reactionPickerId, setReactionPickerId] = useState<string | null>(null)
   const [pendingAttachment, setPendingAttachment] = useState<{ object_key: string; file_name: string; file_mime: string } | null>(null)
   const [attachError, setAttachError] = useState<string | null>(null)
@@ -158,6 +159,18 @@ export default function MessagesInboxPage() {
     loadThread()
   }, [loadThread, threadReloadKey])
 
+  // The composer belongs to one thread: never carry a draft or an attachment (whose
+  // object key is scoped to the previous household) over to another conversation.
+  useEffect(() => {
+    setDraft('')
+    setPendingAttachment(null)
+    setEditingId(null)
+    setEditDraft('')
+    setSendError(null)
+    setAttachError(null)
+    setEditError(null)
+  }, [selected?.householdId, selected?.swimmerId])
+
   // Mark the opened thread read, and reflect it locally without waiting on a refetch.
   useEffect(() => {
     if (!orgId || !selected) return
@@ -174,13 +187,7 @@ export default function MessagesInboxPage() {
       refreshThreads()
       const current = selectedRef.current
       if (!current || current.householdId !== event.household_id || current.swimmerId !== event.swimmer_id) return
-      setMessages((prev) => {
-        const idx = prev.findIndex((m) => m.id === event.message.id)
-        if (idx === -1) return [...prev, event.message]
-        const next = [...prev]
-        next[idx] = event.message
-        return next
-      })
+      setMessages((prev) => mergeStreamMessage(prev, event.message))
       if (event.type === 'message.created' && event.message.sender_user_id !== userId) {
         markThreadRead(api, orgId, event.household_id, event.swimmer_id).catch(() => {})
       }
@@ -212,6 +219,7 @@ export default function MessagesInboxPage() {
 
   async function handleFileSelect(file: File) {
     if (!orgId || !selected) return
+    const thread = selected
     setAttachError(null)
     setUploading(true)
     try {
@@ -224,6 +232,8 @@ export default function MessagesInboxPage() {
       })
       const putResp = await fetch(upload_url, { method: 'PUT', body: file, headers: { 'Content-Type': file.type } })
       if (!putResp.ok) throw new Error('Upload failed')
+      const cur = selectedRef.current
+      if (!cur || cur.householdId !== thread.householdId || cur.swimmerId !== thread.swimmerId) return
       setPendingAttachment({ object_key, file_name: expected_file_name, file_mime: file.type })
     } catch {
       setAttachError('Couldn’t upload that image. Try a smaller file or a different format. Try again.')
@@ -237,10 +247,11 @@ export default function MessagesInboxPage() {
     try {
       const updated = await editMessage(api, orgId, messageId, editDraft.trim())
       setMessages((prev) => prev.map((m) => (m.id === messageId ? updated : m)))
-    } catch {
-      // Leave the bubble as-is; the user can retry.
-    } finally {
+      setEditError(null)
       setEditingId(null)
+    } catch (err) {
+      // Stay in edit mode so the typed text is kept.
+      setEditError(uiErrorMessage(err, 'Couldn’t save your edit. Try again.'))
     }
   }
 
@@ -256,8 +267,9 @@ export default function MessagesInboxPage() {
       const next = await fetchMessages(api, orgId, selected.householdId, selected.swimmerId)
       const cur = selectedRef.current
       if (cur && cur.householdId === selected.householdId && cur.swimmerId === selected.swimmerId) setMessages(next)
-    } catch {
-      // Leave state as-is; the user can retry.
+      setEditError(null)
+    } catch (err) {
+      setEditError(uiErrorMessage(err, 'Couldn’t update that reaction. Try again.'))
     }
     setReactionPickerId(null)
   }
@@ -382,6 +394,7 @@ export default function MessagesInboxPage() {
                   return (
                     <div key={m.id} style={{ alignSelf: mine ? 'flex-end' : 'flex-start', maxWidth: '75%', position: 'relative' }} className="message-bubble-group">
                       {isEditing ? (
+                        <>
                         <div className="u-gap-6px" style={{ display: 'flex', alignItems: 'flex-end' }}>
                           <textarea
                             value={editDraft}
@@ -390,8 +403,10 @@ export default function MessagesInboxPage() {
                             className="u-p-8px-12px u-fs-fs-base" style={{ minWidth: '220px', resize: 'vertical' }}
                           />
                           <button className="btn btn-sm btn-primary" onClick={() => void handleEditSave(m.id)}>Save</button>
-                          <button className="btn btn-sm btn-secondary" onClick={() => setEditingId(null)}>Cancel</button>
+                          <button className="btn btn-sm btn-secondary" onClick={() => { setEditingId(null); setEditError(null) }}>Cancel</button>
                         </div>
+                        {editError && <div role="alert" className="u-fs-fs-sm u-mt-4px" style={{ color: 'var(--error)' }}>{editError}</div>}
+                        </>
                       ) : (
                         <div
                           className="u-p-12px-16px u-fs-fs-base u-lh-1_5" style={{ background: mine ? 'var(--accent)' : 'var(--bg-elevated)', color: mine ? '#fff' : 'var(--text)', borderRadius: mine ? '12px 12px 2px 12px' : '12px 12px 12px 2px', whiteSpace: 'pre-wrap' }}

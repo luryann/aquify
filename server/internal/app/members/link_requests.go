@@ -3,6 +3,7 @@ package members
 import (
 	"context"
 	"errors"
+	"fmt"
 	"sort"
 	"strings"
 	"time"
@@ -11,6 +12,14 @@ import (
 // ErrSwimmerLinkRequestNotFound is returned when a pending link request
 // cannot be found for the given org/id.
 var ErrSwimmerLinkRequestNotFound = errors.New("swimmer link request not found")
+
+// ErrLinkRequestInvalid is returned when a link request's free text is too long.
+var ErrLinkRequestInvalid = errors.New("invalid swimmer link request")
+
+const (
+	maxLinkRequestNameLen = 100
+	maxLinkRequestNoteLen = 500
+)
 
 // SwimmerLinkRequest records a swimmer-role user's self-service request to
 // have their login linked to a swimmer roster record.
@@ -25,7 +34,21 @@ type SwimmerLinkRequest struct {
 }
 
 // CreateLinkRequest records a new pending swimmer-link request for a user.
+// A user has at most one pending request: a repeat call returns the existing one.
 func (s *Service) CreateLinkRequest(orgID, userID, requestedSwimmerName, note string) (SwimmerLinkRequest, error) {
+	if len([]rune(strings.TrimSpace(requestedSwimmerName))) > maxLinkRequestNameLen {
+		return SwimmerLinkRequest{}, fmt.Errorf("%w: requested_swimmer_name must be at most %d characters", ErrLinkRequestInvalid, maxLinkRequestNameLen)
+	}
+	if len([]rune(strings.TrimSpace(note))) > maxLinkRequestNoteLen {
+		return SwimmerLinkRequest{}, fmt.Errorf("%w: note must be at most %d characters", ErrLinkRequestInvalid, maxLinkRequestNoteLen)
+	}
+	if pending, err := s.ListPendingLinkRequests(orgID); err == nil {
+		for _, existing := range pending {
+			if existing.UserID == userID {
+				return existing, nil
+			}
+		}
+	}
 	req := SwimmerLinkRequest{
 		ID:                   s.newID("slr-"),
 		OrgID:                orgID,

@@ -2,7 +2,7 @@
 
 > Full-stack swim club operations platform replacing TeamUnify/SportsEngine Motion.
 
-![Go](https://img.shields.io/badge/Go-1.24%2B-00ADD8?logo=go&logoColor=white)
+![Go](https://img.shields.io/badge/Go-1.26%2B-00ADD8?logo=go&logoColor=white)
 ![Node.js](https://img.shields.io/badge/Node.js-22%2B-339933?logo=node.js&logoColor=white)
 ![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16-4169E1?logo=postgresql&logoColor=white)
 ![Next.js](https://img.shields.io/badge/Next.js-TypeScript-000000?logo=next.js&logoColor=white)
@@ -28,7 +28,7 @@ aquify is the team's operational system of record: memberships, meets, money, me
 
 | Layer | Technology |
 |---|---|
-| API | Go 1.24, [Chi](https://github.com/go-chi/chi) router |
+| API | Go 1.26, [Chi](https://github.com/go-chi/chi) router |
 | Database | PostgreSQL 16, [pgx/v5](https://github.com/jackc/pgx), [Goose](https://github.com/pressly/goose) migrations |
 | Admin UI | Next.js (TypeScript), Tailwind CSS, shadcn/ui, TanStack Query |
 | Auth | Keycloak (self-hosted OIDC) |
@@ -58,7 +58,7 @@ root/
 
 ### Prerequisites
 
-- Go 1.24+
+- Go 1.26+
 - Node.js 22+ and npm
 - One PostgreSQL runtime option:
   - **Docker path:** Docker Desktop (or Docker Engine + Compose plugin)

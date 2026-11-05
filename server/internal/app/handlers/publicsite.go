@@ -9,13 +9,12 @@ import (
 
 	appmiddleware "github.com/luryann/aquify/server/internal/app/middleware"
 
+	"github.com/go-chi/chi/v5"
 	"github.com/luryann/aquify/server/internal/app/comms"
 	"github.com/luryann/aquify/server/internal/app/events"
 	"github.com/luryann/aquify/server/internal/app/httpx"
 	"github.com/luryann/aquify/server/internal/app/meets"
 	"github.com/luryann/aquify/server/internal/app/orgsettings"
-	"github.com/luryann/aquify/server/internal/app/performance"
-	"github.com/go-chi/chi/v5"
 )
 
 // PublicSiteStaff is a coach/admin shown on the public team site: name and
@@ -32,9 +31,11 @@ type PublicSiteSources struct {
 	Announcements func(orgID string) []comms.Announcement
 	Meets         func(orgID string) []meets.Meet
 	Events        func(orgID string, from time.Time) []*events.Event
-	Records       func(orgID string) []performance.TeamRecord
 	Staff         func(ctx context.Context, orgID string) []PublicSiteStaff
-	Now           func() time.Time
+	// OrgActive reports whether the org may serve; a suspended or unknown org's
+	// public site disappears (404). Nil disables the check (tests).
+	OrgActive func(ctx context.Context, orgID string) (bool, error)
+	Now       func() time.Time
 }
 
 // PublicSiteHandlers serves the unauthenticated, read-only team website feed.
@@ -50,6 +51,14 @@ func NewPublicSiteHandlers(src PublicSiteSources, limiter func(http.Handler) htt
 	}
 	return &PublicSiteHandlers{src: src, limiter: limiter}
 }
+
+// SetOrgActive installs the tenant-status check (see PublicSiteSources.OrgActive).
+func (h *PublicSiteHandlers) SetOrgActive(fn func(ctx context.Context, orgID string) (bool, error)) {
+	h.src.OrgActive = fn
+}
+
+// Limiter returns the per-IP limiter so sibling public routes share its budget.
+func (h *PublicSiteHandlers) Limiter() func(http.Handler) http.Handler { return h.limiter }
 
 // RegisterPublicRoutes mounts the unauthenticated site route (no auth, no org header).
 func (h *PublicSiteHandlers) RegisterPublicRoutes(router chi.Router) {
@@ -98,19 +107,6 @@ type publicEvent struct {
 	AllDay      bool       `json:"all_day"`
 }
 
-type publicRecord struct {
-	Label       string `json:"label"`
-	Course      string `json:"course"`
-	Gender      string `json:"gender"`
-	AgeGroup    string `json:"age_group"`
-	Distance    int    `json:"distance"`
-	Stroke      string `json:"stroke"`
-	TimeMs      int    `json:"time_ms"`
-	SwimmerName string `json:"swimmer_name"`
-	SwimDate    string `json:"swim_date"`
-	MeetName    string `json:"meet_name,omitempty"`
-}
-
 const (
 	publicMaxAnnouncements = 50
 	publicMaxMeets         = 30
@@ -133,6 +129,17 @@ func (h *PublicSiteHandlers) site(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	orgID := settings.OrgID
+	if h.src.OrgActive != nil {
+		active, err := h.src.OrgActive(r.Context(), orgID)
+		if err != nil {
+			httpx.WriteError(w, r, http.StatusInternalServerError, "internal_error", "Failed to load site.", err)
+			return
+		}
+		if !active {
+			httpx.WriteError(w, r, http.StatusNotFound, "not_found", "Team site not found.", nil)
+			return
+		}
+	}
 	now := h.src.Now().UTC()
 	today := now.Format("2006-01-02")
 
@@ -149,7 +156,6 @@ func (h *PublicSiteHandlers) site(w http.ResponseWriter, r *http.Request) {
 		"announcements": []publicAnnouncement{},
 		"meets":         []publicMeet{},
 		"events":        []publicEvent{},
-		"records":       []publicRecord{},
 		"coaches":       []PublicSiteStaff{},
 	}
 
@@ -206,20 +212,6 @@ func (h *PublicSiteHandlers) site(w http.ResponseWriter, r *http.Request) {
 		resp["events"] = out
 	}
 
-	if h.src.Records != nil {
-		out := []publicRecord{}
-		for _, tr := range h.src.Records(orgID) {
-			if tr.Record == nil {
-				continue
-			}
-			rec := tr.Record
-			out = append(out, publicRecord{Label: tr.Label, Course: tr.Course, Gender: tr.Gender, AgeGroup: tr.AgeGroup,
-				Distance: tr.Distance, Stroke: tr.Stroke, TimeMs: rec.TimeMs, SwimmerName: rec.SwimmerName,
-				SwimDate: rec.SwimDate, MeetName: rec.MeetName})
-		}
-		resp["records"] = out
-	}
-
 	if settings.PublicShowCoaches && h.src.Staff != nil {
 		resp["coaches"] = h.src.Staff(r.Context(), orgID)
 	}
@@ -228,8 +220,8 @@ func (h *PublicSiteHandlers) site(w http.ResponseWriter, r *http.Request) {
 	httpx.WriteJSON(w, http.StatusOK, resp)
 }
 
-// PublicRecordsPrincipal is the least-privileged reader used to fetch records
-// for the public site; family-level redaction applies.
+// PublicRecordsPrincipal is the least-privileged reader used to fetch data
+// for the public site. Swimmer names and results are never published.
 func PublicRecordsPrincipal(orgID string) *appmiddleware.Principal {
 	return &appmiddleware.Principal{UserID: "public-site", OrgID: orgID, Roles: []string{"parent"}}
 }

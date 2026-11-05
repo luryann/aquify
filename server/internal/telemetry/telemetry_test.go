@@ -40,3 +40,19 @@ func TestSetupAcceptsEndpointWithScheme(t *testing.T) {
 		}
 	}
 }
+
+func TestBoundedLabelCapsDistinctOrgs(t *testing.T) {
+	b := NewBoundedLabel(2)
+	if b.Value("a") != "a" || b.Value("b") != "b" || b.Value("a") != "a" {
+		t.Fatal("admitted keys keep their own label")
+	}
+	if b.Value("c") != "other" || b.Value("d") != "other" {
+		t.Fatal("keys beyond the cap share one label")
+	}
+	if b.Value("b") != "b" {
+		t.Fatal("an admitted key stays admitted after the cap is hit")
+	}
+	if b.Value("") != "none" {
+		t.Fatal("empty key is labelled none")
+	}
+}

@@ -61,7 +61,7 @@ function mapCommitment(commitments: CommitmentRecord[], swimmerId: string, meetS
   }
   if (rec.status === 'committed_yes') return 'yes'
   if (rec.status === 'committed_no') return 'no'
-  if (rec.status === 'invited') return 'pending'
+  if (rec.status === 'invited') return meetStatus === 'commitment_open' ? 'pending' : 'closed'
   if (['coach_reviewed', 'locked'].includes(rec.status)) return 'closed'
   return 'open'
 }

@@ -6,8 +6,8 @@ import (
 	"strings"
 	"testing"
 
-	appmiddleware "github.com/luryann/aquify/server/internal/app/middleware"
 	"github.com/go-chi/chi/v5"
+	appmiddleware "github.com/luryann/aquify/server/internal/app/middleware"
 )
 
 func g2Router(t *testing.T, tokens tokenResolver, register func(chi.Router)) http.Handler {

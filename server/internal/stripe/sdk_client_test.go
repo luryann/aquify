@@ -55,7 +55,7 @@ func TestSDKClientUsesOwnKeyAndCallerContext(t *testing.T) {
 					_, err := c.CreateRefund(ctx, RefundParams{PaymentIntentID: "pi_test", AmountCents: 100})
 					return err
 				},
-				func(ctx context.Context) error { _, err := c.FetchBalanceCents(ctx); return err },
+				func(ctx context.Context) error { _, err := c.FetchBalanceCents(ctx, ""); return err },
 			}
 			for _, call := range calls {
 				if err := call(ctx); err != nil {

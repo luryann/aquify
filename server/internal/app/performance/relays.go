@@ -373,6 +373,9 @@ type RelayOptimizeResult struct {
 // OptimizeRelay builds the eligible pool from best times and runs the
 // optimizer. Staff only.
 func (s *Service) OptimizeRelay(orgID string, principal *appmiddleware.Principal, in RelayOptimizeInput) (*RelayOptimizeResult, error) {
+	if err := s.ensureOrg(orgID); err != nil {
+		return nil, err
+	}
 	if err := s.requireAdminOrCoach(principal); err != nil {
 		return nil, err
 	}
@@ -608,6 +611,9 @@ func (s *Service) normalizeLineup(orgID string, in RelayLineupInput, dir directo
 
 // ListRelayLineups returns saved lineups, optionally for one meet. Staff only.
 func (s *Service) ListRelayLineups(orgID string, principal *appmiddleware.Principal, meetID string) ([]*RelayLineup, error) {
+	if err := s.ensureOrg(orgID); err != nil {
+		return nil, err
+	}
 	if err := s.requireAdminOrCoach(principal); err != nil {
 		return nil, err
 	}
@@ -625,6 +631,9 @@ func (s *Service) ListRelayLineups(orgID string, principal *appmiddleware.Princi
 
 // SaveRelayLineup creates (lineupID == "") or replaces a lineup. Staff only.
 func (s *Service) SaveRelayLineup(orgID, actorID string, principal *appmiddleware.Principal, lineupID string, in RelayLineupInput) (*RelayLineup, error) {
+	if err := s.ensureOrg(orgID); err != nil {
+		return nil, err
+	}
 	if err := s.requireAdminOrCoach(principal); err != nil {
 		return nil, err
 	}
@@ -677,6 +686,9 @@ func copyLineup(l *RelayLineup) *RelayLineup {
 
 // DeleteRelayLineup removes a saved lineup. Staff only.
 func (s *Service) DeleteRelayLineup(orgID, actorID string, principal *appmiddleware.Principal, lineupID string) error {
+	if err := s.ensureOrg(orgID); err != nil {
+		return err
+	}
 	if err := s.requireAdminOrCoach(principal); err != nil {
 		return err
 	}

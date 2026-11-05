@@ -11,8 +11,11 @@ import './page.inline.css'
 import { QUICK_REACTIONS, formatMessageTime } from '@/lib/message-format'
 import { PageSkeleton } from '@/components/ui/PageSkeleton'
 
-function senderLabel(role: string): string {
-  if (role === 'parent' || role === 'swimmer') return 'You'
+function senderLabel(m: { sender_role: string; sender_user_id?: string }, userId: string): string {
+  const role = m.sender_role
+  if (userId && m.sender_user_id === userId) return 'You'
+  if (role === 'parent') return 'Family member'
+  if (role === 'swimmer') return 'Swimmer'
   if (role === 'coach') return 'Coach'
   if (role === 'admin') return 'Club staff'
   return role || 'Staff'
@@ -158,7 +161,7 @@ export default function PortalMessagesPage() {
                 </p>
               ) : (
                 messages.map((m) => {
-                  const mine = m.sender_role === 'parent' || m.sender_role === 'swimmer'
+                  const mine = m.sender_user_id === userId
                   const canEdit = m.sender_user_id === userId
                   const isEditing = editingId === m.id
                   return (
@@ -198,7 +201,7 @@ export default function PortalMessagesPage() {
 
                       <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '4px', justifyContent: mine ? 'flex-end' : 'flex-start' }}>
                         <p className="is-c454211">
-                          {senderLabel(m.sender_role)} · {formatMessageTime(m.created_at)}{m.edited_at ? ' · (edited)' : ''}
+                          {senderLabel(m, userId)} · {formatMessageTime(m.created_at)}{m.edited_at ? ' · (edited)' : ''}
                         </p>
                         {canEdit && !isEditing && (
                           <button type="button"

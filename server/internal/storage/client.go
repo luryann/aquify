@@ -10,6 +10,7 @@ import (
 	"io"
 	"net"
 	"net/url"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -208,6 +209,39 @@ func (s *StubStorage) Ready(_ context.Context) error {
 	return nil
 }
 
+// PrefixStore is the optional bulk capability used by org offboarding to list and
+// remove everything under an org's key prefixes.
+type PrefixStore interface {
+	ListPrefix(ctx context.Context, prefix string) ([]string, error)
+	DeletePrefix(ctx context.Context, prefix string) (int, error)
+}
+
+func (s *StubStorage) ListPrefix(_ context.Context, prefix string) ([]string, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	var keys []string
+	for k := range s.objects {
+		if strings.HasPrefix(k, prefix) {
+			keys = append(keys, k)
+		}
+	}
+	sort.Strings(keys)
+	return keys, nil
+}
+
+func (s *StubStorage) DeletePrefix(_ context.Context, prefix string) (int, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	n := 0
+	for k := range s.objects {
+		if strings.HasPrefix(k, prefix) {
+			delete(s.objects, k)
+			n++
+		}
+	}
+	return n, nil
+}
+
 type S3Storage struct {
 	client *minio.Client
 	bucket string
@@ -346,6 +380,32 @@ func (s *S3Storage) Delete(key string) error {
 		return fmt.Errorf("delete object %s: %w", key, err)
 	}
 	return nil
+}
+
+func (s *S3Storage) ListPrefix(ctx context.Context, prefix string) ([]string, error) {
+	var keys []string
+	for obj := range s.client.ListObjects(ctx, s.bucket, minio.ListObjectsOptions{Prefix: prefix, Recursive: true}) {
+		if obj.Err != nil {
+			return nil, fmt.Errorf("list %s: %w", prefix, obj.Err)
+		}
+		keys = append(keys, obj.Key)
+	}
+	return keys, nil
+}
+
+func (s *S3Storage) DeletePrefix(ctx context.Context, prefix string) (int, error) {
+	keys, err := s.ListPrefix(ctx, prefix)
+	if err != nil {
+		return 0, err
+	}
+	n := 0
+	for _, k := range keys {
+		if err := s.client.RemoveObject(ctx, s.bucket, k, minio.RemoveObjectOptions{}); err != nil && !isMinIOObjectMissing(err) {
+			return n, fmt.Errorf("delete object %s: %w", k, err)
+		}
+		n++
+	}
+	return n, nil
 }
 
 func (s *S3Storage) Ready(ctx context.Context) error {

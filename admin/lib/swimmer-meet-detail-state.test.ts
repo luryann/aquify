@@ -4,6 +4,7 @@ import assert from 'node:assert/strict'
 import {
   buildSwimmerMeetDetailState,
   canEditSwimmerMeetSelections,
+  mapSwimmerMeetCommitmentStatus,
   withAddedSwimmerMeetSelection,
   withRemovedSwimmerMeetSelection,
 } from './swimmer-meet-detail-state.ts'
@@ -59,4 +60,11 @@ test('swimmer meet detail selection helpers keep persisted selection ids aligned
   const withRemoved = withRemovedSwimmerMeetSelection(withAdded, 'ev_1')
   assert.deepEqual(withRemoved.selectedEvents, ['ev_2'])
   assert.deepEqual(withRemoved.selectedEventSelectionIds, { ev_2: 'sel_2' })
+})
+
+test('coach-reviewed and locked commitments map to closed, not pending', () => {
+  assert.equal(mapSwimmerMeetCommitmentStatus('coach_reviewed'), 'closed')
+  assert.equal(mapSwimmerMeetCommitmentStatus('locked'), 'closed')
+  assert.equal(mapSwimmerMeetCommitmentStatus('invited'), 'pending')
+  assert.equal(mapSwimmerMeetCommitmentStatus(undefined), 'pending')
 })

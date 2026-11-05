@@ -4,10 +4,10 @@ import (
 	"errors"
 	"net/http"
 
+	"github.com/go-chi/chi/v5"
 	"github.com/luryann/aquify/server/internal/app/audit"
 	"github.com/luryann/aquify/server/internal/app/httpx"
 	"github.com/luryann/aquify/server/internal/app/orgsettings"
-	"github.com/go-chi/chi/v5"
 )
 
 // OrgSettingsHandlers exposes read/write for org-level export identity
@@ -59,6 +59,9 @@ type updateOrgSettingsBody struct {
 	EmailSenderName        *string `json:"email_sender_name"`
 	EmailSenderAddress     *string `json:"email_sender_address"`
 	PublicSlug             *string `json:"public_slug"`
+	Timezone               *string `json:"timezone"`
+	Currency               *string `json:"currency"`
+	LegalName              *string `json:"legal_name"`
 	PublicSiteEnabled      *bool   `json:"public_site_enabled"`
 	PublicShowCoaches      *bool   `json:"public_show_coaches"`
 	PublicAbout            *string `json:"public_about"`
@@ -90,6 +93,9 @@ func (h *OrgSettingsHandlers) update(w http.ResponseWriter, r *http.Request) {
 		EmailSenderName:        body.EmailSenderName,
 		EmailSenderAddress:     body.EmailSenderAddress,
 		PublicSlug:             body.PublicSlug,
+		Timezone:               body.Timezone,
+		Currency:               body.Currency,
+		LegalName:              body.LegalName,
 		PublicSiteEnabled:      body.PublicSiteEnabled,
 		PublicShowCoaches:      body.PublicShowCoaches,
 		PublicAbout:            body.PublicAbout,
@@ -99,6 +105,10 @@ func (h *OrgSettingsHandlers) update(w http.ResponseWriter, r *http.Request) {
 	}, principal.UserID)
 	if errors.Is(err, orgsettings.ErrInvalidSlug) {
 		httpx.WriteError(w, r, http.StatusUnprocessableEntity, "invalid_slug", err.Error(), nil)
+		return
+	}
+	if errors.Is(err, orgsettings.ErrInvalidTimezone) || errors.Is(err, orgsettings.ErrInvalidCurrency) || errors.Is(err, orgsettings.ErrInvalidLegalName) {
+		httpx.WriteError(w, r, http.StatusUnprocessableEntity, "invalid_profile", err.Error(), nil)
 		return
 	}
 	if errors.Is(err, orgsettings.ErrSlugTaken) {

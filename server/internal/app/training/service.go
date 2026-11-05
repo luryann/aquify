@@ -9,8 +9,6 @@ import (
 	"sync"
 	"time"
 
-	"log/slog"
-
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -22,6 +20,7 @@ var (
 	ErrNotFound          = errors.New("practice not found")
 	ErrInvalidDate       = errors.New("practice date must be a valid YYYY-MM-DD date")
 	ErrInvalidType       = errors.New("practice type must be water, dryland, video, or rest")
+	ErrInvalidNumeric    = errors.New("yardage, stroke yardage and attendance must be between 0 and the allowed maximum")
 	ErrInvalidAttendance = errors.New("attendance status must be present, absent, or excused")
 )
 
@@ -117,35 +116,15 @@ func NewService() *Service {
 	}
 }
 
-// NewServiceWithPool creates a DB-backed Service and loads existing records
-// from Postgres into memory on startup.
+// NewServiceWithPool creates a DB-backed Service. Postgres is canonical: every read and
+// write goes to the database, so nothing is loaded at startup.
 func NewServiceWithPool(pool *pgxpool.Pool) *Service {
 	s := NewService()
 	if pool == nil {
 		return s
 	}
 	s.repo = newRepository(pool)
-	if err := s.loadFromDB(context.Background()); err != nil {
-		slog.Error("training: failed to load from DB", "err", err)
-	}
 	return s
-}
-
-func (s *Service) loadFromDB(ctx context.Context) error {
-	if s.repo == nil {
-		return nil
-	}
-	practices, err := s.repo.LoadAll(ctx)
-	if err != nil {
-		return err
-	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.practices = make(map[string]*Practice, len(practices))
-	for _, p := range practices {
-		s.practices[p.ID] = p
-	}
-	return nil
 }
 
 // ─── CRUD ─────────────────────────────────────────────────────────────────────
@@ -163,6 +142,9 @@ func (s *Service) Create(
 	}
 	if _, err := time.Parse("2006-01-02", date); err != nil {
 		return nil, ErrInvalidDate
+	}
+	if err := validatePracticeNumbers(&yardageTarget, attendance, &strokes); err != nil {
+		return nil, err
 	}
 	id := uuid.NewString()
 	now := time.Now().UTC()
@@ -246,6 +228,27 @@ func (s *Service) Get(orgID, id string) (*Practice, error) {
 	return &cp, nil
 }
 
+const (
+	maxPracticeYards      = 200000
+	maxPracticeAttendance = 10000
+)
+
+// validatePracticeNumbers bounds the numeric practice fields (nil = unchanged).
+func validatePracticeNumbers(yardage, attendance *int, strokes *PracticeStrokes) error {
+	in := func(v *int, max int) bool { return v == nil || (*v >= 0 && *v <= max) }
+	if !in(yardage, maxPracticeYards) || !in(attendance, maxPracticeAttendance) {
+		return ErrInvalidNumeric
+	}
+	if strokes != nil {
+		for _, v := range []int{strokes.Free, strokes.Back, strokes.Breast, strokes.Fly, strokes.IM} {
+			if v < 0 || v > maxPracticeYards {
+				return ErrInvalidNumeric
+			}
+		}
+	}
+	return nil
+}
+
 // Update applies PracticeUpdates to an existing practice.
 func (s *Service) Update(orgID, id string, updates PracticeUpdates, updatedBy string) (*Practice, error) {
 	if updates.Date != nil {
@@ -253,59 +256,68 @@ func (s *Service) Update(orgID, id string, updates PracticeUpdates, updatedBy st
 			return nil, ErrInvalidDate
 		}
 	}
+	if err := validatePracticeNumbers(updates.YardageTarget, updates.Attendance, updates.Strokes); err != nil {
+		return nil, err
+	}
 	if s.repo != nil {
-		p, err := s.repo.GetByID(context.Background(), orgID, id)
+		ctx := context.Background()
+		// Read-modify-write under a row lock so a concurrent edit or workout
+		// assignment cannot be overwritten by this full-row upsert.
+		err := s.repo.withTx(ctx, orgID, func(q querier) error {
+			p, err := getPracticeForUpdate(ctx, q, orgID, id)
+			if err != nil {
+				return err
+			}
+			if updates.Date != nil {
+				p.Date = *updates.Date
+			}
+			if updates.GroupID != nil {
+				p.GroupID = *updates.GroupID
+			}
+			if updates.Type != nil {
+				if !validTypes[*updates.Type] {
+					return ErrInvalidType
+				}
+				p.Type = *updates.Type
+			}
+			if updates.Description != nil {
+				p.Description = *updates.Description
+			}
+			if updates.YardageTarget != nil {
+				p.YardageTarget = *updates.YardageTarget
+			}
+			if updates.Attendance != nil {
+				p.Attendance = updates.Attendance
+			}
+			if updates.Strokes != nil {
+				p.Strokes = *updates.Strokes
+			}
+			if updates.Notes != nil {
+				p.Notes = *updates.Notes
+			}
+			if p.WorkoutID != "" {
+				// Yardage/strokes always derive from the linked workout.
+				linked, werr := getWorkout(ctx, q, orgID, p.WorkoutID)
+				switch {
+				case werr == nil:
+					derivePractice(p, linked)
+				case errors.Is(werr, ErrWorkoutNotFound):
+					// The workout no longer exists: unlink explicitly and keep the
+					// practice's own totals instead of pointing at a ghost.
+					p.WorkoutID = ""
+				default:
+					// Do not save a stale yardage/strokes snapshot for a linked practice.
+					return fmt.Errorf("training: load linked workout %s: %w", p.WorkoutID, werr)
+				}
+			}
+			p.UpdatedAt = time.Now().UTC()
+			p.UpdatedBy = updatedBy
+			return upsertPractice(ctx, q, p)
+		})
 		if err != nil {
 			return nil, err
 		}
-		if updates.Date != nil {
-			p.Date = *updates.Date
-		}
-		if updates.GroupID != nil {
-			p.GroupID = *updates.GroupID
-		}
-		if updates.Type != nil {
-			if !validTypes[*updates.Type] {
-				return nil, ErrInvalidType
-			}
-			p.Type = *updates.Type
-		}
-		if updates.Description != nil {
-			p.Description = *updates.Description
-		}
-		if updates.YardageTarget != nil {
-			p.YardageTarget = *updates.YardageTarget
-		}
-		if updates.Attendance != nil {
-			p.Attendance = updates.Attendance
-		}
-		if updates.Strokes != nil {
-			p.Strokes = *updates.Strokes
-		}
-		if updates.Notes != nil {
-			p.Notes = *updates.Notes
-		}
-		if p.WorkoutID != "" {
-			// Yardage/strokes always derive from the linked workout.
-			w, werr := s.repo.WorkoutsByIDs(context.Background(), orgID, []string{p.WorkoutID})
-			if werr != nil {
-				// Do not save a stale yardage/strokes snapshot for a linked practice.
-				return nil, fmt.Errorf("training: load linked workout %s: %w", p.WorkoutID, werr)
-			}
-			if linked := w[p.WorkoutID]; linked != nil {
-				derivePractice(p, linked)
-			} else {
-				// The workout no longer exists: unlink explicitly and keep the
-				// practice's own totals instead of pointing at a ghost.
-				p.WorkoutID = ""
-			}
-		}
-		p.UpdatedAt = time.Now().UTC()
-		p.UpdatedBy = updatedBy
-		if err := s.repo.Upsert(context.Background(), p); err != nil {
-			return nil, err
-		}
-		return s.repo.GetByID(context.Background(), orgID, id)
+		return s.repo.GetByID(ctx, orgID, id)
 	}
 
 	s.mu.Lock()
@@ -359,7 +371,7 @@ func (s *Service) Update(orgID, id string, updates PracticeUpdates, updatedBy st
 func (s *Service) Delete(orgID, id string) error {
 	if s.repo != nil {
 		ctx := context.Background()
-		err := s.repo.withTx(ctx, func(q querier) error {
+		err := s.repo.withTx(ctx, orgID, func(q querier) error {
 			var workoutID string
 			err := q.QueryRow(ctx, `DELETE FROM practices WHERE id = $1::uuid AND org_id = $2 RETURNING COALESCE(workout_id::text, '')`, id, orgID).Scan(&workoutID)
 			if errors.Is(err, pgx.ErrNoRows) {
@@ -443,6 +455,29 @@ func (s *Service) SetAttendance(orgID, practiceID, swimmerID, status, markedBy s
 }
 
 // ListAttendance returns all recorded attendance rows for a practice.
+// AttendanceForSwimmer returns one swimmer's attendance status keyed by practice
+// ID for the given practices (practices without a mark are absent from the map).
+func (s *Service) AttendanceForSwimmer(orgID, swimmerID string, practiceIDs []string) (map[string]string, error) {
+	if s.repo != nil {
+		return s.repo.AttendanceForSwimmer(context.Background(), orgID, swimmerID, practiceIDs)
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	out := map[string]string{}
+	for _, pid := range practiceIDs {
+		if pr, ok := s.practices[pid]; !ok || pr.OrgID != orgID {
+			continue
+		}
+		for _, rec := range s.attendance[pid] {
+			if rec.SwimmerID == swimmerID {
+				out[pid] = rec.Status
+				break
+			}
+		}
+	}
+	return out, nil
+}
+
 func (s *Service) ListAttendance(orgID, practiceID string) ([]*PracticeAttendance, error) {
 	if _, err := s.Get(orgID, practiceID); err != nil {
 		return nil, err

@@ -6,7 +6,7 @@ import { EmptyState } from '@/components/ui/EmptyState'
 import { useSession } from '@/lib/session'
 import { useApiClient } from '@/lib/api'
 import { uiErrorMessage } from '@/lib/frontend-telemetry'
-import { assignRole, fetchMFAFactors, fetchRoleAssignments, fetchUsers, type MFAFactorRecord, type RoleAssignmentRecord, type UserRecord } from '@/lib/adminData'
+import { assignRole, fetchMFAFactors, fetchRoleAssignments, fetchAllUsers, type MFAFactorRecord, type RoleAssignmentRecord, type UserRecord } from '@/lib/adminData'
 import { PageSkeleton } from '@/components/ui/PageSkeleton'
 
 const ROLE_OPTIONS = ['admin', 'coach', 'parent', 'swimmer'] as const
@@ -59,7 +59,7 @@ export function RolesPanel() {
     Promise.all([
       fetchRoleAssignments(api, session.user.orgId),
       fetchMFAFactors(api, session.user.orgId),
-      fetchUsers(api, session.user.orgId, { limit: 200 }),
+      fetchAllUsers(api, session.user.orgId),
     ])
       .then(([nextAssignments, nextFactors, nextUsers]) => {
         if (cancelled) return

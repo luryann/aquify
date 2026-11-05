@@ -7,8 +7,8 @@ import (
 	"testing"
 	"time"
 
-	appmiddleware "github.com/luryann/aquify/server/internal/app/middleware"
 	"github.com/jackc/pgx/v5/pgxpool"
+	appmiddleware "github.com/luryann/aquify/server/internal/app/middleware"
 )
 
 const (
@@ -43,6 +43,9 @@ func openAuthnTestPool(t *testing.T) *pgxpool.Pool {
 		}
 	}
 	cleanup(t.Fatalf)
+	if _, err := pool.Exec(context.Background(), `INSERT INTO orgs (id) VALUES ($1::uuid) ON CONFLICT (id) DO NOTHING`, mfaTestOrg); err != nil {
+		t.Fatalf("register test org: %v", err)
+	}
 	t.Cleanup(func() { cleanup(t.Errorf); pool.Close() })
 	return pool
 }

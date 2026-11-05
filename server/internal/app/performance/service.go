@@ -14,12 +14,13 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
-	appmiddleware "github.com/luryann/aquify/server/internal/app/middleware"
-	"github.com/luryann/aquify/server/internal/dbutil"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
+	appmiddleware "github.com/luryann/aquify/server/internal/app/middleware"
+	"github.com/luryann/aquify/server/internal/dbutil"
 )
 
 // ─── Sentinel errors ──────────────────────────────────────────────────────────
@@ -30,6 +31,7 @@ var (
 	ErrBestTimeNotFound       = errors.New("best time record not found")
 	ErrStandardNotFound       = errors.New("time standard not found")
 	ErrStandardInvalid        = errors.New("invalid time standard")
+	ErrInvalidAgeRange        = errors.New("age_min and age_max must be between 0 and 120 and age_min must not exceed age_max")
 	ErrOverrideRequiresReason = errors.New("a reason is required for manual best-time overrides")
 )
 
@@ -158,25 +160,30 @@ type CutQualification struct {
 
 // UpsertResultInput contains all fields needed to create or update a result.
 type UpsertResultInput struct {
-	SwimmerID   string       `json:"swimmer_id" validate:"required"`
-	MeetID      string       `json:"meet_id"`
-	MeetEventID string       `json:"meet_event_id"`
-	ImportID    string       `json:"import_id"`
-	EventNumber string       `json:"event_number"`
-	Distance    int          `json:"distance" validate:"required,gt=0"`
-	Stroke      string       `json:"stroke" validate:"required,oneof=free back breast fly im free_relay medley_relay"`
-	Course      string       `json:"course" validate:"required,oneof=SCY SCM LCM"`
-	Gender      string       `json:"gender" validate:"required,oneof=M F X"`
-	Heat        *int         `json:"heat"`
-	Lane        *int         `json:"lane"`
-	Place       *int         `json:"place"`
-	SeedTimeMs  *int         `json:"seed_time_ms"`
-	FinTimeMs   *int         `json:"fin_time_ms"`
-	DQ          bool         `json:"dq"`
-	DQCode      string       `json:"dq_code"`
-	DQNote      string       `json:"dq_note"`
-	IsOfficial  bool         `json:"is_official"`
-	Splits      []SplitInput `json:"splits"`
+	// SkipIfMeetResultExists makes the insert a no-op (ErrDuplicateMeetResult)
+	// when the swimmer already has an active result for this meet/event/course.
+	// The check and insert share one lock hold, so concurrent imports in this
+	// process cannot both insert.
+	SkipIfMeetResultExists bool         `json:"-"`
+	SwimmerID              string       `json:"swimmer_id" validate:"required"`
+	MeetID                 string       `json:"meet_id"`
+	MeetEventID            string       `json:"meet_event_id"`
+	ImportID               string       `json:"import_id"`
+	EventNumber            string       `json:"event_number"`
+	Distance               int          `json:"distance" validate:"required,gt=0"`
+	Stroke                 string       `json:"stroke" validate:"required,oneof=free back breast fly im free_relay medley_relay"`
+	Course                 string       `json:"course" validate:"required,oneof=SCY SCM LCM"`
+	Gender                 string       `json:"gender" validate:"required,oneof=M F X"`
+	Heat                   *int         `json:"heat"`
+	Lane                   *int         `json:"lane"`
+	Place                  *int         `json:"place"`
+	SeedTimeMs             *int         `json:"seed_time_ms"`
+	FinTimeMs              *int         `json:"fin_time_ms"`
+	DQ                     bool         `json:"dq"`
+	DQCode                 string       `json:"dq_code"`
+	DQNote                 string       `json:"dq_note"`
+	IsOfficial             bool         `json:"is_official"`
+	Splits                 []SplitInput `json:"splits"`
 	// SwimDate backdates the result (server-side imports only). Best-time and
 	// team-record age/ordering derive from the result's CreatedAt.
 	SwimDate time.Time `json:"-"`
@@ -271,7 +278,15 @@ type SwimmerHouseholdChecker interface {
 
 // Service is the performance/best-times domain service.
 type Service struct {
-	mu               sync.RWMutex
+	mu               dbutil.GenMutex     // counts writers so a club refresh can read without the lock
+	cacheMu          sync.Mutex          // guards orgCache (touched at most once per touchGranularity per club)
+	refreshEvery     atomic.Int64        // refresh interval in ns (0 = default)
+	syncHook         func()              // test hook: runs after each full read of a club
+	refreshing       sync.Map            // org id -> *atomic.Bool (a stale-club re-read is in flight)
+	foreign          dbutil.ForeignClock // foreign-write count each club was last loaded at
+	loadedAt         sync.Map            // org id -> *atomic.Int64 (unix nanos of the last read from Postgres)
+	lastTouch        sync.Map            // org id -> *atomic.Int64 (unix nanos of the last recorded use)
+	orgCache         dbutil.OrgCache
 	repo             *Repository              // nil = in-memory only
 	results          map[string]*Result       // id → Result
 	splits           map[string][]*Split      // resultID → []Split
@@ -321,34 +336,224 @@ func NewServiceWithPool(pool *pgxpool.Pool) *Service {
 		return s
 	}
 	s.repo = newRepository(pool)
-	if err := s.loadFromDB(context.Background()); err != nil {
-		slog.Error("performance: failed to load initial state from DB", "error", err)
-	}
+	// No eager load: each club is loaded the first time one of its requests arrives
+	// (ensureOrg) and evicted when idle, so the process holds only the clubs it serves.
 	return s
 }
 
-func (s *Service) loadFromDB(ctx context.Context) error {
-	if s.repo == nil {
+// SetOrgCacheLimits bounds the per-club cache (0 = unlimited); see dbutil.OrgCache.
+func (s *Service) SetOrgCacheLimits(ttl time.Duration, maxOrgs int) {
+	s.orgCache.ConfigureLocked(&s.cacheMu, ttl, maxOrgs)
+}
+
+// ensureOrg loads one club's state the first time it is used (no-op in memory mode),
+// records the use for eviction, and drops clubs that fell out of the cache. The club's own
+// writes are write-through, so an evicted club simply reloads on its next request. A cached
+// club is re-read from Postgres once it is older than the refresh interval, so another API
+// instance's writes become visible within that window (default 30s).
+func (s *Service) ensureOrg(orgID string) error {
+	if s.repo == nil || orgID == "" {
 		return nil
 	}
-	results, bestTimes, standards, err := s.repo.LoadAll(ctx)
-	if err != nil {
-		return err
+	if s.needsLoad(orgID) {
+		if err := s.refreshOrLoad(orgID); err != nil {
+			return err
+		}
+	} else if s.touchedRecently(orgID) {
+		return nil // hot path: one RLock and one atomic load, no shared mutex
 	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	s.cacheMu.Lock()
+	evicted := s.orgCache.Use(orgID, time.Now())
+	s.cacheMu.Unlock()
+	s.markTouched(orgID)
+	if len(evicted) > 0 {
+		s.mu.Lock()
+		for _, o := range evicted {
+			s.dropOrgLocked(o)
+			s.lastTouch.Delete(o)
+		}
+		s.mu.Unlock()
+	}
+	return nil
+}
+
+// touchGranularity is how often a busy club re-records its use for eviction. The idle TTL is
+// minutes, so a coarse timestamp changes eviction by at most this much.
+const touchGranularity = 30 * time.Second
+
+func (s *Service) touchedRecently(orgID string) bool {
+	v, ok := s.lastTouch.Load(orgID)
+	return ok && time.Since(time.Unix(0, v.(*atomic.Int64).Load())) < touchGranularity
+}
+
+func (s *Service) markTouched(orgID string) {
+	v, _ := s.lastTouch.LoadOrStore(orgID, new(atomic.Int64))
+	v.(*atomic.Int64).Store(time.Now().UnixNano())
+}
+
+// ensureOrgOrLog is ensureOrg for the few read paths that cannot return an error: a failed
+// load serves the (empty) cache and is logged.
+func (s *Service) ensureOrgOrLog(orgID string) {
+	if err := s.ensureOrg(orgID); err != nil {
+		slog.Error("performance: load club from database", "org_id", orgID, "error", err)
+	}
+}
+
+// defaultRefreshInterval is how long a club's cached state is trusted before the next request
+// re-reads it from Postgres (cross-instance visibility for this write-through cache).
+const defaultRefreshInterval = 5 * time.Second
+
+// SetSyncHookForTest installs a hook that runs after every full read of a club (tests count loads).
+func (s *Service) SetSyncHookForTest(fn func()) { s.syncHook = fn }
+
+// SetRefreshInterval overrides how long a club's cached state is trusted (tests, tuning).
+func (s *Service) SetRefreshInterval(d time.Duration) { s.refreshEvery.Store(int64(d)) }
+
+// refreshOrLoad loads a club that is not cached (every caller waits for it) or, for a cached
+// club whose state went stale, lets exactly one request pay for the re-read while the others
+// keep serving the cached copy, so a busy club never stampedes the database.
+func (s *Service) refreshOrLoad(orgID string) error {
+	if _, cached := s.loadedAt.Load(orgID); !cached {
+		return s.loadOrg(context.Background(), orgID)
+	}
+	v, _ := s.refreshing.LoadOrStore(orgID, new(atomic.Bool))
+	flag := v.(*atomic.Bool)
+	if !flag.CompareAndSwap(false, true) {
+		return nil // another request is already re-checking this club
+	}
+	defer flag.Store(false)
+	ctx := context.Background()
+	// One cheap counter query says whether another instance has written since this club
+	// was loaded; if not, the write-through cache is current and the full read is skipped.
+	// A periodic full read (maxCacheAge) bounds any drift.
+	foreign, probeErr := s.repo.ForeignWrites(ctx, orgID)
+	if probeErr == nil && s.foreign.Current(orgID, foreign) {
+		s.touchLoaded(orgID)
+		return nil
+	}
+	return s.loadOrgAt(ctx, orgID, foreign, probeErr)
+}
+
+// syncForWrite makes the cached club authoritative before a recompute: it probes the
+// cross-instance change counter regardless of the refresh interval and re-reads the club
+// only if another instance wrote since this one loaded it.
+func (s *Service) syncForWrite(orgID string) error {
+	if s.repo == nil || orgID == "" {
+		return nil
+	}
+	ctx := context.Background()
+	foreign, probeErr := s.repo.ForeignWrites(ctx, orgID)
+	if probeErr == nil && s.foreign.Current(orgID, foreign) {
+		return nil
+	}
+	return s.loadOrgAt(ctx, orgID, foreign, probeErr)
+}
+
+// touchLoaded restarts the refresh-interval clock after a probe found nothing new.
+func (s *Service) touchLoaded(orgID string) {
+	v, _ := s.loadedAt.LoadOrStore(orgID, new(atomic.Int64))
+	v.(*atomic.Int64).Store(time.Now().UnixNano())
+}
+
+// needsLoad reports whether a club is not cached yet or its cached state is older than the
+// refresh interval.
+func (s *Service) needsLoad(orgID string) bool {
+	v, ok := s.loadedAt.Load(orgID)
+	every := time.Duration(s.refreshEvery.Load())
+	if every <= 0 {
+		every = defaultRefreshInterval
+	}
+	return !ok || time.Since(time.Unix(0, v.(*atomic.Int64).Load())) > every
+}
+
+// loadOrg loads (or refreshes) one club's state. The database read runs without the service
+// lock; a writer that finished meanwhile forces a re-read, and repeated conflicts fall back to
+// reading under the lock so an older snapshot never overwrites a newer write.
+func (s *Service) loadOrg(ctx context.Context, orgID string) error {
+	foreign, probeErr := s.repo.ForeignWrites(ctx, orgID)
+	return s.loadOrgAt(ctx, orgID, foreign, probeErr)
+}
+
+// loadOrgAt is loadOrg with the counter probe already made. The probe must come BEFORE the
+// read, so a write landing between probe and read only costs one extra reload.
+func (s *Service) loadOrgAt(ctx context.Context, orgID string, foreign int64, probeErr error) error {
+	fetch := func() (func(), error) {
+		results, bestTimes, standards, err := s.repo.LoadOrg(ctx, orgID)
+		if err != nil {
+			return nil, err
+		}
+		ext, err := s.repo.loadExtensions(ctx, orgID)
+		if err != nil {
+			return nil, err
+		}
+		return func() { s.replaceOrgLocked(orgID, results, bestTimes, standards, ext) }, nil
+	}
+	done, err := dbutil.ReloadUnlocked(&s.mu, s.syncHook, fetch)
+	if !done && err == nil {
+		s.mu.Lock()
+		var swap func()
+		if swap, err = fetch(); err == nil {
+			swap()
+		}
+		s.mu.UnlockWithoutBump()
+	}
+	if err == nil && probeErr == nil {
+		s.foreign.Mark(orgID, foreign)
+	}
+	return err
+}
+
+// replaceOrgLocked swaps one club's cached rows for freshly read ones. Splits are kept (they
+// are written through and never read back). Caller holds s.mu (write).
+func (s *Service) replaceOrgLocked(orgID string, results []*Result, bestTimes []*BestTime, standards []*TimeStandard, ext clubExtensions) {
+	dbutil.DropByOrg(s.results, orgID, func(r *Result) string { return r.OrgID })
+	dbutil.DropByOrg(s.bestTimes, orgID, func(b *BestTime) string { return b.OrgID })
+	dbutil.DropByOrg(s.btByKey, orgID, func(b *BestTime) string { return b.OrgID })
+	dbutil.DropByOrg(s.standards, orgID, func(t *TimeStandard) string { return t.OrgID })
+	dbutil.DropByOrg(s.recordEntries, orgID, func(e *RecordEntry) string { return e.OrgID })
+	dbutil.DropByOrg(s.goals, orgID, func(g *Goal) string { return g.OrgID })
+	dbutil.DropByOrg(s.lineups, orgID, func(l *RelayLineup) string { return l.OrgID })
 	for _, r := range results {
 		s.results[r.ID] = r
 	}
 	for _, bt := range bestTimes {
 		s.bestTimes[bt.ID] = bt
-		key := btKey(bt.OrgID, bt.SwimmerID, bt.EventDistance, bt.Stroke, bt.Course)
-		s.btByKey[key] = bt
+		s.btByKey[btKey(bt.OrgID, bt.SwimmerID, bt.EventDistance, bt.Stroke, bt.Course)] = bt
 	}
 	for _, ts := range standards {
 		s.standards[ts.ID] = ts
 	}
-	return s.loadExtensionsLocked(ctx)
+	for _, e := range ext.entries {
+		s.recordEntries[e.ID] = e
+	}
+	for _, g := range ext.goals {
+		s.goals[g.ID] = g
+	}
+	for _, l := range ext.lineups {
+		s.lineups[l.ID] = l
+	}
+	v, _ := s.loadedAt.LoadOrStore(orgID, new(atomic.Int64))
+	v.(*atomic.Int64).Store(time.Now().UnixNano())
+}
+
+// dropOrgLocked removes one club's cached state. Caller holds s.mu (write).
+func (s *Service) dropOrgLocked(orgID string) {
+	for id, r := range s.results {
+		if r.OrgID == orgID {
+			delete(s.splits, id)
+		}
+	}
+	dbutil.DropByOrg(s.results, orgID, func(r *Result) string { return r.OrgID })
+	dbutil.DropByOrg(s.bestTimes, orgID, func(b *BestTime) string { return b.OrgID })
+	dbutil.DropByOrg(s.btByKey, orgID, func(b *BestTime) string { return b.OrgID })
+	dbutil.DropByOrg(s.standards, orgID, func(t *TimeStandard) string { return t.OrgID })
+	dbutil.DropByOrg(s.recordEntries, orgID, func(e *RecordEntry) string { return e.OrgID })
+	dbutil.DropByOrg(s.goals, orgID, func(g *Goal) string { return g.OrgID })
+	dbutil.DropByOrg(s.lineups, orgID, func(l *RelayLineup) string { return l.OrgID })
+	s.loadedAt.Delete(orgID)
+	s.foreign.Forget(orgID)
+	s.lastTouch.Delete(orgID)
+	s.refreshing.Delete(orgID)
 }
 
 func (s *Service) newID() string {
@@ -429,14 +634,7 @@ func (s *Service) checkParentHouseholdForSwimmer(principal *appmiddleware.Princi
 	if principal == nil {
 		return ErrForbidden
 	}
-	requiresHouseholdScope := false
-	for _, r := range principal.Roles {
-		switch strings.ToLower(r) {
-		case "parent", "swimmer":
-			requiresHouseholdScope = true
-		}
-	}
-	if !requiresHouseholdScope {
+	if !principalRequiresHouseholdScope(principal) {
 		return nil
 	}
 	// Household checker is required; deny if not wired.
@@ -456,6 +654,9 @@ func (s *Service) checkParentHouseholdForSwimmer(principal *appmiddleware.Princi
 // principalRequiresHouseholdScope reports whether the principal's roles
 // require household-scoped filtering (parent/swimmer) on org-wide reads.
 func principalRequiresHouseholdScope(principal *appmiddleware.Principal) bool {
+	if appmiddleware.HasAnyRole(principal, "admin", "coach") {
+		return false
+	}
 	for _, r := range principal.Roles {
 		switch strings.ToLower(r) {
 		case "parent", "swimmer":
@@ -493,14 +694,10 @@ func isRelayStroke(stroke string) bool {
 
 // ─── Results ─────────────────────────────────────────────────────────────────
 
-// UpsertResult creates or replaces a result for the given swimmer-event.
-// When fin_time_ms is non-nil, is_official is true, and the stroke is not a
-// relay stroke, it also triggers a best-time recompute for the swimmer and
-// calls the injected EntrySeedTimeUpdater (if set) to back-fill seed times on
-// future draft/submitted meet entries for the swimmer.
 // HasMeetResult reports whether a result is already recorded for this swimmer
 // and event at the given meet — used to make results-file imports idempotent.
 func (s *Service) HasMeetResult(orgID, swimmerID, meetID string, distance int, stroke, course string) bool {
+	s.ensureOrgOrLog(orgID)
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	for _, r := range s.results {
@@ -518,6 +715,7 @@ func (s *Service) HasMeetResult(orgID, swimmerID, meetID string, distance int, s
 // on: an identical time for the same swimmer/event/course is treated as the
 // same swim.
 func (s *Service) HasResultTime(orgID, swimmerID string, distance int, stroke, course string, finTimeMs int) bool {
+	s.ensureOrgOrLog(orgID)
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	for _, r := range s.results {
@@ -529,7 +727,15 @@ func (s *Service) HasResultTime(orgID, swimmerID string, distance int, stroke, c
 	return false
 }
 
+// UpsertResult creates or replaces a result for the given swimmer-event.
+// When fin_time_ms is non-nil, is_official is true, and the stroke is not a
+// relay stroke, it also triggers a best-time recompute for the swimmer and
+// calls the injected EntrySeedTimeUpdater (if set) to back-fill seed times on
+// future draft/submitted meet entries for the swimmer.
 func (s *Service) UpsertResult(orgID, actorID string, principal *appmiddleware.Principal, input UpsertResultInput) (*Result, error) {
+	if err := s.ensureOrg(orgID); err != nil {
+		return nil, err
+	}
 	result, _, err := s.UpsertResultWithRecords(orgID, actorID, principal, input)
 	return result, err
 }
@@ -538,6 +744,12 @@ func (s *Service) UpsertResult(orgID, actorID string, principal *appmiddleware.P
 // any team records the result breaks (one per age group it counts toward:
 // the swimmer's age group and Open).
 func (s *Service) UpsertResultWithRecords(orgID, actorID string, principal *appmiddleware.Principal, input UpsertResultInput) (*Result, []RecordBreak, error) {
+	if err := s.ensureOrg(orgID); err != nil {
+		return nil, nil, err
+	}
+	if err := s.syncForWrite(orgID); err != nil {
+		return nil, nil, err
+	}
 	if err := s.requireAdminOrCoach(principal); err != nil {
 		return nil, nil, err
 	}
@@ -548,6 +760,16 @@ func (s *Service) UpsertResultWithRecords(orgID, actorID string, principal *appm
 	}
 
 	s.mu.Lock()
+
+	if input.SkipIfMeetResultExists {
+		for _, r := range s.results {
+			if r.OrgID == orgID && r.SwimmerID == input.SwimmerID && r.MeetID == input.MeetID &&
+				r.Distance == input.Distance && r.Stroke == input.Stroke && r.Course == input.Course && r.Status == "active" {
+				s.mu.Unlock()
+				return nil, nil, ErrDuplicateMeetResult
+			}
+		}
+	}
 
 	now := time.Now().UTC()
 	result := &Result{
@@ -699,12 +921,33 @@ func (s *Service) UpsertResultWithRecords(orgID, actorID string, principal *appm
 	return result, breaks, detectionErr
 }
 
+// betterSwim reports whether a should become the best swim over b: faster wins; equal
+// times resolve to the earliest-created swim, then the lower ID, so the choice never
+// depends on map iteration order.
+func betterSwim(a, b *Result) bool {
+	if *a.FinTimeMs != *b.FinTimeMs {
+		return *a.FinTimeMs < *b.FinTimeMs
+	}
+	if !a.CreatedAt.Equal(b.CreatedAt) {
+		return a.CreatedAt.Before(b.CreatedAt)
+	}
+	return a.ID < b.ID
+}
+
 // recomputeBestTimeLocked scans all active results for the swimmer/event/course
 // and updates (or creates) the best_time record. Caller must hold s.mu.Lock().
 // RecordedAt is always set to the timestamp of the result that produced the BT.
 // The record is persisted before the cache is replaced, so a failed write
 // leaves memory unchanged and is returned to the caller.
 func (s *Service) recomputeBestTimeLocked(orgID, actorID, swimmerID string, distance int, stroke, course string) error {
+	key := btKey(orgID, swimmerID, distance, stroke, course)
+	existing := s.btByKey[key] // O(1) lookup via secondary index
+	// A manual override only competes with swims recorded after it was set, so a
+	// correction to a slower time is not undone by older (erroneous) fast results.
+	var overrideAt time.Time
+	if existing != nil && existing.IsManualOverride {
+		overrideAt = existing.UpdatedAt
+	}
 	var best *Result
 	for _, r := range s.results {
 		if r.OrgID != orgID || r.SwimmerID != swimmerID {
@@ -713,23 +956,25 @@ func (s *Service) recomputeBestTimeLocked(orgID, actorID, swimmerID string, dist
 		if r.Distance != distance || r.Stroke != stroke || r.Course != course {
 			continue
 		}
-		if r.Status != "active" || r.DQ || !r.IsOfficial || r.FinTimeMs == nil {
+		if r.Status != "active" || r.DQ || !r.IsOfficial || r.FinTimeMs == nil || *r.FinTimeMs <= 0 {
 			continue
 		}
-		if best == nil || *r.FinTimeMs < *best.FinTimeMs {
+		if !overrideAt.IsZero() && !r.CreatedAt.After(overrideAt) {
+			continue
+		}
+		if best == nil || betterSwim(r, best) {
 			best = r
 		}
 	}
 
-	key := btKey(orgID, swimmerID, distance, stroke, course)
-	existing := s.btByKey[key] // O(1) lookup via secondary index
 	now := time.Now().UTC()
 
 	var next *BestTime
 	switch {
 	case existing != nil && existing.IsManualOverride &&
-		(best == nil || existing.BestTimeMs == nil || *best.FinTimeMs >= *existing.BestTimeMs):
-		// Override stands until a strictly faster official swim supersedes it.
+		(best == nil || (existing.BestTimeMs != nil && *best.FinTimeMs >= *existing.BestTimeMs)):
+		// Override stands until a strictly faster official swim recorded after it
+		// supersedes it; an NT override is superseded by any later official swim.
 		return nil
 	case best == nil && existing == nil:
 		return nil
@@ -755,14 +1000,19 @@ func (s *Service) recomputeBestTimeLocked(orgID, actorID, swimmerID string, dist
 		recordedAt := best.CreatedAt
 		next.BestTimeMs, next.ResultID, next.RecordedAt = best.FinTimeMs, best.ID, &recordedAt
 		next.IsManualOverride = false
+		next.OverrideReason, next.OverrideBy = "", ""
 	}
 	next.UpdatedAt = now
 	next.UpdatedBy = actorID
 
+	prevID := next.ID
 	if s.repo != nil {
 		if err := s.repo.UpsertBestTime(context.Background(), next); err != nil {
 			return fmt.Errorf("persist best time: %w", err)
 		}
+	}
+	if next.ID != prevID {
+		delete(s.bestTimes, prevID)
 	}
 	s.bestTimes[next.ID] = next
 	s.btByKey[key] = next
@@ -771,6 +1021,9 @@ func (s *Service) recomputeBestTimeLocked(orgID, actorID, swimmerID string, dist
 
 // RecomputeBestTime forces a best-time recompute for the given swimmer/event/course.
 func (s *Service) RecomputeBestTime(orgID, actorID string, principal *appmiddleware.Principal, swimmerID string, distance int, stroke, course string) (*BestTime, error) {
+	if err := s.ensureOrg(orgID); err != nil {
+		return nil, err
+	}
 	if err := s.requireAdminOrCoach(principal); err != nil {
 		return nil, err
 	}
@@ -792,6 +1045,9 @@ func (s *Service) RecomputeBestTime(orgID, actorID string, principal *appmiddlew
 // Allowed roles: admin, coach, parent.
 // For the parent role, household ownership is enforced via checkParentHouseholdForSwimmer.
 func (s *Service) ListBestTimes(orgID string, principal *appmiddleware.Principal, swimmerID string, filters ListBestTimesFilters) ([]*BestTime, error) {
+	if err := s.ensureOrg(orgID); err != nil {
+		return nil, err
+	}
 	if err := s.requireReadAccess(principal); err != nil {
 		return nil, err
 	}
@@ -805,6 +1061,9 @@ func (s *Service) ListBestTimes(orgID string, principal *appmiddleware.Principal
 
 // ListBestTimesForOrg returns all best-time records visible within the org.
 func (s *Service) ListBestTimesForOrg(orgID string, principal *appmiddleware.Principal, filters ListBestTimesFilters) ([]*BestTime, error) {
+	if err := s.ensureOrg(orgID); err != nil {
+		return nil, err
+	}
 	if err := s.requireReadAccess(principal); err != nil {
 		return nil, err
 	}
@@ -858,6 +1117,9 @@ func (s *Service) filterBestTimes(orgID string, filters ListBestTimesFilters, al
 
 // OverrideBestTime applies a manual best-time override and emits an audit event.
 func (s *Service) OverrideBestTime(orgID, actorID string, principal *appmiddleware.Principal, input OverrideBestTimeInput) (*BestTime, *BestTimeAuditEvent, error) {
+	if err := s.ensureOrg(orgID); err != nil {
+		return nil, nil, err
+	}
 	if err := s.requireAdmin(principal); err != nil {
 		return nil, nil, ErrForbidden
 	}
@@ -956,6 +1218,9 @@ func (s *Service) OverrideBestTime(orgID, actorID string, principal *appmiddlewa
 // Allowed roles: admin, coach, parent.
 // For the parent role, household ownership is enforced via checkParentHouseholdForSwimmer.
 func (s *Service) ListProgression(orgID string, principal *appmiddleware.Principal, swimmerID string, filters ListResultsFilters) ([]*Result, error) {
+	if err := s.ensureOrg(orgID); err != nil {
+		return nil, err
+	}
 	if err := s.requireReadAccess(principal); err != nil {
 		return nil, err
 	}
@@ -994,6 +1259,9 @@ func (s *Service) ListProgression(orgID string, principal *appmiddleware.Princip
 
 // ListProgressionForOrg returns all visible progression rows within the org.
 func (s *Service) ListProgressionForOrg(orgID string, principal *appmiddleware.Principal, filters ListResultsFilters) ([]*Result, error) {
+	if err := s.ensureOrg(orgID); err != nil {
+		return nil, err
+	}
 	if err := s.requireReadAccess(principal); err != nil {
 		return nil, err
 	}
@@ -1041,8 +1309,16 @@ func (s *Service) ListProgressionForOrg(orgID string, principal *appmiddleware.P
 
 // CreateTimeStandard creates a new time standard.
 func (s *Service) CreateTimeStandard(orgID, actorID string, principal *appmiddleware.Principal, input CreateTimeStandardInput) (*TimeStandard, error) {
+	if err := s.ensureOrg(orgID); err != nil {
+		return nil, err
+	}
 	if err := s.requireAdmin(principal); err != nil {
 		return nil, ErrForbidden
+	}
+	if (input.AgeMin != nil && (*input.AgeMin < 0 || *input.AgeMin > 120)) ||
+		(input.AgeMax != nil && (*input.AgeMax < 0 || *input.AgeMax > 120)) ||
+		(input.AgeMin != nil && input.AgeMax != nil && *input.AgeMin > *input.AgeMax) {
+		return nil, ErrInvalidAgeRange
 	}
 
 	s.mu.Lock()
@@ -1080,6 +1356,9 @@ func (s *Service) CreateTimeStandard(orgID, actorID string, principal *appmiddle
 
 // ListTimeStandards returns time standards for the org, with optional filtering.
 func (s *Service) ListTimeStandards(orgID string, filters ListTimeStandardsFilters) ([]*TimeStandard, error) {
+	if err := s.ensureOrg(orgID); err != nil {
+		return nil, err
+	}
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
@@ -1128,6 +1407,9 @@ func (s *Service) ListTimeStandards(orgID string, filters ListTimeStandardsFilte
 
 // GetTimeStandard fetches a single time standard by ID.
 func (s *Service) GetTimeStandard(orgID, standardID string) (*TimeStandard, error) {
+	if err := s.ensureOrg(orgID); err != nil {
+		return nil, err
+	}
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
@@ -1140,6 +1422,9 @@ func (s *Service) GetTimeStandard(orgID, standardID string) (*TimeStandard, erro
 
 // UpdateTimeStandard applies partial updates to a time standard.
 func (s *Service) UpdateTimeStandard(orgID, actorID, standardID string, principal *appmiddleware.Principal, input UpdateTimeStandardInput) (*TimeStandard, error) {
+	if err := s.ensureOrg(orgID); err != nil {
+		return nil, err
+	}
 	if err := s.requireAdmin(principal); err != nil {
 		return nil, ErrForbidden
 	}
@@ -1185,6 +1470,9 @@ func (s *Service) UpdateTimeStandard(orgID, actorID, standardID string, principa
 
 // DeleteTimeStandard soft-deletes a time standard.
 func (s *Service) DeleteTimeStandard(orgID, actorID, standardID string, principal *appmiddleware.Principal) error {
+	if err := s.ensureOrg(orgID); err != nil {
+		return err
+	}
 	if err := s.requireAdmin(principal); err != nil {
 		return ErrForbidden
 	}
@@ -1219,6 +1507,9 @@ func (s *Service) DeleteTimeStandard(orgID, actorID, standardID string, principa
 // Allowed roles: admin, coach, parent, swimmer.
 // Household-scoped roles must match the swimmer's household via the injected checker.
 func (s *Service) EvaluateCutQualification(orgID string, principal *appmiddleware.Principal, swimmerID, standardID string) (*CutQualification, error) {
+	if err := s.ensureOrg(orgID); err != nil {
+		return nil, err
+	}
 	if err := s.requireReadAccess(principal); err != nil {
 		return nil, err
 	}

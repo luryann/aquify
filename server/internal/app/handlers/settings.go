@@ -3,8 +3,8 @@ package handlers
 import (
 	"net/http"
 
-	"github.com/luryann/aquify/server/internal/app/httpx"
 	"github.com/go-chi/chi/v5"
+	"github.com/luryann/aquify/server/internal/app/httpx"
 )
 
 type SettingsHandlers struct {

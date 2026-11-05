@@ -154,6 +154,17 @@
     color: #f87171;
     margin: 0;
   }
+  .rp-agree {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    font-family: var(--font-body);
+    font-size: var(--fs-sm);
+    line-height: 1.5;
+    color: rgba(237,233,227,0.7);
+    cursor: pointer;
+  }
+  .rp-agree input { margin-top: 3px; accent-color: #eb5d1e; flex-shrink: 0; }
   .rp-hint-text {
     font-family: var(--font-body);
     font-size: var(--fs-xs);

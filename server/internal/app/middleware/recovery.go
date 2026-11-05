@@ -6,8 +6,8 @@ import (
 	"net/http"
 	"runtime/debug"
 
-	"github.com/luryann/aquify/server/internal/app/httpx"
 	chimiddleware "github.com/go-chi/chi/v5/middleware"
+	"github.com/luryann/aquify/server/internal/app/httpx"
 )
 
 func Recoverer(logger *slog.Logger) func(http.Handler) http.Handler {

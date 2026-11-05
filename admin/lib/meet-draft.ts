@@ -27,7 +27,9 @@ export type MeetCreateDraftState = {
 }
 
 export function maxEntriesPayloadValue(value: string): number {
-  return value === 'Unlimited' ? 6 : Number(value || '3')
+  if (value === 'Unlimited') return 6
+  const n = Number(value || '3')
+  return Number.isFinite(n) ? n : 3
 }
 
 export function mapParsedSessionsToDraftSessions(parsedSessions: ParsedMeetSessionDraft[]): MeetSessionDraft[] {

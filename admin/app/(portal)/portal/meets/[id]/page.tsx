@@ -345,6 +345,7 @@ export default function MeetDetailPage() {
     if (!st) return
     const commitmentId = st.commitmentId
 
+    setCommitError(null)
     setSubmitting(swimmerId + val)
     try {
       if (commitmentId) {
@@ -369,12 +370,12 @@ export default function MeetDetailPage() {
         setTimeout(() => setCommitError(null), 4000)
       }
     } catch (err) {
-      reportUIError('portal.meetDetail.commitment.update', err, 'Couldn’t save commitment response. Try again.', {
+      setCommitError(reportUIError('portal.meetDetail.commitment.update', err, 'Couldn’t save commitment response. Try again.', {
         orgId,
         meetId,
         swimmerId,
         commitmentId,
-      })
+      }))
     } finally {
       setSubmitting(null)
     }
@@ -385,6 +386,7 @@ export default function MeetDetailPage() {
   const saveNote = async (swimmerId: string) => {
     const st = swimmerStates[swimmerId]
     if (!st?.commitmentId || (st.commitment !== 'yes' && st.commitment !== 'no')) return
+    setCommitError(null)
     setSubmitting(swimmerId + 'note')
     try {
       const note = st.note.trim()
@@ -395,12 +397,12 @@ export default function MeetDetailPage() {
       setSwimmerStates((prev) => ({ ...prev, [swimmerId]: { ...prev[swimmerId], savedNote: note } }))
       flashSaved(swimmerId)
     } catch (err) {
-      reportUIError('portal.meetDetail.commitment.note', err, 'Couldn’t save message for coaches. Try again.', {
+      setCommitError(reportUIError('portal.meetDetail.commitment.note', err, 'Couldn’t save message for coaches. Try again.', {
         orgId,
         meetId,
         swimmerId,
         commitmentId: st.commitmentId,
-      })
+      }))
     } finally {
       setSubmitting(null)
     }

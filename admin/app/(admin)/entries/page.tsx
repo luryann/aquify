@@ -140,7 +140,7 @@ function AddEntryPanel({
   }
 
   const handleSave = async () => {
-    if (!selectedSwimmer || !selectedMeet || selectedEvents.size === 0) return
+    if (!selectedSwimmer || !selectedMeet || eligibleEventIds.length === 0) return
     setSaving(true)
     setSaveError(null)
     try {
@@ -149,7 +149,7 @@ function AddEntryPanel({
         orgId,
         selectedMeet.id,
         selectedSwimmer.id,
-        [...selectedEvents],
+        eligibleEventIds,
       )
       setSaved(true)
       setTimeout(() => {
@@ -158,7 +158,7 @@ function AddEntryPanel({
       }, 1000)
     } catch (error) {
       setSaved(false)
-      setSaveError(formatMeetEntriesSaveError(error, selectedEvents.size))
+      setSaveError(formatMeetEntriesSaveError(error, eligibleEventIds.length))
     } finally {
       setSaving(false)
     }
@@ -176,6 +176,12 @@ function AddEntryPanel({
     }
     return [...map.entries()].map(([id, evs]) => ({ id, events: evs }))
   }, [events, selectedSwimmer, selectedMeet])
+
+  // Only submit events that are still visible (eligible) for the chosen swimmer.
+  const eligibleEventIds = useMemo(() => {
+    const visible = new Set(eligibleSessionGroups.flatMap((g) => g.events.map((ev) => ev.id)))
+    return [...selectedEvents].filter((id) => visible.has(id))
+  }, [eligibleSessionGroups, selectedEvents])
 
   return (
     <>
@@ -250,7 +256,11 @@ function AddEntryPanel({
                 {swimmers.map((sw) => (
                   <button type="button"
                     key={sw.id}
-                    onClick={() => { setSelectedSwimmer(sw); setStep(2) }}
+                    onClick={() => {
+                      if (sw.id !== selectedSwimmer?.id) { setSelectedEvents(new Set()); setSaveError(null) }
+                      setSelectedSwimmer(sw)
+                      setStep(2)
+                    }}
                     className="u-gap-12px u-p-12px-16px u-ff-font-body" style={{ display: 'flex', alignItems: 'center', borderRadius: '8px', border: '1px solid var(--border)', background: 'var(--bg-surface)', cursor: 'pointer', textAlign: 'left', transition: 'border-color 0.14s, background 0.14s' }}
                     onMouseEnter={(e) => { e.currentTarget.style.borderColor = 'var(--accent)'; e.currentTarget.style.background = 'var(--accent-subtle)' }}
                     onMouseLeave={(e) => { e.currentTarget.style.borderColor = 'var(--border)'; e.currentTarget.style.background = 'var(--bg-surface)' }}
@@ -319,9 +329,9 @@ function AddEntryPanel({
                     <p className="page-subtitle">
                       Select events for <strong style={{ color: 'var(--text)' }}>{selectedSwimmer?.first_name} {selectedSwimmer?.last_name}</strong>:
                     </p>
-                    {selectedEvents.size > 0 && (
+                    {eligibleEventIds.length > 0 && (
                       <span className="u-fs-fs-sm u-ff-font-body" style={{ color: 'var(--accent-text, var(--accent))' }}>
-                        {selectedEvents.size} selected
+                        {eligibleEventIds.length} selected
                       </span>
                     )}
                   </div>
@@ -382,7 +392,7 @@ function AddEntryPanel({
           {step === 3 && (
             <button type="button"
               onClick={handleSave}
-              disabled={selectedEvents.size === 0 || saving || saved}
+              disabled={eligibleEventIds.length === 0 || saving || saved}
               className={`btn ${saved ? 'btn-success' : 'btn-primary'}`} style={{ flex: 2 }}
             >
               {saved ? (
@@ -390,7 +400,7 @@ function AddEntryPanel({
               ) : saving ? (
                 <><span className="spinner spinner-sm" aria-hidden /> Saving…</>
               ) : (
-                <>Save {selectedEvents.size} {selectedEvents.size === 1 ? 'Entry' : 'Entries'}</>
+                <>Save {eligibleEventIds.length} {eligibleEventIds.length === 1 ? 'Entry' : 'Entries'}</>
               )}
             </button>
           )}
@@ -420,6 +430,9 @@ function EntriesPageContent() {
   const [rows, setRows] = useState<EntryRow[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [actionError, setActionError] = useState<string | null>(null)
+  const [failedMeets, setFailedMeets] = useState<string[]>([])
+  const inFlightApprovals = useRef(new Set<string>())
   const [meetFilter, setMeetFilter] = useState(lockedMeetId ?? 'all')
   const [statusFilter, setStatusFilter] = useState('all')
   const [search, setSearch] = useState('')
@@ -434,6 +447,7 @@ function EntriesPageContent() {
     try {
       setLoading(true)
       setError(null)
+      setActionError(null)
       const orgId = session.user.orgId
 
       const [meets, swimmers] = await Promise.all([
@@ -447,9 +461,10 @@ function EntriesPageContent() {
       const swimmerMap = new Map<string, SwimmerRecord>(swimmers.map((s) => [s.id, s]))
       const relevantMeets = meets.filter((m) => ENTRY_STATUSES.has(m.status))
 
+      const failed = new Set<string>()
       const [entryResults, eventResults] = await Promise.all([
-        Promise.all(relevantMeets.map((m) => fetchMeetEntries(api, orgId, m.id).catch(() => [] as EntryRecord[]))),
-        Promise.all(relevantMeets.map((m) => fetchMeetEvents(api, orgId, m.id).catch(() => [] as MeetEventRecord[]))),
+        Promise.all(relevantMeets.map((m) => fetchMeetEntries(api, orgId, m.id).catch(() => { failed.add(m.name); return [] as EntryRecord[] }))),
+        Promise.all(relevantMeets.map((m) => fetchMeetEvents(api, orgId, m.id).catch(() => { failed.add(m.name); return [] as MeetEventRecord[] }))),
       ])
 
       const combined: EntryRow[] = []
@@ -477,7 +492,10 @@ function EntriesPageContent() {
         }
       }
 
-      if (!cancelled.v) setRows(combined)
+      if (!cancelled.v) {
+        setRows(combined)
+        setFailedMeets([...failed])
+      }
     } catch (err) {
       if (!cancelled.v) setError(uiErrorMessage(err, 'Entries couldn’t be loaded. Check your connection and try again.'))
     } finally {
@@ -493,21 +511,26 @@ function EntriesPageContent() {
 
   const handleApprove = useCallback(async (entryId: string, meetId: string): Promise<boolean> => {
     if (!session?.user.orgId) return false
+    if (inFlightApprovals.current.has(entryId)) return false
+    inFlightApprovals.current.add(entryId)
+    setActionError(null)
     try {
       await approveEntry(api, session.user.orgId, meetId, entryId)
       setRows((prev) => prev.map((e) => e.id === entryId ? { ...e, status: 'approved' } : e))
       return true
     } catch (err) {
-      setError(uiErrorMessage(err, 'Couldn’t approve entry. Try again.'))
+      setActionError(uiErrorMessage(err, 'Couldn’t approve entry. Try again.'))
       return false
+    } finally {
+      inFlightApprovals.current.delete(entryId)
     }
   }, [api, session?.user.orgId])
 
   const handleApproveAll = useCallback(async (pending: { id: string; meetId: string }[]) => {
-    setError(null)
+    setActionError(null)
     const results = await Promise.all(pending.map((e) => handleApprove(e.id, e.meetId)))
     const failed = results.filter((ok) => !ok).length
-    if (failed > 0) setError(`${failed} of ${pending.length} entries could not be approved. Refresh to see their current status.`)
+    if (failed > 0) setActionError(`${failed} of ${pending.length} entries could not be approved. Refresh to see their current status.`)
   }, [handleApprove])
 
   const confirm = useConfirm()
@@ -519,32 +542,35 @@ function EntriesPageContent() {
     if (!session?.user.orgId) return
     const ok = await confirm({ title: 'Reject this entry?', message: 'It will be scratched and excluded from reports and exports. It stays on record.', confirmLabel: 'Reject entry', destructive: true, count: 1 })
     if (!ok) return
+    setActionError(null)
     void scratchEntry(api, session.user.orgId, meetId, entryId, 'Rejected during coach review')
       .then(() => setRows((prev) => prev.map((e) => e.id === entryId ? { ...e, status: 'scratched' } : e)))
-      .catch((err) => setError(uiErrorMessage(err, 'Couldn’t reject entry. Try again.')))
+      .catch((err) => setActionError(uiErrorMessage(err, 'Couldn’t reject entry. Try again.')))
   }, [api, session?.user.orgId, confirm])
 
   const handleScratch = useCallback(async (entryId: string, meetId: string) => {
     if (!session?.user.orgId) return
     const reason = await confirmReason({ title: 'Scratch this entry?', message: 'It stays on record but is removed from reports and exports.', confirmLabel: 'Scratch entry', destructive: true, count: 1, reasonLabel: 'Reason', reasonRequired: true })
     if (reason === null) return
+    setActionError(null)
     void scratchEntry(api, session.user.orgId, meetId, entryId, reason)
       .then(() => setRows((prev) => prev.map((e) => e.id === entryId ? { ...e, status: 'scratched' } : e)))
-      .catch((err) => setError(uiErrorMessage(err, 'Couldn’t scratch entry. Try again.')))
+      .catch((err) => setActionError(uiErrorMessage(err, 'Couldn’t scratch entry. Try again.')))
   }, [api, session?.user.orgId, confirmReason])
 
   const handleOverride = useCallback((entryId: string, meetId: string) => {
     const orgId = session?.user.orgId
     if (!orgId) return
+    setActionError(null)
     void fetchMeetEvents(api, orgId, meetId)
       .then((meetEvents) => {
         if (meetEvents.length === 0) {
-          setError('This meet has no events to override into.')
+          setActionError('This meet has no events to override into.')
           return
         }
         setOverrideDraft({ entryId, meetId, events: meetEvents, eventId: meetEvents[0].id, reason: '' })
       })
-      .catch((err) => setError(uiErrorMessage(err, 'Couldn’t override entry. Try again.')))
+      .catch((err) => setActionError(uiErrorMessage(err, 'Couldn’t override entry. Try again.')))
   }, [api, session?.user.orgId])
 
   const submitOverride = useCallback(() => {
@@ -555,11 +581,12 @@ function EntriesPageContent() {
     if (!target) return
     const reason = d.reason.trim()
     setOverrideDraft(null)
+    setActionError(null)
     void overrideEntry(api, orgId, d.meetId, d.entryId, { new_meet_event_id: target.id, reason })
       .then((updated) => setRows((prev) => prev.map((e) => e.id === d.entryId
         ? { ...e, event: formatEventLabel(target), override: true, overrideNote: updated.override_reason ?? reason }
         : e)))
-      .catch((err) => setError(uiErrorMessage(err, 'Couldn’t override entry. Try again.')))
+      .catch((err) => setActionError(uiErrorMessage(err, 'Couldn’t override entry. Try again.')))
   }, [api, session?.user.orgId, overrideDraft])
 
   // Stats
@@ -782,6 +809,22 @@ function EntriesPageContent() {
           </button>
         </div>
       </div>
+
+      {actionError && (
+        <div className="card u-p-16px-16px u-mb-16px row row-between" role="alert" style={{ borderColor: 'var(--error-border)', background: 'var(--error-bg)' }}>
+          <p className="u-fs-fs-base u-m-0" style={{ color: 'var(--error)' }}>{actionError}</p>
+          <div className="u-gap-8px" style={{ display: 'flex' }}>
+            <button type="button" className="btn btn-secondary btn-sm" onClick={() => void loadData({ v: false })}>Refresh</button>
+            <button type="button" className="btn btn-secondary btn-sm" onClick={() => setActionError(null)}>Dismiss</button>
+          </div>
+        </div>
+      )}
+      {failedMeets.length > 0 && !loading && (
+        <div className="card u-p-16px-16px u-mb-16px row row-between" role="alert" style={{ borderColor: 'var(--warning)' }}>
+          <p className="u-fs-fs-base u-m-0">Couldn’t load entries for: {failedMeets.join(', ')}. Counts may be incomplete.</p>
+          <button type="button" className="btn btn-secondary btn-sm" onClick={() => void loadData({ v: false })}>Retry</button>
+        </div>
+      )}
 
       {/* Stats strip */}
       <div className="cols-4 u-gap-12px u-mb-24px" >

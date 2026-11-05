@@ -3,16 +3,19 @@ import type {
   CommitmentRecord,
 } from './adminData.ts'
 
+export type SwimmerMeetCommitmentView = 'pending' | 'yes' | 'no' | 'closed'
+
 export type SwimmerMeetDetailState = {
-  commitment: 'pending' | 'yes' | 'no'
+  commitment: SwimmerMeetCommitmentView
   commitmentId: string | null
   selectedEvents: string[]
   selectedEventSelectionIds: Record<string, string>
 }
 
-export function mapSwimmerMeetCommitmentStatus(status?: string): 'pending' | 'yes' | 'no' {
+export function mapSwimmerMeetCommitmentStatus(status?: string): SwimmerMeetCommitmentView {
   if (status === 'committed_yes') return 'yes'
   if (status === 'committed_no') return 'no'
+  if (status === 'coach_reviewed' || status === 'locked') return 'closed'
   return 'pending'
 }
 

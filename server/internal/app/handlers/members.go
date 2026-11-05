@@ -6,12 +6,12 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/go-chi/chi/v5"
+	"github.com/go-playground/validator/v10"
 	"github.com/luryann/aquify/server/internal/app/audit"
 	"github.com/luryann/aquify/server/internal/app/httpx"
 	"github.com/luryann/aquify/server/internal/app/members"
 	appmiddleware "github.com/luryann/aquify/server/internal/app/middleware"
-	"github.com/go-chi/chi/v5"
-	"github.com/go-playground/validator/v10"
 )
 
 type MembershipHandlers struct {
@@ -94,7 +94,7 @@ func (h *MembershipHandlers) createHousehold(w http.ResponseWriter, r *http.Requ
 		case errors.Is(err, members.ErrForbidden):
 			httpx.WriteError(w, r, http.StatusForbidden, "forbidden", "You are not allowed to create households.", nil)
 		default:
-			httpx.WriteError(w, r, http.StatusBadRequest, "invalid_household_request", err.Error(), nil)
+			writeServiceBadRequest(w, r, "invalid_household_request", err)
 		}
 		return
 	}
@@ -220,7 +220,7 @@ func (h *MembershipHandlers) updateHousehold(w http.ResponseWriter, r *http.Requ
 		case errors.Is(err, members.ErrForbidden):
 			httpx.WriteError(w, r, http.StatusForbidden, "forbidden", "You are not allowed to update households.", nil)
 		default:
-			httpx.WriteError(w, r, http.StatusBadRequest, "invalid_household_update", err.Error(), nil)
+			writeServiceBadRequest(w, r, "invalid_household_update", err)
 		}
 		return
 	}
@@ -315,7 +315,7 @@ func (h *MembershipHandlers) addContact(w http.ResponseWriter, r *http.Request) 
 		case errors.Is(err, members.ErrForbidden):
 			httpx.WriteError(w, r, http.StatusForbidden, "forbidden", "You are not allowed to add contacts.", nil)
 		default:
-			httpx.WriteError(w, r, http.StatusBadRequest, "invalid_contact_request", err.Error(), nil)
+			writeServiceBadRequest(w, r, "invalid_contact_request", err)
 		}
 		return
 	}
@@ -419,7 +419,7 @@ func (h *MembershipHandlers) createSwimmer(w http.ResponseWriter, r *http.Reques
 		case errors.Is(err, members.ErrForbidden):
 			httpx.WriteError(w, r, http.StatusForbidden, "forbidden", "You are not allowed to create swimmers.", nil)
 		default:
-			httpx.WriteError(w, r, http.StatusBadRequest, "invalid_swimmer_request", err.Error(), nil)
+			writeServiceBadRequest(w, r, "invalid_swimmer_request", err)
 		}
 		return
 	}
@@ -477,6 +477,7 @@ type updateSwimmerRequest struct {
 	EmergencyContactRelationship *string   `json:"emergency_contact_relationship"`
 	Allergies                    *string   `json:"allergies"`
 	PortalAccessDisabled         *bool     `json:"portal_access_disabled"`
+	GuardianConsent              *bool     `json:"guardian_consent"`
 }
 
 func (h *MembershipHandlers) updateSwimmer(w http.ResponseWriter, r *http.Request) {
@@ -507,6 +508,7 @@ func (h *MembershipHandlers) updateSwimmer(w http.ResponseWriter, r *http.Reques
 		EmergencyContactRelationship: req.EmergencyContactRelationship,
 		Allergies:                    req.Allergies,
 		PortalAccessDisabled:         req.PortalAccessDisabled,
+		GuardianConsent:              req.GuardianConsent,
 	})
 	if err != nil {
 		if writeMembersNotFound(w, r, err) {
@@ -522,7 +524,7 @@ func (h *MembershipHandlers) updateSwimmer(w http.ResponseWriter, r *http.Reques
 		case errors.Is(err, members.ErrForbidden):
 			httpx.WriteError(w, r, http.StatusForbidden, "forbidden", "You are not allowed to update swimmers.", nil)
 		default:
-			httpx.WriteError(w, r, http.StatusBadRequest, "invalid_swimmer_update", err.Error(), nil)
+			writeServiceBadRequest(w, r, "invalid_swimmer_update", err)
 		}
 		return
 	}
@@ -621,7 +623,7 @@ func (h *MembershipHandlers) assignSwimmerGroup(w http.ResponseWriter, r *http.R
 		case errors.Is(err, members.ErrForbidden):
 			httpx.WriteError(w, r, http.StatusForbidden, "forbidden", "Only admin/coach can assign swimmer groups.", nil)
 		default:
-			httpx.WriteError(w, r, http.StatusBadRequest, "invalid_group_assignment", err.Error(), nil)
+			writeServiceBadRequest(w, r, "invalid_group_assignment", err)
 		}
 		return
 	}
@@ -655,7 +657,7 @@ func (h *MembershipHandlers) listSwimmers(w http.ResponseWriter, r *http.Request
 		case errors.Is(err, members.ErrForbidden):
 			httpx.WriteError(w, r, http.StatusForbidden, "forbidden", "You are not allowed to list swimmers.", nil)
 		default:
-			httpx.WriteError(w, r, http.StatusBadRequest, "invalid_swimmer_filter", err.Error(), nil)
+			writeServiceBadRequest(w, r, "invalid_swimmer_filter", err)
 		}
 		return
 	}

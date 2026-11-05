@@ -4,10 +4,12 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/luryann/aquify/server/internal/dbutil"
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/luryann/aquify/server/internal/dbutil"
+	"github.com/luryann/aquify/server/internal/tenantdb"
 )
 
 // dbExec is satisfied by both *pgxpool.Pool and pgx.Tx so the same write
@@ -22,24 +24,45 @@ type dbExec interface {
 type Repository struct {
 	pool *pgxpool.Pool
 	tx   pgx.Tx
+	// writer names this process in the change counters, so its own writes are not "foreign".
+	writer string
 }
 
 func newRepository(pool *pgxpool.Pool) *Repository {
-	return &Repository{pool: pool}
+	return &Repository{pool: pool, writer: uuid.NewString()}
 }
 
-// db routes all reads and writes through the active transaction, when present.
-func (r *Repository) db() dbExec {
+// at binds orgID to every statement so row-level security on the billing tables applies.
+// An empty org sees nothing.
+func (r *Repository) at(orgID string) tenantdb.Scoped {
+	return tenantdb.Pool{P: r.pool, Writer: r.writer}.For(orgID)
+}
+
+// ForeignWrites counts the billing changes other processes have committed for a club (the
+// change counters in org_data_versions; this process's own writes are excluded).
+func (r *Repository) ForeignWrites(ctx context.Context, orgID string) (int64, error) {
+	return tenantdb.Pool{P: r.pool, Writer: r.writer}.ForeignWrites(ctx, orgID, "billing")
+}
+
+// OrgIDs lists every registered club (the registry is not tenant data) so an all-club
+// load can read each club under its own binding.
+func (r *Repository) OrgIDs(ctx context.Context) ([]string, error) {
+	return dbutil.ListOrgIDs(ctx, r.pool)
+}
+
+// dbFor routes reads and writes through the active transaction (already bound to its org)
+// when present, else through a statement bound to orgID.
+func (r *Repository) dbFor(orgID string) dbExec {
 	if r.tx != nil {
 		return r.tx
 	}
-	return r.pool
+	return r.at(orgID)
 }
 
 // ─── Invoices ─────────────────────────────────────────────────────────────────
 
 func (r *Repository) UpsertInvoice(ctx context.Context, inv *Invoice) error {
-	return upsertInvoice(ctx, r.db(), inv)
+	return upsertInvoice(ctx, r.dbFor(inv.OrgID), inv)
 }
 
 func upsertInvoice(ctx context.Context, q dbExec, inv *Invoice) error {
@@ -74,15 +97,16 @@ func upsertInvoice(ctx context.Context, q dbExec, inv *Invoice) error {
 	return err
 }
 
-func (r *Repository) LoadInvoices(ctx context.Context) ([]*Invoice, error) {
-	rows, err := r.db().Query(ctx, `
+func (r *Repository) LoadInvoices(ctx context.Context, orgID string) ([]*Invoice, error) {
+	rows, err := r.dbFor(orgID).Query(ctx, `
 		SELECT id::text, org_id::text, COALESCE(household_id::text, ''),
 		       invoice_number, status, subtotal_cents, tax_cents, total_cents,
 		       amount_paid_cents, amount_due_cents,
 		       issued_at, voided_at, written_off_at,
 		       COALESCE(due_date::text, ''), COALESCE(notes, ''), COALESCE(external_ref, ''),
 		       created_at, updated_at
-		FROM invoices WHERE deleted_at IS NULL`)
+		FROM invoices WHERE deleted_at IS NULL
+		AND ($1::text = '' OR org_id = NULLIF($1::text, '')::uuid)`, orgID)
 	if err != nil {
 		return nil, fmt.Errorf("billing: load invoices: %w", err)
 	}
@@ -103,7 +127,7 @@ func (r *Repository) LoadInvoices(ctx context.Context) ([]*Invoice, error) {
 // ─── Invoice Items ────────────────────────────────────────────────────────────
 
 func (r *Repository) UpsertInvoiceItem(ctx context.Context, item *InvoiceItem) error {
-	return upsertInvoiceItem(ctx, r.db(), item)
+	return upsertInvoiceItem(ctx, r.dbFor(item.OrgID), item)
 }
 
 func upsertInvoiceItem(ctx context.Context, q dbExec, item *InvoiceItem) error {
@@ -127,18 +151,18 @@ func upsertInvoiceItem(ctx context.Context, q dbExec, item *InvoiceItem) error {
 	return err
 }
 
-func (r *Repository) DeleteInvoiceItem(ctx context.Context, itemID string) error {
-	_, err := r.db().Exec(ctx, `DELETE FROM invoice_items WHERE id = $1::uuid`, itemID)
+func (r *Repository) DeleteInvoiceItem(ctx context.Context, orgID, itemID string) error {
+	_, err := r.dbFor(orgID).Exec(ctx, `DELETE FROM invoice_items WHERE id = $1::uuid AND org_id = $2::uuid`, itemID, orgID)
 	return err
 }
 
-func (r *Repository) LoadInvoiceItems(ctx context.Context) ([]*InvoiceItem, error) {
-	rows, err := r.db().Query(ctx, `
+func (r *Repository) LoadInvoiceItems(ctx context.Context, orgID string) ([]*InvoiceItem, error) {
+	rows, err := r.dbFor(orgID).Query(ctx, `
 		SELECT id::text, org_id::text, invoice_id::text,
 		       description, quantity, unit_amount_cents, COALESCE(category, ''),
 		       COALESCE(swimmer_id::text, ''), COALESCE(meet_id::text, ''),
 		       created_at, updated_at
-		FROM invoice_items`)
+		FROM invoice_items WHERE ($1::text = '' OR org_id = NULLIF($1::text, '')::uuid)`, orgID)
 	if err != nil {
 		return nil, fmt.Errorf("billing: load invoice_items: %w", err)
 	}
@@ -160,18 +184,19 @@ func (r *Repository) LoadInvoiceItems(ctx context.Context) ([]*InvoiceItem, erro
 // ─── Payments ────────────────────────────────────────────────────────────────
 
 func (r *Repository) UpsertPayment(ctx context.Context, p *Payment) error {
-	return upsertPayment(ctx, r.db(), p)
+	return upsertPayment(ctx, r.dbFor(p.OrgID), p)
 }
 
 func upsertPayment(ctx context.Context, q dbExec, p *Payment) error {
 	_, err := q.Exec(ctx, `
 		INSERT INTO payments (id, org_id, invoice_id, household_id, amount_cents, payment_method,
 		                      status, stripe_payment_intent_id, external_ref, notes, paid_at, failed_at,
-		                      created_at, updated_at)
-		VALUES ($1::uuid, $2::uuid, $3::uuid, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+		                      created_at, updated_at, stripe_account_id)
+		VALUES ($1::uuid, $2::uuid, $3::uuid, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
 		ON CONFLICT (id) DO UPDATE SET
 		  status                    = EXCLUDED.status,
 		  stripe_payment_intent_id  = EXCLUDED.stripe_payment_intent_id,
+		  stripe_account_id         = EXCLUDED.stripe_account_id,
 		  external_ref              = EXCLUDED.external_ref,
 		  notes                     = EXCLUDED.notes,
 		  paid_at                   = EXCLUDED.paid_at,
@@ -181,18 +206,18 @@ func upsertPayment(ctx context.Context, q dbExec, p *Payment) error {
 		nil, // household_id — derived from the invoice; not stored on Payment
 		p.AmountCents, p.Method, p.Status,
 		dbutil.NullableString(p.StripePaymentIntentID), dbutil.NullableString(p.ExternalRef), dbutil.NullableString(p.Notes),
-		p.PaidAt, p.FailedAt, p.CreatedAt, p.UpdatedAt,
+		p.PaidAt, p.FailedAt, p.CreatedAt, p.UpdatedAt, dbutil.NullableString(p.StripeAccountID),
 	)
 	return err
 }
 
-func (r *Repository) LoadPayments(ctx context.Context) ([]*Payment, error) {
-	rows, err := r.db().Query(ctx, `
+func (r *Repository) LoadPayments(ctx context.Context, orgID string) ([]*Payment, error) {
+	rows, err := r.dbFor(orgID).Query(ctx, `
 		SELECT id::text, org_id::text, invoice_id::text,
 		       amount_cents, payment_method, status,
 		       COALESCE(stripe_payment_intent_id, ''), COALESCE(external_ref, ''), COALESCE(notes, ''),
-		       paid_at, failed_at, created_at, updated_at
-		FROM payments`)
+		       paid_at, failed_at, created_at, updated_at, COALESCE(stripe_account_id, '')
+		FROM payments WHERE ($1::text = '' OR org_id = NULLIF($1::text, '')::uuid)`, orgID)
 	if err != nil {
 		return nil, fmt.Errorf("billing: load payments: %w", err)
 	}
@@ -202,7 +227,7 @@ func (r *Repository) LoadPayments(ctx context.Context) ([]*Payment, error) {
 			&p.ID, &p.OrgID, &p.InvoiceID,
 			&p.AmountCents, &p.Method, &p.Status,
 			&p.StripePaymentIntentID, &p.ExternalRef, &p.Notes,
-			&p.PaidAt, &p.FailedAt, &p.CreatedAt, &p.UpdatedAt,
+			&p.PaidAt, &p.FailedAt, &p.CreatedAt, &p.UpdatedAt, &p.StripeAccountID,
 		)
 		return p, err
 	})
@@ -211,7 +236,7 @@ func (r *Repository) LoadPayments(ctx context.Context) ([]*Payment, error) {
 // ─── Refunds ──────────────────────────────────────────────────────────────────
 
 func (r *Repository) UpsertRefund(ctx context.Context, ref *Refund) error {
-	return upsertRefund(ctx, r.db(), ref)
+	return upsertRefund(ctx, r.dbFor(ref.OrgID), ref)
 }
 
 func upsertRefund(ctx context.Context, q dbExec, ref *Refund) error {
@@ -233,12 +258,12 @@ func upsertRefund(ctx context.Context, q dbExec, ref *Refund) error {
 	return err
 }
 
-func (r *Repository) LoadRefunds(ctx context.Context) ([]*Refund, error) {
-	rows, err := r.db().Query(ctx, `
+func (r *Repository) LoadRefunds(ctx context.Context, orgID string) ([]*Refund, error) {
+	rows, err := r.dbFor(orgID).Query(ctx, `
 		SELECT id::text, org_id::text, invoice_id::text, payment_id::text,
 		       amount_cents, reason, status, COALESCE(stripe_refund_id, ''),
 		       processed_at, rejected_at, created_at, updated_at
-		FROM refunds`)
+		FROM refunds WHERE ($1::text = '' OR org_id = NULLIF($1::text, '')::uuid)`, orgID)
 	if err != nil {
 		return nil, fmt.Errorf("billing: load refunds: %w", err)
 	}
@@ -256,7 +281,7 @@ func (r *Repository) LoadRefunds(ctx context.Context) ([]*Refund, error) {
 // ─── Ledger Events (append-only INSERT) ──────────────────────────────────────
 
 func (r *Repository) InsertLedgerEvent(ctx context.Context, ev *LedgerEvent) error {
-	return insertLedgerEvent(ctx, r.db(), ev)
+	return insertLedgerEvent(ctx, r.dbFor(ev.OrgID), ev)
 }
 
 func insertLedgerEvent(ctx context.Context, q dbExec, ev *LedgerEvent) error {
@@ -274,13 +299,13 @@ func insertLedgerEvent(ctx context.Context, q dbExec, ev *LedgerEvent) error {
 	return err
 }
 
-func (r *Repository) LoadLedgerEvents(ctx context.Context) ([]*LedgerEvent, error) {
-	rows, err := r.db().Query(ctx, `
+func (r *Repository) LoadLedgerEvents(ctx context.Context, orgID string) ([]*LedgerEvent, error) {
+	rows, err := r.dbFor(orgID).Query(ctx, `
 		SELECT id::text, org_id::text, event_type,
 		       COALESCE(invoice_id::text, ''), COALESCE(payment_id::text, ''), COALESCE(refund_id::text, ''),
 		       COALESCE(household_id, ''), amount_cents, COALESCE(description, ''),
 		       created_at
-		FROM ledger_events ORDER BY created_at, id`)
+		FROM ledger_events WHERE ($1::text = '' OR org_id = NULLIF($1::text, '')::uuid) ORDER BY created_at, id`, orgID)
 	if err != nil {
 		return nil, fmt.Errorf("billing: load ledger_events: %w", err)
 	}
@@ -297,7 +322,7 @@ func (r *Repository) LoadLedgerEvents(ctx context.Context) ([]*LedgerEvent, erro
 }
 
 func (r *Repository) UpsertHouseholdAutopayProfile(ctx context.Context, profile *HouseholdAutopayProfile) error {
-	_, err := r.db().Exec(ctx, `
+	_, err := r.dbFor(profile.OrgID).Exec(ctx, `
 		INSERT INTO household_autopay_profiles (
 			id, org_id, household_id, enabled, payment_method_type, payment_method_brand,
 			payment_method_last4, payment_method_label, payment_method_external_ref,
@@ -336,14 +361,14 @@ func (r *Repository) UpsertHouseholdAutopayProfile(ctx context.Context, profile 
 	return err
 }
 
-func (r *Repository) LoadHouseholdAutopayProfiles(ctx context.Context) ([]*HouseholdAutopayProfile, error) {
-	rows, err := r.db().Query(ctx, `
+func (r *Repository) LoadHouseholdAutopayProfiles(ctx context.Context, orgID string) ([]*HouseholdAutopayProfile, error) {
+	rows, err := r.dbFor(orgID).Query(ctx, `
 		SELECT id::text, org_id::text, household_id, enabled, payment_method_type,
 		       COALESCE(payment_method_brand, ''), COALESCE(payment_method_last4, ''),
 		       payment_method_label, COALESCE(payment_method_external_ref, ''),
 		       COALESCE(payment_method_exp_month, 0), COALESCE(payment_method_exp_year, 0),
 		       trigger_days_before_due, created_at, updated_at, COALESCE(updated_by, '')
-		FROM household_autopay_profiles`)
+		FROM household_autopay_profiles WHERE ($1::text = '' OR org_id = NULLIF($1::text, '')::uuid)`, orgID)
 	if err != nil {
 		return nil, fmt.Errorf("billing: load household_autopay_profiles: %w", err)
 	}
@@ -374,7 +399,7 @@ func (r *Repository) LoadHouseholdAutopayProfiles(ctx context.Context) ([]*House
 
 // ─── Batch load ───────────────────────────────────────────────────────────────
 
-func (r *Repository) LoadAll(ctx context.Context) (
+func (r *Repository) LoadAll(ctx context.Context, orgID string) (
 	invoices []*Invoice,
 	items []*InvoiceItem,
 	payments []*Payment,
@@ -383,21 +408,21 @@ func (r *Repository) LoadAll(ctx context.Context) (
 	autopayProfiles []*HouseholdAutopayProfile,
 	err error,
 ) {
-	if invoices, err = r.LoadInvoices(ctx); err != nil {
+	if invoices, err = r.LoadInvoices(ctx, orgID); err != nil {
 		return
 	}
-	if items, err = r.LoadInvoiceItems(ctx); err != nil {
+	if items, err = r.LoadInvoiceItems(ctx, orgID); err != nil {
 		return
 	}
-	if payments, err = r.LoadPayments(ctx); err != nil {
+	if payments, err = r.LoadPayments(ctx, orgID); err != nil {
 		return
 	}
-	if refunds, err = r.LoadRefunds(ctx); err != nil {
+	if refunds, err = r.LoadRefunds(ctx, orgID); err != nil {
 		return
 	}
-	if ledger, err = r.LoadLedgerEvents(ctx); err != nil {
+	if ledger, err = r.LoadLedgerEvents(ctx, orgID); err != nil {
 		return
 	}
-	autopayProfiles, err = r.LoadHouseholdAutopayProfiles(ctx)
+	autopayProfiles, err = r.LoadHouseholdAutopayProfiles(ctx, orgID)
 	return
 }

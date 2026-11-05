@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"strings"
 
+	chimiddleware "github.com/go-chi/chi/v5/middleware"
 	"github.com/luryann/aquify/server/internal/app/billing"
 	"github.com/luryann/aquify/server/internal/app/comms"
 	"github.com/luryann/aquify/server/internal/app/compliance"
@@ -16,7 +17,6 @@ import (
 	"github.com/luryann/aquify/server/internal/app/performance"
 	"github.com/luryann/aquify/server/internal/app/reports"
 	"github.com/luryann/aquify/server/internal/runtimepersist"
-	chimiddleware "github.com/go-chi/chi/v5/middleware"
 )
 
 type runtimeSnapshotter interface {

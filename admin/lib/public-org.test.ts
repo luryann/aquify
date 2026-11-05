@@ -99,3 +99,27 @@ test('resolvePublicOrg returns none when no club context is resolvable', () => {
   assert.equal(resolved.orgId, '')
   assert.equal(resolved.source, 'none')
 })
+
+test('resolvePublicOrg ignores a raw org_id query parameter in a production build', () => {
+  const resolved = resolvePublicOrg({
+    searchParams: new URLSearchParams('org_id=00000000-0000-0000-0000-00000000dead'),
+    host: 'portal.example.com',
+    config: { production: true },
+  })
+
+  assert.equal(resolved.orgId, '')
+  assert.equal(resolved.source, 'none')
+})
+
+test('resolvePublicOrg ignores inherited prototype keys in club code and host lookups', () => {
+  for (const code of ['constructor', '__proto__', 'toString']) {
+    const resolved = resolvePublicOrg({
+      searchParams: new URLSearchParams(`club_code=${code}`),
+      host: 'constructor',
+      config: { clubCodeOrgMap: { AQUIFY2026: 'org-aquify' }, hostOrgMap: {}, production: true },
+    })
+    assert.equal(typeof resolved.orgId, 'string')
+    assert.notEqual(resolved.source, 'query_club_code')
+    assert.notEqual(resolved.source, 'host')
+  }
+})

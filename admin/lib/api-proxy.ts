@@ -1,3 +1,5 @@
+import { apiInternalOrigin } from '@/lib/api-origin'
+
 // Resolve the internal upstream on each request so one standalone image can be
 // promoted between environments without baking a container address into routes.
 const hopByHopHeaders = [
@@ -15,7 +17,12 @@ function proxyHeaders(source: Headers): Headers {
 }
 
 export async function proxyAPIRequest(request: Request): Promise<Response> {
-  const origin = process.env.API_INTERNAL_URL ?? process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8080'
+  let origin: string
+  try {
+    origin = apiInternalOrigin()
+  } catch {
+    return Response.json({ error: { code: 'api_not_configured', message: 'API upstream is not configured.' } }, { status: 503 })
+  }
   const incoming = new URL(request.url)
   const target = new URL(origin)
   target.pathname = incoming.pathname

@@ -106,11 +106,17 @@ function SwimmerPanel({
   data,
   onClose,
   onRefreshTable,
+  onEntryApproved,
+  lockBlocked,
   meetCounts,
 }: {
   data: SwimmerPanelData
   onClose: () => void
   onRefreshTable: () => void
+  /** Called after an entry is approved so the parent can drop its cached copy. */
+  onEntryApproved?: (meetId: string) => void
+  /** True when this meet's commitment list failed to load, so lock counts would be wrong. */
+  lockBlocked?: boolean
   /** Commitment statuses for this meet, used to describe what lock-all will do. */
   meetCounts: { total: number; lockable: number }
 }) {
@@ -193,13 +199,14 @@ function SwimmerPanel({
     try {
       const updated = await approveEntry(api, orgId, meetId, entryId)
       setLocalEntries((prev) => prev.map((e) => e.id === entryId ? { ...e, status: updated.status } : e))
+      onEntryApproved?.(meetId)
       showFeedback('success', 'Entry approved')
     } catch (err) {
       showFeedback('error', uiErrorMessage(err, 'Failed to approve entry'))
     } finally {
       setApprovingEntry((prev) => { const s = new Set(prev); s.delete(entryId); return s })
     }
-  }, [api, orgId, meetId, showFeedback])
+  }, [api, orgId, meetId, showFeedback, onEntryApproved])
 
   // ── Lock all commitments for this meet ───────────────────────────────────────
   const confirm = useConfirm()
@@ -364,7 +371,7 @@ function SwimmerPanel({
                 {sessionGroups.map((group) => (
                   <div key={group.id}>
                     <div className="u-fs-fs-xs u-ff-font-body u-mb-6px" style={{ color: 'var(--text-muted)', paddingLeft: '2px' }}>
-                      {group.id === 'main' ? 'Main Session' : 'Unscheduled'}
+                      {group.id === 'main' ? 'Unscheduled' : 'Session'}
                     </div>
                     <div className="u-gap-4px" style={{ display: 'flex', flexDirection: 'column' }}>
                       {group.events.map((ev) => {
@@ -470,10 +477,11 @@ function SwimmerPanel({
             <Icon name="user" size={13} />
             Swimmer Profile
           </Link>
-          {(row.meetStatus === 'commitment_open' || row.meetStatus === 'commitment_closed') && (
+          {row.meetStatus === 'commitment_open' && (
             <button type="button"
               onClick={handleLock}
-              disabled={locking}
+              disabled={locking || lockBlocked}
+              title={lockBlocked ? 'Some commitments for this meet failed to load. Retry before locking.' : undefined}
               className="u-gap-4px u-p-12px u-fs-fs-base u-fw-600" style={{ flex: 1, minWidth: '140px', display: 'flex', alignItems: 'center', justifyContent: 'center', background: locking ? 'var(--bg-elevated)' : 'var(--accent)', border: 'none', borderRadius: '8px', color: locking ? 'var(--text-muted)' : '#fff', cursor: locking ? 'wait' : 'pointer', transition: 'all 0.15s' }}
             >
               <Icon name="shield-check" size={13} />
@@ -519,6 +527,8 @@ function CommitmentsPageContent() {
   const [allSwimmersMap, setAllSwimmersMap] = useState<Map<string, SwimmerRecord>>(new Map())
   const [meetEventsCache, setMeetEventsCache] = useState<Map<string, MeetEventRecord[]>>(new Map())
   const [meetEntriesCache, setMeetEntriesCache] = useState<Map<string, Map<string, EntryRecord[]>>>(new Map())
+  const [failedMeets, setFailedMeets] = useState<{ id: string; name: string }[]>([])
+  const [panelError, setPanelError] = useState<string | null>(null)
   const openPanelLoadId = useRef(0) // monotonic counter to discard stale concurrent opens
 
   useEffect(() => {
@@ -541,9 +551,13 @@ function CommitmentsPageContent() {
         setAllSwimmersMap(swimmerMap)
 
         const relevantMeets = allMeets.filter((m) => COMMITMENT_STATUSES.has(m.status))
+        const failed: { id: string; name: string }[] = []
         const commitmentResults = await Promise.all(
           relevantMeets.map((m) =>
-            fetchMeetCommitments(api, orgId, m.id).catch(() => [] as CommitmentRecord[])
+            fetchMeetCommitments(api, orgId, m.id).catch(() => {
+              failed.push({ id: m.id, name: m.name })
+              return [] as CommitmentRecord[]
+            })
           )
         )
 
@@ -570,7 +584,10 @@ function CommitmentsPageContent() {
           }
         }
 
-        if (!cancelled) setRows(combined)
+        if (!cancelled) {
+          setRows(combined)
+          setFailedMeets(failed)
+        }
       } catch (err) {
         if (!cancelled) setError(uiErrorMessage(err, 'Commitments couldn’t be loaded. Check your connection and try again.'))
       } finally {
@@ -591,24 +608,35 @@ function CommitmentsPageContent() {
     setPanelLoading(true)
     setPanelData(null)
 
-    const [events, swimmerEntriesMap] = await Promise.all([
-      meetEventsCache.get(row.meetId)
-        ?? fetchMeetEvents(api, orgId, row.meetId).catch(() => [] as MeetEventRecord[]).then((fetched) => {
-          setMeetEventsCache((prev) => new Map(prev).set(row.meetId, fetched))
-          return fetched
-        }),
-      meetEntriesCache.get(row.meetId)
-        ?? fetchMeetEntries(api, orgId, row.meetId).catch(() => [] as EntryRecord[]).then((allEntries) => {
-          const bySwimmer = new Map<string, EntryRecord[]>()
-          for (const e of allEntries) {
-            const bucket = bySwimmer.get(e.swimmer_id) ?? []
-            bucket.push(e)
-            bySwimmer.set(e.swimmer_id, bucket)
-          }
-          setMeetEntriesCache((prev) => new Map(prev).set(row.meetId, bySwimmer))
-          return bySwimmer
-        }),
-    ])
+    setPanelError(null)
+    let events: MeetEventRecord[]
+    let swimmerEntriesMap: Map<string, EntryRecord[]>
+    try {
+      ;[events, swimmerEntriesMap] = await Promise.all([
+        meetEventsCache.get(row.meetId)
+          ?? fetchMeetEvents(api, orgId, row.meetId).then((fetched) => {
+            setMeetEventsCache((prev) => new Map(prev).set(row.meetId, fetched))
+            return fetched
+          }),
+        meetEntriesCache.get(row.meetId)
+          ?? fetchMeetEntries(api, orgId, row.meetId).then((allEntries) => {
+            const bySwimmer = new Map<string, EntryRecord[]>()
+            for (const e of allEntries) {
+              const bucket = bySwimmer.get(e.swimmer_id) ?? []
+              bucket.push(e)
+              bySwimmer.set(e.swimmer_id, bucket)
+            }
+            setMeetEntriesCache((prev) => new Map(prev).set(row.meetId, bySwimmer))
+            return bySwimmer
+          }),
+      ])
+    } catch (err) {
+      // Failures are never cached, so the next open refetches.
+      if (myLoadId !== openPanelLoadId.current) return
+      setPanelLoading(false)
+      setPanelError(uiErrorMessage(err, 'Couldn’t load this swimmer’s events and entries. Try again.'))
+      return
+    }
     const meetEntriesForSwimmer = swimmerEntriesMap.get(row.swimmerId) ?? []
 
     if (myLoadId !== openPanelLoadId.current) return // stale — a newer open superseded us
@@ -841,6 +869,19 @@ function CommitmentsPageContent() {
         </select>
       </div>
 
+      {failedMeets.length > 0 && !loading && (
+        <div className="card u-p-16px-16px u-mb-16px row row-between" role="alert" style={{ borderColor: 'var(--warning)' }}>
+          <p className="u-fs-fs-base u-m-0">Couldn’t load commitments for: {failedMeets.map((f) => f.name).join(', ')}. Counts may be incomplete.</p>
+          <button type="button" className="btn btn-secondary btn-sm" onClick={() => setRefreshKey((k) => k + 1)}>Retry</button>
+        </div>
+      )}
+      {panelError && (
+        <div className="card u-p-16px-16px u-mb-16px row row-between" role="alert" style={{ borderColor: 'var(--error-border)', background: 'var(--error-bg)' }}>
+          <p className="u-fs-fs-base u-m-0" style={{ color: 'var(--error)' }}>{panelError}</p>
+          <button type="button" className="btn btn-secondary btn-sm" onClick={() => setPanelError(null)}>Dismiss</button>
+        </div>
+      )}
+
       {/* Result count */}
       {!loading && (
         <div className="u-fs-fs-sm u-ff-font-body u-mb-12px" style={{ color: 'var(--text-muted)' }}>
@@ -873,10 +914,13 @@ function CommitmentsPageContent() {
             const mine = rows.filter((r) => r.meetId === panelData.row.meetId)
             return { total: mine.length, lockable: mine.filter((r) => r.status === 'committed_yes' || r.status === 'coach_reviewed').length }
           })()}
+          lockBlocked={failedMeets.some((f) => f.id === panelData.row.meetId)}
+          onEntryApproved={(meetId) => setMeetEntriesCache((prev) => { const m = new Map(prev); m.delete(meetId); return m })}
           onRefreshTable={() => {
             // Re-trigger the main data load so commitment statuses update after locking
             setPanelData(null)
             setMeetEntriesCache(new Map())
+            setMeetEventsCache(new Map())
             setRefreshKey((k) => k + 1)
           }}
         />

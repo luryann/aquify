@@ -231,7 +231,7 @@ services:
   keycloak:
     image: quay.io/keycloak/keycloak:26.5
     <<: *always-restart
-    command: start --optimized
+    command: start --import-realm
     env_file:
       - .env.production
     environment:
@@ -244,8 +244,8 @@ services:
       KC_HTTP_PORT: "8081"
       KC_PROXY: edge
       KC_LOG_LEVEL: WARN
-      KEYCLOAK_ADMIN: ${KEYCLOAK_ADMIN_USER:-admin}
-      KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD}
+      KC_BOOTSTRAP_ADMIN_USERNAME: ${KEYCLOAK_ADMIN_USER:-admin}
+      KC_BOOTSTRAP_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD}
     ports:
       - "127.0.0.1:8081:8081"
     depends_on:

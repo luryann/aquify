@@ -3,6 +3,7 @@ package jobhandlers
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"time"
@@ -65,7 +66,18 @@ func BillingReconcileHandler(logger *slog.Logger, billingService *billing.Servic
 			"triggered_by", p.TriggeredBy,
 		)
 
-		stripeTotalCents, err := stripeClient.FetchBalanceCents(ctx)
+		stripeAccount, err := billingService.StripeAccountFor(p.OrgID)
+		if err != nil {
+			if errors.Is(err, billing.ErrPaymentAccountNotConnected) {
+				// Nothing to reconcile yet; retrying cannot help and the platform balance must not be used.
+				logger.Info("billing reconcile: skipped, club has no connected payment account", "org_id", p.OrgID)
+				return nil
+			}
+			span.RecordError(err)
+			span.SetStatus(codes.Error, "stripe account lookup failed")
+			return fmt.Errorf("billing reconcile: resolve stripe account: %w", err)
+		}
+		stripeTotalCents, err := stripeClient.FetchBalanceCents(ctx, stripeAccount)
 		if err != nil {
 			span.RecordError(err)
 			span.SetStatus(codes.Error, "stripe balance fetch failed")
@@ -172,7 +184,11 @@ func validateBillingIntegrity(ctx context.Context, billingService *billing.Servi
 		if invoice.TotalCents != invoice.SubtotalCents+invoice.TaxCents {
 			return fmt.Errorf("nightly integrity: invoice %s total mismatch", invoice.ID)
 		}
-		if invoice.AmountDueCents != invoice.TotalCents-invoice.AmountPaidCents {
+		if invoice.Status == "written_off" {
+			if invoice.AmountDueCents != 0 {
+				return fmt.Errorf("nightly integrity: invoice %s written off with nonzero balance", invoice.ID)
+			}
+		} else if invoice.AmountDueCents != invoice.TotalCents-invoice.AmountPaidCents {
 			return fmt.Errorf("nightly integrity: invoice %s balance mismatch", invoice.ID)
 		}
 	}

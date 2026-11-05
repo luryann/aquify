@@ -6,6 +6,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"strings"
 	"testing"
 
 	"github.com/luryann/aquify/server/internal/app/audit"
@@ -16,7 +17,8 @@ import (
 
 func issueStep30FToken(t *testing.T, router http.Handler, userID, orgID string, roles []string) string {
 	t.Helper()
-	return issueSession(t, router, sessionSpec{UserID: userID, OrgID: orgID, Roles: roles})
+	// MFA-elevated: approving a staff role requires a step-up session.
+	return issueSession(t, router, sessionSpec{UserID: userID, OrgID: orgID, Roles: roles, MFA: true})
 }
 
 // ─── POST /api/v1/register (public self-registration) ─────────────────────────
@@ -63,7 +65,9 @@ func TestSelfRegister_Success(t *testing.T) {
 	}
 }
 
-func TestSelfRegister_DuplicateEmail_Returns409(t *testing.T) {
+// A duplicate email must be indistinguishable from a new registration on this
+// unauthenticated route (no account-existence oracle).
+func TestSelfRegister_DuplicateEmail_LooksLikeSuccess(t *testing.T) {
 	kc := keycloak.NewStubClient()
 	kc.AddUser(keycloak.User{
 		ID:    "existing-user",
@@ -77,8 +81,11 @@ func TestSelfRegister_DuplicateEmail_Returns409(t *testing.T) {
 	body := `{"first_name":"Jane","last_name":"Doe","email":"jane@example.com","org_id":"org-1"}`
 	rr := doRequest(router, http.MethodPost, "/api/v1/register", "", body, "")
 
-	if rr.Code != http.StatusConflict {
-		t.Fatalf("want 409, got %d: %s", rr.Code, rr.Body.String())
+	if rr.Code != http.StatusCreated || !strings.Contains(rr.Body.String(), "pending_approval") {
+		t.Fatalf("want 201 pending_approval, got %d: %s", rr.Code, rr.Body.String())
+	}
+	if _, err := kc.GetUser(context.Background(), "existing-user"); err != nil {
+		t.Fatalf("existing user must be untouched: %v", err)
 	}
 }
 

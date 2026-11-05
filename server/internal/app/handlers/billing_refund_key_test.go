@@ -6,10 +6,10 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/go-chi/chi/v5"
 	"github.com/luryann/aquify/server/internal/app/billing"
 	appmiddleware "github.com/luryann/aquify/server/internal/app/middleware"
 	stripelib "github.com/luryann/aquify/server/internal/stripe"
-	"github.com/go-chi/chi/v5"
 )
 
 type fixedPrincipalResolver struct{ p *appmiddleware.Principal }

@@ -126,6 +126,9 @@ func todayUTC() time.Time {
 
 // ListGoals returns a swimmer's goals with progress.
 func (s *Service) ListGoals(orgID string, principal *appmiddleware.Principal, swimmerID string, includeArchived bool) ([]GoalProgress, error) {
+	if err := s.ensureOrg(orgID); err != nil {
+		return nil, err
+	}
 	if err := s.requireGoalAccess(principal, orgID, swimmerID); err != nil {
 		return nil, err
 	}
@@ -145,6 +148,9 @@ func (s *Service) ListGoals(orgID string, principal *appmiddleware.Principal, sw
 
 // ListOrgGoals returns goals across swimmers (staff: all; families: own household).
 func (s *Service) ListOrgGoals(orgID string, principal *appmiddleware.Principal, swimmerID string) ([]GoalProgress, error) {
+	if err := s.ensureOrg(orgID); err != nil {
+		return nil, err
+	}
 	if err := s.requireReadAccess(principal); err != nil {
 		return nil, err
 	}
@@ -197,6 +203,9 @@ func (s *Service) activeGoalCountLocked(orgID, swimmerID string) int {
 
 // CreateGoal adds a goal for a swimmer.
 func (s *Service) CreateGoal(orgID, actorID string, principal *appmiddleware.Principal, swimmerID string, input GoalInput) (*GoalProgress, error) {
+	if err := s.ensureOrg(orgID); err != nil {
+		return nil, err
+	}
 	if err := s.requireGoalAccess(principal, orgID, swimmerID); err != nil {
 		return nil, err
 	}
@@ -251,6 +260,9 @@ func (s *Service) CreateGoal(orgID, actorID string, principal *appmiddleware.Pri
 
 // UpdateGoal patches a goal.
 func (s *Service) UpdateGoal(orgID, actorID string, principal *appmiddleware.Principal, swimmerID, goalID string, input UpdateGoalInput) (*GoalProgress, error) {
+	if err := s.ensureOrg(orgID); err != nil {
+		return nil, err
+	}
 	if err := s.requireGoalAccess(principal, orgID, swimmerID); err != nil {
 		return nil, err
 	}
@@ -305,6 +317,9 @@ func (s *Service) UpdateGoal(orgID, actorID string, principal *appmiddleware.Pri
 
 // DeleteGoal removes a goal.
 func (s *Service) DeleteGoal(orgID, actorID string, principal *appmiddleware.Principal, swimmerID, goalID string) error {
+	if err := s.ensureOrg(orgID); err != nil {
+		return err
+	}
 	if err := s.requireGoalAccess(principal, orgID, swimmerID); err != nil {
 		return err
 	}

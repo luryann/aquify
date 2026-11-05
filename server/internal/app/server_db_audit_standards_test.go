@@ -12,7 +12,7 @@ import (
 func TestDBAuditQueryReadsFromPostgres(t *testing.T) {
 	pool := openTestPool(t)
 	_ = testutil.RequireDBHarness(t)
-	const org = "audit-db-test-org"
+	const org = "00000000-0000-0000-0000-0000000a0d17"
 	ctx := context.Background()
 	_, _ = pool.Exec(ctx, `ALTER TABLE audit_events DISABLE TRIGGER USER`)
 	_, _ = pool.Exec(ctx, `DELETE FROM audit_events WHERE org_id = $1`, org)

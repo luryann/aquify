@@ -169,7 +169,7 @@ func (s *Service) CreatePhase(orgID string, season SeasonWindow, in PhaseInput, 
 // GetPhase returns one phase (org-scoped).
 func (s *Service) GetPhase(orgID, id string) (*PlanPhase, error) {
 	if s.repo != nil {
-		return getPhase(context.Background(), s.repo.pool, orgID, id)
+		return getPhase(context.Background(), s.repo.at(orgID), orgID, id)
 	}
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -324,6 +324,9 @@ func (s *Service) SeasonPlan(orgID string, season SeasonWindow, groupFilter stri
 	planned := map[key]int{}
 	counts := map[key]int{}
 	for _, p := range practices {
+		if p.Type == "rest" {
+			continue
+		}
 		k := key{WeekStart(p.Date), canon(p.GroupID)}
 		planned[k] += PlannedYards(p, workouts[p.WorkoutID])
 		counts[k]++

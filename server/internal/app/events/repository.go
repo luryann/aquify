@@ -4,13 +4,14 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/luryann/aquify/server/internal/tenantdb"
 	"time"
 
-	"github.com/luryann/aquify/server/internal/dbutil"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/luryann/aquify/server/internal/dbutil"
 )
 
 // Repository persists club events, RSVPs and calendar feed tokens. Postgres
@@ -57,9 +58,13 @@ func scanEvent(row pgx.Row) (*Event, error) {
 	return e, nil
 }
 
+// at returns a handle whose statements bind the org to the database session so
+// row-level security applies (internal/tenantdb).
+func (r *Repository) at(orgID string) tenantdb.Scoped { return tenantdb.Pool{P: r.pool}.For(orgID) }
+
 // UpsertEvent inserts or replaces an event row.
 func (r *Repository) UpsertEvent(ctx context.Context, e *Event) error {
-	return upsertEvent(ctx, r.pool, e)
+	return upsertEvent(ctx, r.at(e.OrgID), e)
 }
 
 type execer interface {
@@ -110,7 +115,7 @@ func (r *Repository) GetEvent(ctx context.Context, orgID, id string) (*Event, er
 	if _, err := parseUUID(id); err != nil {
 		return nil, ErrNotFound
 	}
-	e, err := scanEvent(r.pool.QueryRow(ctx, `SELECT `+eventColumns+` FROM club_events WHERE id = $1::uuid AND org_id = $2`, id, orgID))
+	e, err := scanEvent(r.at(orgID).QueryRow(ctx, `SELECT `+eventColumns+` FROM club_events WHERE id = $1::uuid AND org_id = $2`, id, orgID))
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, ErrNotFound
@@ -122,7 +127,7 @@ func (r *Repository) GetEvent(ctx context.Context, orgID, id string) (*Event, er
 
 // ListEvents loads all events for an org.
 func (r *Repository) ListEvents(ctx context.Context, orgID string) ([]*Event, error) {
-	rows, err := r.pool.Query(ctx, `SELECT `+eventColumns+` FROM club_events WHERE org_id = $1 ORDER BY starts_at, id`, orgID)
+	rows, err := r.at(orgID).Query(ctx, `SELECT `+eventColumns+` FROM club_events WHERE org_id = $1 ORDER BY starts_at, id`, orgID)
 	if err != nil {
 		return nil, fmt.Errorf("club events: list events: %w", err)
 	}
@@ -159,7 +164,7 @@ func (r *Repository) lockEventTx(ctx context.Context, tx pgx.Tx, orgID, id strin
 // event, the RSVPs seen under the lock and the stored event.
 // (Postgres path; not covered by in-memory tests.)
 func (r *Repository) UpdateEventTx(ctx context.Context, orgID, id string, build func(existing *Event, rsvps []*RSVP) (*Event, error)) (*Event, []*RSVP, *Event, error) {
-	tx, err := r.pool.Begin(ctx)
+	tx, err := r.at(orgID).Begin(ctx)
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("club events: begin update tx: %w", err)
 	}
@@ -184,7 +189,7 @@ func (r *Repository) UpdateEventTx(ctx context.Context, orgID, id string, build 
 // DeleteEventTx locks and deletes an event, returning the RSVPs removed with it.
 // (Postgres path; not covered by in-memory tests.)
 func (r *Repository) DeleteEventTx(ctx context.Context, orgID, id string) ([]*RSVP, error) {
-	tx, err := r.pool.Begin(ctx)
+	tx, err := r.at(orgID).Begin(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("club events: begin delete tx: %w", err)
 	}
@@ -207,7 +212,7 @@ func (r *Repository) DeleteEvent(ctx context.Context, orgID, id string) error {
 	if _, err := parseUUID(id); err != nil {
 		return ErrNotFound
 	}
-	tag, err := r.pool.Exec(ctx, `DELETE FROM club_events WHERE id = $1::uuid AND org_id = $2`, id, orgID)
+	tag, err := r.at(orgID).Exec(ctx, `DELETE FROM club_events WHERE id = $1::uuid AND org_id = $2`, id, orgID)
 	if err != nil {
 		return fmt.Errorf("club events: delete event: %w", err)
 	}
@@ -238,7 +243,7 @@ func (r *Repository) ListRSVPs(ctx context.Context, orgID, eventID string) ([]*R
 	if _, err := parseUUID(eventID); err != nil {
 		return []*RSVP{}, nil
 	}
-	rows, err := r.pool.Query(ctx, `SELECT `+rsvpColumns+` FROM club_event_rsvps
+	rows, err := r.at(orgID).Query(ctx, `SELECT `+rsvpColumns+` FROM club_event_rsvps
 		WHERE org_id = $1 AND event_id = $2::uuid ORDER BY household_id, swimmer_id`, orgID, eventID)
 	if err != nil {
 		return nil, fmt.Errorf("club events: list rsvps: %w", err)
@@ -248,7 +253,7 @@ func (r *Repository) ListRSVPs(ctx context.Context, orgID, eventID string) ([]*R
 
 // ListRSVPsForEvents loads RSVPs for several events.
 func (r *Repository) ListRSVPsForEvents(ctx context.Context, orgID string, eventIDs []string) ([]*RSVP, error) {
-	rows, err := r.pool.Query(ctx, `SELECT `+rsvpColumns+` FROM club_event_rsvps
+	rows, err := r.at(orgID).Query(ctx, `SELECT `+rsvpColumns+` FROM club_event_rsvps
 		WHERE org_id = $1 AND event_id::text = ANY($2) ORDER BY household_id, swimmer_id`, orgID, eventIDs)
 	if err != nil {
 		return nil, fmt.Errorf("club events: list rsvps: %w", err)
@@ -258,18 +263,20 @@ func (r *Repository) ListRSVPsForEvents(ctx context.Context, orgID string, event
 
 // RespondTx upserts an RSVP inside a transaction that locks the event row,
 // so concurrent responses cannot oversubscribe capacity.
-func (r *Repository) RespondTx(ctx context.Context, orgID, eventID, householdID, swimmerID string, build func(existing *RSVP, othersYes int) (*RSVP, error)) (*RSVP, error) {
+func (r *Repository) RespondTx(ctx context.Context, orgID, eventID, householdID, swimmerID string, build func(ev *Event, existing *RSVP, othersYes int) (*RSVP, error)) (*RSVP, error) {
 	if _, err := parseUUID(eventID); err != nil {
 		return nil, ErrNotFound
 	}
-	tx, err := r.pool.Begin(ctx)
+	tx, err := r.at(orgID).Begin(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("club events: begin rsvp tx: %w", err)
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 
-	var locked string
-	if err := tx.QueryRow(ctx, `SELECT id::text FROM club_events WHERE id = $1::uuid AND org_id = $2 FOR UPDATE`, eventID, orgID).Scan(&locked); err != nil {
+	// Lock and read the event row so validation uses the committed state, not a
+	// snapshot read before the lock (another instance may have edited it).
+	ev, err := scanEvent(tx.QueryRow(ctx, `SELECT `+eventColumns+` FROM club_events WHERE id = $1::uuid AND org_id = $2 FOR UPDATE`, eventID, orgID))
+	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, ErrNotFound
 		}
@@ -289,7 +296,7 @@ func (r *Repository) RespondTx(ctx context.Context, orgID, eventID, householdID,
 		eventID, householdID, swimmerID).Scan(&othersYes); err != nil {
 		return nil, fmt.Errorf("club events: sum headcount: %w", err)
 	}
-	next, err := build(existing, othersYes)
+	next, err := build(ev, existing, othersYes)
 	if err != nil {
 		return nil, err
 	}
@@ -314,7 +321,7 @@ func (r *Repository) RespondTx(ctx context.Context, orgID, eventID, householdID,
 
 // UpdateRSVPBilling records the fee invoice linked to an RSVP.
 func (r *Repository) UpdateRSVPBilling(ctx context.Context, orgID, rsvpID, invoiceID string, qty int) error {
-	_, err := r.pool.Exec(ctx, `UPDATE club_event_rsvps SET invoice_id = $3, billed_quantity = $4
+	_, err := r.at(orgID).Exec(ctx, `UPDATE club_event_rsvps SET invoice_id = $3, billed_quantity = $4
 		WHERE id = $1::uuid AND org_id = $2`, rsvpID, orgID, invoiceID, qty)
 	if err != nil {
 		return fmt.Errorf("club events: update rsvp billing: %w", err)
@@ -336,11 +343,16 @@ func scanToken(row pgx.Row) (*FeedToken, error) {
 
 // RotateFeedToken revokes the live token (if any) and inserts tok atomically.
 func (r *Repository) RotateFeedToken(ctx context.Context, tok *FeedToken, now time.Time) error {
-	tx, err := r.pool.Begin(ctx)
+	tx, err := r.at(tok.OrgID).Begin(ctx)
 	if err != nil {
 		return fmt.Errorf("club events: begin token tx: %w", err)
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
+	// Serialise concurrent rotations per household so the second waits for the
+	// first to commit and then revokes it, instead of tripping the unique live-token index.
+	if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtextextended($1::text || ':' || $2::text, 0))`, tok.OrgID, tok.HouseholdID); err != nil {
+		return fmt.Errorf("club events: lock token rotation: %w", err)
+	}
 	if _, err := tx.Exec(ctx, `UPDATE calendar_feed_tokens SET revoked_at = $3
 		WHERE org_id = $1 AND household_id = $2 AND revoked_at IS NULL`, tok.OrgID, tok.HouseholdID, now); err != nil {
 		return fmt.Errorf("club events: revoke token: %w", err)
@@ -354,7 +366,7 @@ func (r *Repository) RotateFeedToken(ctx context.Context, tok *FeedToken, now ti
 
 // ActiveFeedToken returns the household's live token or nil.
 func (r *Repository) ActiveFeedToken(ctx context.Context, orgID, householdID string) (*FeedToken, error) {
-	t, err := scanToken(r.pool.QueryRow(ctx, `SELECT `+tokenColumns+` FROM calendar_feed_tokens
+	t, err := scanToken(r.at(orgID).QueryRow(ctx, `SELECT `+tokenColumns+` FROM calendar_feed_tokens
 		WHERE org_id = $1 AND household_id = $2 AND revoked_at IS NULL`, orgID, householdID))
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -367,7 +379,7 @@ func (r *Repository) ActiveFeedToken(ctx context.Context, orgID, householdID str
 
 // RevokeFeedToken revokes the household's live token.
 func (r *Repository) RevokeFeedToken(ctx context.Context, orgID, householdID string, now time.Time) error {
-	tag, err := r.pool.Exec(ctx, `UPDATE calendar_feed_tokens SET revoked_at = $3
+	tag, err := r.at(orgID).Exec(ctx, `UPDATE calendar_feed_tokens SET revoked_at = $3
 		WHERE org_id = $1 AND household_id = $2 AND revoked_at IS NULL`, orgID, householdID, now)
 	if err != nil {
 		return fmt.Errorf("club events: revoke token: %w", err)
@@ -381,7 +393,8 @@ func (r *Repository) RevokeFeedToken(ctx context.Context, orgID, householdID str
 // ResolveFeedToken loads a live token by hash and stamps last_used_at
 // (at most once a minute, to keep calendar-client polling cheap).
 func (r *Repository) ResolveFeedToken(ctx context.Context, hash string, now time.Time) (*FeedToken, error) {
-	t, err := scanToken(r.pool.QueryRow(ctx, `SELECT `+tokenColumns+` FROM calendar_feed_tokens
+	// No org is known yet: bind the token hash (policy feed_token_lookup exposes only that row).
+	t, err := scanToken(tenantdb.Pool{P: r.pool}.ForLookup(tenantdb.LookupFeedTokenHash, hash).QueryRow(ctx, `SELECT `+tokenColumns+` FROM calendar_feed_tokens
 		WHERE token_hash = $1 AND revoked_at IS NULL`, hash))
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -390,7 +403,7 @@ func (r *Repository) ResolveFeedToken(ctx context.Context, hash string, now time
 		return nil, fmt.Errorf("club events: resolve token: %w", err)
 	}
 	if t.LastUsedAt == nil || now.Sub(*t.LastUsedAt) > time.Minute {
-		_, _ = r.pool.Exec(ctx, `UPDATE calendar_feed_tokens SET last_used_at = $2 WHERE id = $1::uuid`, t.ID, now)
+		_, _ = r.at(t.OrgID).Exec(ctx, `UPDATE calendar_feed_tokens SET last_used_at = $2 WHERE id = $1::uuid AND org_id = $3::uuid`, t.ID, now, t.OrgID)
 		t.LastUsedAt = &now
 	}
 	return t, nil
@@ -398,4 +411,16 @@ func (r *Repository) ResolveFeedToken(ctx context.Context, hash string, now time
 
 func parseUUID(id string) (uuid.UUID, error) {
 	return uuid.Parse(id)
+}
+
+// EraseHousehold deletes a household's RSVPs (notes, swimmer links) and feed tokens.
+func (r *Repository) EraseHousehold(ctx context.Context, orgID, householdID string) (int, error) {
+	tag, err := r.at(orgID).Exec(ctx, `DELETE FROM club_event_rsvps WHERE org_id = $1 AND household_id = $2`, orgID, householdID)
+	if err != nil {
+		return 0, fmt.Errorf("club events: erase rsvps: %w", err)
+	}
+	if _, err := r.at(orgID).Exec(ctx, `DELETE FROM calendar_feed_tokens WHERE org_id = $1 AND household_id = $2`, orgID, householdID); err != nil {
+		return 0, fmt.Errorf("club events: erase feed tokens: %w", err)
+	}
+	return int(tag.RowsAffected()), nil
 }

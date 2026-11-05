@@ -4,8 +4,8 @@ import (
 	"os"
 	"strings"
 
-	"github.com/luryann/aquify/server/internal/app/usaswimming"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/luryann/aquify/server/internal/app/usaswimming"
 )
 
 // resolveUSASwimming builds the integration service. The API key cipher comes

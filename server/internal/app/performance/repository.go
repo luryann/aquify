@@ -5,19 +5,35 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/luryann/aquify/server/internal/dbutil"
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/luryann/aquify/server/internal/dbutil"
+	"github.com/luryann/aquify/server/internal/tenantdb"
 )
 
 // Repository handles DB persistence for the performance domain.
 type Repository struct {
 	pool *pgxpool.Pool
+	// writer names this process in the change counters, so its own writes are not "foreign".
+	writer string
 }
 
 func newRepository(pool *pgxpool.Pool) *Repository {
-	return &Repository{pool: pool}
+	return &Repository{pool: pool, writer: uuid.NewString()}
+}
+
+// at binds orgID to every statement so row-level security on the performance tables
+// applies. An empty org sees nothing.
+func (r *Repository) at(orgID string) tenantdb.Scoped {
+	return tenantdb.Pool{P: r.pool, Writer: r.writer}.For(orgID)
+}
+
+// ForeignWrites counts the performance changes other processes have committed for a club
+// (the change counters in org_data_versions; this process's own writes are excluded).
+func (r *Repository) ForeignWrites(ctx context.Context, orgID string) (int64, error) {
+	return tenantdb.Pool{P: r.pool, Writer: r.writer}.ForeignWrites(ctx, orgID, "performance")
 }
 
 // ─── Results ─────────────────────────────────────────────────────────────────
@@ -40,7 +56,7 @@ func (r *Repository) UpsertResult(ctx context.Context, res *Result) error {
 	if res.Place != nil {
 		place = *res.Place
 	}
-	_, err := r.pool.Exec(ctx, `
+	_, err := r.at(res.OrgID).Exec(ctx, `
 		INSERT INTO results (id, org_id, swimmer_id, meet_id, distance, stroke, course, gender,
 		                     fin_time_ms, is_official, status, heat, lane, place, dq, dq_code, dq_note, created_at, updated_at,
 		                     meet_event_id, event_number, seed_time_ms)
@@ -74,7 +90,7 @@ func (r *Repository) UpsertResult(ctx context.Context, res *Result) error {
 // DeleteResult hard-deletes a result (splits cascade). It compensates a
 // partially failed UpsertResultWithRecords.
 func (r *Repository) DeleteResult(ctx context.Context, orgID, id string) error {
-	_, err := r.pool.Exec(ctx, `DELETE FROM results WHERE id = $1::uuid AND org_id = $2`, id, orgID)
+	_, err := r.at(orgID).Exec(ctx, `DELETE FROM results WHERE id = $1::uuid AND org_id = $2`, id, orgID)
 	return err
 }
 
@@ -83,7 +99,7 @@ func (r *Repository) UpsertSplits(ctx context.Context, splits []*Split) error {
 	if len(splits) == 0 {
 		return nil
 	}
-	tx, err := r.pool.Begin(ctx)
+	tx, err := r.at(splits[0].OrgID).Begin(ctx) // all splits belong to one result, hence one club
 	if err != nil {
 		return err
 	}
@@ -104,15 +120,15 @@ func (r *Repository) UpsertSplits(ctx context.Context, splits []*Split) error {
 	return tx.Commit(ctx)
 }
 
-func (r *Repository) LoadResults(ctx context.Context) ([]*Result, error) {
-	rows, err := r.pool.Query(ctx, `
+func (r *Repository) LoadResults(ctx context.Context, orgID string) ([]*Result, error) {
+	rows, err := r.at(orgID).Query(ctx, `
 		SELECT id::text, org_id::text, swimmer_id::text, COALESCE(meet_id::text, ''),
 		       COALESCE(meet_event_id::text, ''), COALESCE(event_number, ''), seed_time_ms,
 		       distance, stroke, course, gender,
 		       fin_time_ms, is_official, status,
 		       heat, lane, place, dq, COALESCE(dq_code, ''), COALESCE(dq_note, ''),
 		       created_at, updated_at
-		FROM results WHERE deleted_at IS NULL`)
+		FROM results WHERE org_id = $1::uuid AND deleted_at IS NULL`, orgID)
 	if err != nil {
 		return nil, fmt.Errorf("performance: load results: %w", err)
 	}
@@ -146,29 +162,45 @@ func (r *Repository) UpsertBestTime(ctx context.Context, bt *BestTime) error {
 	if bt.BestTimeMs != nil {
 		bestTimeMs = *bt.BestTimeMs
 	}
-	_, err := r.pool.Exec(ctx, `
+	// override_by is a FK to users; resolve it through a subselect so an actor
+	// that is not a users row (dev/test stubs) stores NULL instead of failing.
+	var persistedID string
+	err := r.at(bt.OrgID).QueryRow(ctx, `
 		INSERT INTO best_times (id, org_id, swimmer_id, event_distance, stroke, course,
-		                        best_time_ms, result_id, recorded_at, created_at, updated_at)
-		VALUES ($1::uuid, $2::uuid, $3::uuid, $4, $5, $6, $7, $8, $9, $10, $11)
-		ON CONFLICT (id) DO UPDATE SET
-		  best_time_ms = EXCLUDED.best_time_ms,
-		  result_id    = EXCLUDED.result_id,
-		  recorded_at  = EXCLUDED.recorded_at,
-		  updated_at   = EXCLUDED.updated_at`,
+		                        best_time_ms, result_id, recorded_at, created_at, updated_at,
+		                        is_manual_override, override_reason, override_by)
+		VALUES ($1::uuid, $2::uuid, $3::uuid, $4, $5, $6, $7, $8, $9, $10, $11,
+		        $12, $13, (SELECT id FROM users WHERE id::text = $14::text))
+		ON CONFLICT (org_id, swimmer_id, event_distance, stroke, course) DO UPDATE SET
+		  best_time_ms       = EXCLUDED.best_time_ms,
+		  result_id          = EXCLUDED.result_id,
+		  recorded_at        = EXCLUDED.recorded_at,
+		  updated_at         = EXCLUDED.updated_at,
+		  is_manual_override = EXCLUDED.is_manual_override,
+		  override_reason    = EXCLUDED.override_reason,
+		  override_by        = EXCLUDED.override_by
+		RETURNING id::text`,
 		bt.ID, bt.OrgID, bt.SwimmerID,
 		bt.EventDistance, bt.Stroke, bt.Course,
 		bestTimeMs,
 		dbutil.NullableString(bt.ResultID), bt.RecordedAt,
 		bt.CreatedAt, bt.UpdatedAt,
-	)
-	return err
+		bt.IsManualOverride, dbutil.NullableString(bt.OverrideReason), dbutil.NullableString(bt.OverrideBy),
+	).Scan(&persistedID)
+	if err != nil {
+		return err
+	}
+	// Reconcile the cached id with the row another instance may have created.
+	bt.ID = persistedID
+	return nil
 }
 
-func (r *Repository) LoadBestTimes(ctx context.Context) ([]*BestTime, error) {
-	rows, err := r.pool.Query(ctx, `
+func (r *Repository) LoadBestTimes(ctx context.Context, orgID string) ([]*BestTime, error) {
+	rows, err := r.at(orgID).Query(ctx, `
 		SELECT id::text, org_id::text, swimmer_id::text, event_distance, stroke, course,
-		       best_time_ms, COALESCE(result_id::text, ''), recorded_at, created_at, updated_at
-		FROM best_times`)
+		       best_time_ms, COALESCE(result_id::text, ''), recorded_at, created_at, updated_at,
+		       is_manual_override, COALESCE(override_reason, ''), COALESCE(override_by::text, '')
+		FROM best_times WHERE org_id = $1::uuid`, orgID)
 	if err != nil {
 		return nil, fmt.Errorf("performance: load best_times: %w", err)
 	}
@@ -180,6 +212,7 @@ func (r *Repository) LoadBestTimes(ctx context.Context) ([]*BestTime, error) {
 			&bt.EventDistance, &bt.Stroke, &bt.Course,
 			&bestTimeMs, &bt.ResultID, &bt.RecordedAt,
 			&bt.CreatedAt, &bt.UpdatedAt,
+			&bt.IsManualOverride, &bt.OverrideReason, &bt.OverrideBy,
 		); err != nil {
 			return bt, err
 		}
@@ -191,12 +224,15 @@ func (r *Repository) LoadBestTimes(ctx context.Context) ([]*BestTime, error) {
 // ─── Time Standards ───────────────────────────────────────────────────────────
 
 func (r *Repository) UpsertTimeStandard(ctx context.Context, ts *TimeStandard) error {
-	return r.upsertTimeStandard(ctx, r.pool, ts)
+	return r.upsertTimeStandard(ctx, r.at(ts.OrgID), ts)
 }
 
 // UpsertTimeStandardsTx writes all standards in a single transaction.
 func (r *Repository) UpsertTimeStandardsTx(ctx context.Context, list []*TimeStandard) error {
-	tx, err := r.pool.Begin(ctx)
+	if len(list) == 0 {
+		return nil
+	}
+	tx, err := r.at(list[0].OrgID).Begin(ctx) // one import is one club's standards
 	if err != nil {
 		return err
 	}
@@ -243,7 +279,7 @@ func (r *Repository) upsertTimeStandard(ctx context.Context, db pgExecer, ts *Ti
 
 // SoftDeleteTimeStandard marks a time standard deleted so it is not reloaded.
 func (r *Repository) SoftDeleteTimeStandard(ctx context.Context, orgID, id string, deletedAt time.Time) error {
-	_, err := r.pool.Exec(ctx, `
+	_, err := r.at(orgID).Exec(ctx, `
 		UPDATE time_standards SET deleted_at = $3, updated_at = $3
 		WHERE id = $1::uuid AND org_id = $2::uuid AND deleted_at IS NULL`,
 		id, orgID, deletedAt,
@@ -251,12 +287,12 @@ func (r *Repository) SoftDeleteTimeStandard(ctx context.Context, orgID, id strin
 	return err
 }
 
-func (r *Repository) LoadTimeStandards(ctx context.Context) ([]*TimeStandard, error) {
-	rows, err := r.pool.Query(ctx, `
+func (r *Repository) LoadTimeStandards(ctx context.Context, orgID string) ([]*TimeStandard, error) {
+	rows, err := r.at(orgID).Query(ctx, `
 		SELECT id::text, org_id::text, name, COALESCE(standard_code, ''), COALESCE(description, ''), gender,
 		       age_min, age_max, event_distance, stroke, course, time_ms, season_year,
 		       is_active, created_at, updated_at
-		FROM time_standards WHERE deleted_at IS NULL`)
+		FROM time_standards WHERE org_id = $1::uuid AND deleted_at IS NULL`, orgID)
 	if err != nil {
 		return nil, fmt.Errorf("performance: load time_standards: %w", err)
 	}
@@ -274,18 +310,18 @@ func (r *Repository) LoadTimeStandards(ctx context.Context) ([]*TimeStandard, er
 
 // ─── Batch load ───────────────────────────────────────────────────────────────
 
-func (r *Repository) LoadAll(ctx context.Context) (
+func (r *Repository) LoadOrg(ctx context.Context, orgID string) (
 	results []*Result,
 	bestTimes []*BestTime,
 	standards []*TimeStandard,
 	err error,
 ) {
-	if results, err = r.LoadResults(ctx); err != nil {
+	if results, err = r.LoadResults(ctx, orgID); err != nil {
 		return
 	}
-	if bestTimes, err = r.LoadBestTimes(ctx); err != nil {
+	if bestTimes, err = r.LoadBestTimes(ctx, orgID); err != nil {
 		return
 	}
-	standards, err = r.LoadTimeStandards(ctx)
+	standards, err = r.LoadTimeStandards(ctx, orgID)
 	return
 }

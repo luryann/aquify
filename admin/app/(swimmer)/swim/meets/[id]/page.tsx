@@ -24,7 +24,7 @@ import {
   type BestTimeRecord,
   type ExportRecord,
 } from '@/lib/adminData'
-import { buildSwimmerMeetDetailState } from '@/lib/swimmer-meet-detail-state'
+import { buildSwimmerMeetDetailState, type SwimmerMeetCommitmentView } from '@/lib/swimmer-meet-detail-state'
 import './page.inline.css'
 import { formatMeetFileSize, formatMeetFileType } from '@/lib/meet-files'
 import { formatStroke } from '@/lib/meet-events'
@@ -97,7 +97,7 @@ export default function SwimmerMeetDetailPage() {
   const [filesLoading, setFilesLoading] = useState(true)
   const [filesError, setFilesError] = useState<string | null>(null)
 
-  const [commitment, setCommitment] = useState<'pending' | 'yes' | 'no'>('pending')
+  const [commitment, setCommitment] = useState<SwimmerMeetCommitmentView>('pending')
   const [selectedEvents, setSelectedEvents] = useState<string[]>([])
   const [retryKey, setRetryKey] = useState(0)
   const [noLinkedSwimmer, setNoLinkedSwimmer] = useState(false)
@@ -370,11 +370,11 @@ export default function SwimmerMeetDetailPage() {
               </div>
               <span style={{
                 fontSize: 'var(--fs-xs)', fontWeight: 600, padding: '4px 12px', borderRadius: '999px',
-                color: commitment === 'yes' ? C.accent : commitment === 'no' ? 'var(--error)' : 'var(--warning)',
-                background: commitment === 'yes' ? C.accentDim : commitment === 'no' ? 'var(--error-bg)' : 'var(--warning-bg)',
-                border: `1px solid ${commitment === 'yes' ? C.accentBorder : commitment === 'no' ? 'var(--error-border)' : 'var(--warning-border)'}`,
+                color: commitment === 'yes' || commitment === 'closed' ? C.accent : commitment === 'no' ? 'var(--error)' : 'var(--warning)',
+                background: commitment === 'yes' || commitment === 'closed' ? C.accentDim : commitment === 'no' ? 'var(--error-bg)' : 'var(--warning-bg)',
+                border: `1px solid ${commitment === 'yes' || commitment === 'closed' ? C.accentBorder : commitment === 'no' ? 'var(--error-border)' : 'var(--warning-border)'}`,
               }}>
-                {commitment === 'yes' ? 'Going' : commitment === 'no' ? 'Not going' : 'Waiting for your answer'}
+                {commitment === 'closed' ? 'Confirmed by coach' : commitment === 'yes' ? 'Going' : commitment === 'no' ? 'Not going' : 'Waiting for your answer'}
               </span>
             </div>
             <div style={{ fontSize: 'var(--fs-sm)', color: C.muted, lineHeight: 1.6 }}>

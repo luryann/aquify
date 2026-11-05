@@ -192,7 +192,7 @@ func TestUserMgmt_GetUser_WrongOrg(t *testing.T) {
 func TestUserMgmt_Invite_Success(t *testing.T) {
 	kc := keycloak.NewStubClient()
 	router := newStep30BRouter(t, kc)
-	token := issueStep30BToken(t, router, "admin1", "org-test", []string{"admin"}, false)
+	token := issueStep30BToken(t, router, "admin1", "org-test", []string{"admin"}, true)
 
 	body := `{"first_name":"Bob","last_name":"Smith","email":"bob@example.com","role":"coach"}`
 	rr := doRequest(router, http.MethodPost, "/api/v1/users/invite", token, body, "org-test")

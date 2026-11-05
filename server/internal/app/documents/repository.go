@@ -4,12 +4,13 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/luryann/aquify/server/internal/tenantdb"
 	"log/slog"
 
-	"github.com/luryann/aquify/server/internal/dbutil"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/luryann/aquify/server/internal/dbutil"
 )
 
 // Repository handles DB persistence for the documents domain.
@@ -23,8 +24,11 @@ func newRepository(pool *pgxpool.Pool) *Repository {
 
 // ─── Document Types ───────────────────────────────────────────────────────────
 
+// at binds the org to the database session so row-level security applies.
+func (r *Repository) at(orgID string) tenantdb.Scoped { return tenantdb.Pool{P: r.pool}.For(orgID) }
+
 func (r *Repository) UpsertDocumentType(ctx context.Context, dt *DocumentType) error {
-	_, err := r.pool.Exec(ctx, `
+	_, err := r.at(dt.OrgID).Exec(ctx, `
 		INSERT INTO document_types (id, org_id, name, category, description, is_required,
 		                            applies_to, expiry_months, is_active,
 		                            created_at, updated_at, created_by, updated_by)
@@ -46,11 +50,11 @@ func (r *Repository) UpsertDocumentType(ctx context.Context, dt *DocumentType) e
 	return err
 }
 
-func (r *Repository) SoftDeleteDocumentType(ctx context.Context, typeID, deletedBy string) error {
-	ct, err := r.pool.Exec(ctx, `
+func (r *Repository) SoftDeleteDocumentType(ctx context.Context, orgID, typeID, deletedBy string) error {
+	ct, err := r.at(orgID).Exec(ctx, `
 		UPDATE document_types SET deleted_at = now(), deleted_by = $2
-		WHERE id = $1::uuid AND deleted_at IS NULL`,
-		typeID, deletedBy,
+		WHERE id = $1::uuid AND org_id = $3::uuid AND deleted_at IS NULL`,
+		typeID, deletedBy, orgID,
 	)
 	if err != nil {
 		return err
@@ -62,7 +66,7 @@ func (r *Repository) SoftDeleteDocumentType(ctx context.Context, typeID, deleted
 }
 
 func (r *Repository) LoadDocumentTypes(ctx context.Context, orgID string) ([]*DocumentType, error) {
-	rows, err := r.pool.Query(ctx, `
+	rows, err := r.at(orgID).Query(ctx, `
 		SELECT id::text, org_id::text, name, category,
 		       COALESCE(description, ''), is_required, applies_to,
 		       expiry_months, is_active, created_at, updated_at,
@@ -85,7 +89,7 @@ func (r *Repository) LoadDocumentTypes(ctx context.Context, orgID string) ([]*Do
 // ─── Document Submissions ─────────────────────────────────────────────────────
 
 func (r *Repository) UpsertSubmission(ctx context.Context, sub *DocumentSubmission) error {
-	_, err := r.pool.Exec(ctx, `
+	_, err := r.at(sub.OrgID).Exec(ctx, `
 		INSERT INTO document_submissions (id, org_id, document_type_id, household_id, swimmer_id,
 		                                  status, file_object_key, file_name, file_size_bytes, file_mime,
 		                                  notes, review_notes, submitted_at, verified_at, verified_by,
@@ -122,7 +126,7 @@ func (r *Repository) UpsertSubmission(ctx context.Context, sub *DocumentSubmissi
 }
 
 func (r *Repository) LoadSubmissions(ctx context.Context, orgID string) ([]*DocumentSubmission, error) {
-	rows, err := r.pool.Query(ctx, `
+	rows, err := r.at(orgID).Query(ctx, `
 		SELECT id::text, org_id::text, document_type_id::text, household_id::text,
 		       COALESCE(swimmer_id::text, ''), status,
 		       COALESCE(file_object_key, ''), COALESCE(file_name, ''),
@@ -157,7 +161,7 @@ func (r *Repository) LoadSubmissions(ctx context.Context, orgID string) ([]*Docu
 // queryable). The caller is responsible for purging the returned object
 // keys from object storage.
 func (r *Repository) DeleteSubmissionsByHousehold(ctx context.Context, orgID, householdID string) error {
-	_, err := r.pool.Exec(ctx, `
+	_, err := r.at(orgID).Exec(ctx, `
 		DELETE FROM document_submissions WHERE org_id = $1::uuid AND household_id = $2::uuid`,
 		orgID, householdID,
 	)

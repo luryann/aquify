@@ -12,6 +12,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/go-chi/chi/v5"
+	"github.com/go-playground/validator/v10"
 	"github.com/luryann/aquify/server/internal/app/audit"
 	"github.com/luryann/aquify/server/internal/app/comms"
 	"github.com/luryann/aquify/server/internal/app/groups"
@@ -20,8 +22,6 @@ import (
 	appmiddleware "github.com/luryann/aquify/server/internal/app/middleware"
 	"github.com/luryann/aquify/server/internal/storage"
 	"github.com/luryann/aquify/server/internal/workers"
-	"github.com/go-chi/chi/v5"
-	"github.com/go-playground/validator/v10"
 )
 
 // CommsHandlers handles HTTP requests for the communications domain.
@@ -122,6 +122,20 @@ func (h *CommsHandlers) RegisterRoutes(router chi.Router) {
 
 // ─── Scope helper ─────────────────────────────────────────────────────────────
 
+// redactedMessageAudit is the audit "after" state for message events. The audit
+// table is append-only, so message bodies must never be written to it or they
+// would survive a household erasure.
+func redactedMessageAudit(m *comms.Message) map[string]any {
+	if m == nil {
+		return nil
+	}
+	return map[string]any{
+		"id": m.ID, "household_id": m.HouseholdID, "swimmer_id": m.SwimmerID,
+		"sender_user_id": m.SenderUserID, "sender_role": m.SenderRole,
+		"body_length": len(m.Body), "created_at": m.CreatedAt, "edited_at": m.EditedAt,
+	}
+}
+
 func (h *CommsHandlers) emitAudit(principal *appmiddleware.Principal, action, resourceType, resourceID string, metadata map[string]string, after any) {
 	if principal == nil {
 		return
@@ -184,11 +198,11 @@ func (h *CommsHandlers) resolveCampaignRecipients(ctx context.Context, orgID str
 	}
 	// The worker process holds stale caches; reload from Postgres (no-op in
 	// in-memory mode) and fail rather than resolve a partial list.
-	if err := h.membersService.Refresh(ctx); err != nil {
+	if err := h.membersService.RefreshOrg(ctx, campaign.OrgID); err != nil {
 		return nil, fmt.Errorf("refresh members: %w", err)
 	}
 	if strings.TrimSpace(strings.ToLower(campaign.Audience)) == "group" && h.groupsService != nil {
-		if err := h.groupsService.Refresh(ctx); err != nil {
+		if err := h.groupsService.RefreshOrg(ctx, campaign.OrgID); err != nil {
 			return nil, fmt.Errorf("refresh groups: %w", err)
 		}
 	}
@@ -412,10 +426,7 @@ func messageAttachmentObjectKey(orgID, householdID, swimmerID, fileName string) 
 
 func validateMessageAttachmentObjectKey(orgID, householdID, swimmerID, objectKey string) error {
 	prefix := fmt.Sprintf("messages/%s/%s/%s/", strings.TrimSpace(orgID), strings.TrimSpace(householdID), strings.TrimSpace(swimmerID))
-	if !strings.HasPrefix(strings.TrimSpace(objectKey), prefix) {
-		return fmt.Errorf("object key %q does not belong to this thread", objectKey)
-	}
-	return nil
+	return validateObjectKeyUnderPrefix(prefix, objectKey)
 }
 
 type sendMessageAttachmentBody struct {
@@ -483,6 +494,18 @@ func (h *CommsHandlers) sendMessage(w http.ResponseWriter, r *http.Request) {
 			httpx.WriteError(w, r, http.StatusUnprocessableEntity, "file_too_large", "Attachment exceeds the maximum allowed size.", nil)
 			return
 		}
+		sealedKey, sealedSize, err := sealUploadedObject(r.Context(), h.store, in.ObjectKey,
+			fmt.Sprintf("messages/%s/%s/%s/", strings.TrimSpace(orgID), strings.TrimSpace(body.HouseholdID), strings.TrimSpace(body.SwimmerID)),
+			fileName, declaredMIME, maxMessageAttachmentBytes)
+		if errors.Is(err, errUploadTooLarge) {
+			httpx.WriteError(w, r, http.StatusUnprocessableEntity, "file_too_large", "Attachment exceeds the maximum allowed size.", nil)
+			return
+		} else if err != nil {
+			httpx.WriteError(w, r, http.StatusInternalServerError, "internal_error", "Failed to store uploaded attachment.", err)
+			return
+		}
+		in.ObjectKey = sealedKey
+		actualSize = sealedSize
 		attachments = append(attachments, comms.AttachmentInput{
 			ObjectKey: in.ObjectKey,
 			Filename:  fileName,
@@ -508,7 +531,7 @@ func (h *CommsHandlers) sendMessage(w http.ResponseWriter, r *http.Request) {
 	h.emitAudit(principal, audit.ActionCommsMessageSend, "message", message.ID, map[string]string{
 		"household_id": body.HouseholdID,
 		"swimmer_id":   body.SwimmerID,
-	}, message)
+	}, redactedMessageAudit(message))
 	httpx.WriteJSON(w, http.StatusCreated, map[string]any{"message": message})
 }
 
@@ -633,7 +656,7 @@ func (h *CommsHandlers) editMessage(w http.ResponseWriter, r *http.Request) {
 	h.emitAudit(principal, audit.ActionCommsMessageEdit, "message", message.ID, map[string]string{
 		"household_id": message.HouseholdID,
 		"swimmer_id":   message.SwimmerID,
-	}, message)
+	}, redactedMessageAudit(message))
 	httpx.WriteJSON(w, http.StatusOK, map[string]any{"message": message})
 }
 
@@ -1039,6 +1062,10 @@ func (h *CommsHandlers) createCampaign(w http.ResponseWriter, r *http.Request) {
 		GroupID:   body.GroupID,
 		CreatedBy: principal.UserID,
 	})
+	if errors.Is(err, comms.ErrSenderNotConfigured) {
+		httpx.WriteError(w, r, http.StatusUnprocessableEntity, "sender_not_configured", err.Error(), nil)
+		return
+	}
 	if err != nil {
 		httpx.WriteError(w, r, http.StatusBadRequest, "create_failed", err.Error(), nil)
 		return

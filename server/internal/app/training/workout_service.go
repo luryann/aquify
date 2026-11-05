@@ -75,13 +75,15 @@ func derivePractice(p *Practice, w *Workout) {
 		return
 	}
 	p.WorkoutID = w.ID
-	p.YardageTarget = w.Totals.Distance
-	p.Strokes = PracticeStrokes{
-		Free:   w.Totals.ByStroke["free"],
-		Back:   w.Totals.ByStroke["back"],
-		Breast: w.Totals.ByStroke["breast"],
-		Fly:    w.Totals.ByStroke["fly"],
-		IM:     w.Totals.ByStroke["im"],
+	p.YardageTarget, p.Strokes = practiceYardsFromWorkout(w)
+}
+
+// practiceYardsFromWorkout converts a workout's totals (in its course unit) to
+// the yards stored on practices.
+func practiceYardsFromWorkout(w *Workout) (int, PracticeStrokes) {
+	y := func(stroke string) int { return ToYards(w.Totals.ByStroke[stroke], w.Course) }
+	return ToYards(w.Totals.Distance, w.Course), PracticeStrokes{
+		Free: y("free"), Back: y("back"), Breast: y("breast"), Fly: y("fly"), IM: y("im"),
 	}
 }
 
@@ -111,7 +113,7 @@ func (s *Service) CreateWorkout(orgID string, in WorkoutInput, actor string) (*W
 	}
 	w := buildWorkout(orgID, uuid.NewString(), norm, actor, time.Now().UTC())
 	if s.repo != nil {
-		if err := upsertWorkout(context.Background(), s.repo.pool, w); err != nil {
+		if err := upsertWorkout(context.Background(), s.repo.at(w.OrgID), w); err != nil {
 			return nil, err
 		}
 		return w, nil
@@ -125,7 +127,7 @@ func (s *Service) CreateWorkout(orgID string, in WorkoutInput, actor string) (*W
 // GetWorkout returns one workout (org-scoped).
 func (s *Service) GetWorkout(orgID, id string) (*Workout, error) {
 	if s.repo != nil {
-		return getWorkout(context.Background(), s.repo.pool, orgID, id)
+		return getWorkout(context.Background(), s.repo.at(orgID), orgID, id)
 	}
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -208,16 +210,17 @@ func (s *Service) UpdateWorkout(orgID, id string, in WorkoutInput, actor string)
 	w.UpdatedBy = actor
 
 	if s.repo != nil {
-		err := s.repo.withTx(ctx, func(q querier) error {
+		err := s.repo.withTx(ctx, orgID, func(q querier) error {
 			if err := upsertWorkout(ctx, q, w); err != nil {
 				return err
 			}
+			yards, strokes := practiceYardsFromWorkout(w)
 			_, err := q.Exec(ctx, `
 				UPDATE practices SET yardage_target = $3, strokes_free = $4, strokes_back = $5,
 					strokes_breast = $6, strokes_fly = $7, strokes_im = $8, updated_at = $9, updated_by = $10
 				WHERE org_id = $1 AND workout_id = $2::uuid`,
-				orgID, id, w.Totals.Distance, w.Totals.ByStroke["free"], w.Totals.ByStroke["back"],
-				w.Totals.ByStroke["breast"], w.Totals.ByStroke["fly"], w.Totals.ByStroke["im"], w.UpdatedAt, actor)
+				orgID, id, yards, strokes.Free, strokes.Back,
+				strokes.Breast, strokes.Fly, strokes.IM, w.UpdatedAt, actor)
 			return err
 		})
 		if err != nil {
@@ -244,7 +247,7 @@ func (s *Service) UpdateWorkout(orgID, id string, in WorkoutInput, actor string)
 // derived yardage but loses the link (FK ON DELETE SET NULL).
 func (s *Service) DeleteWorkout(orgID, id string) error {
 	if s.repo != nil {
-		return deleteWorkout(context.Background(), s.repo.pool, orgID, id)
+		return deleteWorkout(context.Background(), s.repo.at(orgID), orgID, id)
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -294,7 +297,7 @@ func (s *Service) DuplicateWorkout(orgID, id string, in DuplicateInput, actor st
 	w := buildWorkout(orgID, uuid.NewString(), norm, actor, time.Now().UTC())
 	w.SourceWorkoutID = src.ID
 	if s.repo != nil {
-		if err := upsertWorkout(context.Background(), s.repo.pool, w); err != nil {
+		if err := upsertWorkout(context.Background(), s.repo.at(w.OrgID), w); err != nil {
 			return nil, err
 		}
 		return w, nil
@@ -354,10 +357,10 @@ func (s *Service) linkInstance(orgID, practiceID string, mk func() *Practice, in
 	ctx := context.Background()
 	if s.repo != nil {
 		var out *Practice
-		err := s.repo.withTx(ctx, func(q querier) error {
+		err := s.repo.withTx(ctx, orgID, func(q querier) error {
 			var p *Practice
 			if practiceID != "" {
-				existing, err := getPractice(ctx, q, orgID, practiceID)
+				existing, err := getPracticeForUpdate(ctx, q, orgID, practiceID)
 				if err != nil {
 					return err
 				}
@@ -466,7 +469,7 @@ func (s *Service) ClearPracticeWorkout(orgID, practiceID, actor string) (*Practi
 	p.WorkoutID = ""
 	p.UpdatedAt, p.UpdatedBy = time.Now().UTC(), actor
 	if s.repo != nil {
-		err := s.repo.withTx(ctx, func(q querier) error {
+		err := s.repo.withTx(ctx, orgID, func(q querier) error {
 			if err := upsertPractice(ctx, q, p); err != nil {
 				return err
 			}

@@ -10,9 +10,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/go-chi/chi/v5"
 	appmiddleware "github.com/luryann/aquify/server/internal/app/middleware"
 	"github.com/luryann/aquify/server/internal/workers"
-	"github.com/go-chi/chi/v5"
 )
 
 func TestJobsAdminIsScopedToOwnOrg(t *testing.T) {

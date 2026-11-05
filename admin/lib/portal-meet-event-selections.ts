@@ -14,10 +14,10 @@ export type PortalSwimmerCommitmentState = {
   savedNote: string
 }
 
-export function mapPortalCommitmentStatus(status: string): 'pending' | 'yes' | 'no' | 'closed' {
+export function mapPortalCommitmentStatus(status: string, meetStatus?: string): 'pending' | 'yes' | 'no' | 'closed' {
   if (status === 'committed_yes') return 'yes'
   if (status === 'committed_no') return 'no'
-  if (status === 'invited') return 'pending'
+  if (status === 'invited') return meetStatus && meetStatus !== 'commitment_open' ? 'closed' : 'pending'
   if (status === 'coach_reviewed' || status === 'locked') return 'closed'
   return 'pending'
 }
@@ -26,6 +26,7 @@ export function buildPortalSwimmerStates(
   swimmers: SwimmerRecord[],
   commitments: CommitmentRecord[],
   selectionsByCommitmentId: Record<string, CommitmentEventSelectionRecord[]>,
+  meetStatus?: string,
 ): Record<string, PortalSwimmerCommitmentState> {
   const initialStates: Record<string, PortalSwimmerCommitmentState> = {}
 
@@ -37,7 +38,7 @@ export function buildPortalSwimmerStates(
     )
 
     initialStates[swimmer.id] = {
-      commitment: commitment ? mapPortalCommitmentStatus(commitment.status) : 'pending',
+      commitment: commitment ? mapPortalCommitmentStatus(commitment.status, meetStatus) : 'pending',
       commitmentId: commitment?.id ?? null,
       selectedEvents: persistedSelections.map((selection) => selection.meet_event_id),
       selectedEventSelectionIds,

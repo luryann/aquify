@@ -7,12 +7,16 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"slices"
+	"sort"
 	"strings"
 	"syscall"
+	"time"
 
-	"github.com/luryann/aquify/server/internal/app/httpx"
-	"github.com/luryann/aquify/server/internal/workers"
 	"github.com/go-chi/chi/v5"
+	"github.com/luryann/aquify/server/internal/app/httpx"
+	appmiddleware "github.com/luryann/aquify/server/internal/app/middleware"
+	"github.com/luryann/aquify/server/internal/workers"
 	"github.com/redis/go-redis/v9"
 )
 
@@ -84,19 +88,6 @@ func writeQueueError(w http.ResponseWriter, r *http.Request, err error, message 
 	httpx.WriteError(w, r, http.StatusInternalServerError, "internal_error", message, err)
 }
 
-// requireAdmin writes 401/403 unless the caller is an authenticated admin.
-func requireAdmin(w http.ResponseWriter, r *http.Request, forbiddenMessage string) bool {
-	principal, ok := requirePrincipal(w, r)
-	if !ok {
-		return false
-	}
-	if !hasAnyRole(principal, "admin") {
-		httpx.WriteError(w, r, http.StatusForbidden, "forbidden", forbiddenMessage, nil)
-		return false
-	}
-	return true
-}
-
 // requireAdminOrg is requireAdmin plus the validated org scope of the request.
 func requireAdminOrg(w http.ResponseWriter, r *http.Request, forbiddenMessage string) (string, bool) {
 	principal, orgID, ok := scopedRequestFromContext(w, r)
@@ -166,33 +157,145 @@ func (h *JobsHandlers) listJobs(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// queueStats handles GET /api/v1/jobs/queues
+// isPlatformOperator reports whether the principal holds the operator role.
+// The role is only honoured for the platform org elsewhere; here it merely
+// widens the job views from the caller's own org to the whole fleet.
+func isPlatformOperator(r *http.Request) bool {
+	pr, ok := appmiddleware.PrincipalFromContext(r.Context())
+	return ok && pr != nil && slices.Contains(pr.Roles, PlatformRole) && pr.MFAAuthenticated
+}
+
+// orgTasks returns every task (including dead-lettered ones) owned by orgID.
+func (h *JobsHandlers) orgTasks(orgID string) ([]workers.TaskInfo, error) {
+	tasks, err := h.server.ListTasks("", "")
+	if err != nil {
+		return nil, err
+	}
+	dlq, err := h.server.DLQTasks()
+	if err != nil {
+		return nil, err
+	}
+	seen := make(map[string]bool, len(tasks))
+	for _, t := range tasks {
+		seen[t.ID] = true
+	}
+	for _, d := range dlq {
+		if !seen[d.ID] {
+			tasks = append(tasks, d)
+		}
+	}
+	return filterTasksByOrg(tasks, orgID), nil
+}
+
+// queueStats handles GET /api/v1/jobs/queues. Platform operators see fleet-wide
+// depth; a club admin sees counts derived only from that club's own tasks.
 func (h *JobsHandlers) queueStats(w http.ResponseWriter, r *http.Request) {
-	if !requireAdmin(w, r, "Queue stats requires admin role.") {
+	orgID, ok := requireAdminOrg(w, r, "Queue stats requires admin role.")
+	if !ok {
 		return
 	}
-
-	queues, err := h.server.QueueStats()
+	if isPlatformOperator(r) {
+		queues, err := h.server.QueueStats()
+		if err != nil {
+			writeQueueError(w, r, err, "Failed to load queue stats.")
+			return
+		}
+		httpx.WriteJSON(w, http.StatusOK, map[string]any{"queues": queues})
+		return
+	}
+	tasks, err := h.orgTasks(orgID)
 	if err != nil {
 		writeQueueError(w, r, err, "Failed to load queue stats.")
 		return
 	}
-	httpx.WriteJSON(w, http.StatusOK, map[string]any{
-		"queues": queues,
-	})
+	byQueue := map[string]*workers.QueueStats{}
+	// Seed every configured queue (names only) so the club sees zero rows, not gaps.
+	if all, err := h.server.QueueStats(); err == nil {
+		for _, q := range all {
+			byQueue[q.Name] = &workers.QueueStats{Name: q.Name}
+		}
+	}
+	for _, t := range tasks {
+		q := byQueue[t.Queue]
+		if q == nil {
+			q = &workers.QueueStats{Name: t.Queue}
+			byQueue[t.Queue] = q
+		}
+		switch t.Status {
+		case workers.StatusPending, workers.StatusRetrying:
+			q.Pending++
+		case workers.StatusActive:
+			q.Active++
+		case workers.StatusCompleted:
+			q.Completed++
+		case workers.StatusFailed:
+			q.Failed++
+		case workers.StatusDeadLetter:
+			q.DeadLetter++
+		}
+	}
+	queues := make([]workers.QueueStats, 0, len(byQueue))
+	for _, q := range byQueue {
+		queues = append(queues, *q)
+	}
+	sort.Slice(queues, func(i, j int) bool { return queues[i].Name < queues[j].Name })
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"queues": queues})
 }
 
-// jobMetrics handles GET /api/v1/jobs/metrics
+// jobMetrics handles GET /api/v1/jobs/metrics. The execution history is not
+// stamped with an org, so a club admin gets counters and recent runs derived
+// from that club's own tasks; only platform operators see the global history.
 func (h *JobsHandlers) jobMetrics(w http.ResponseWriter, r *http.Request) {
-	if !requireAdmin(w, r, "Job metrics requires admin role.") {
+	orgID, ok := requireAdminOrg(w, r, "Job metrics requires admin role.")
+	if !ok {
 		return
 	}
-
-	m := h.server.Metrics()
-	httpx.WriteJSON(w, http.StatusOK, map[string]any{
-		"by_type":           m.TypeSnapshot(),
-		"recent_executions": m.RecentExecutions(50),
-	})
+	if isPlatformOperator(r) {
+		m := h.server.Metrics()
+		httpx.WriteJSON(w, http.StatusOK, map[string]any{
+			"by_type":           m.TypeSnapshot(),
+			"recent_executions": m.RecentExecutions(50),
+		})
+		return
+	}
+	tasks, err := h.orgTasks(orgID)
+	if err != nil {
+		writeQueueError(w, r, err, "Failed to load job metrics.")
+		return
+	}
+	byType := map[string]workers.TypeMetricSnapshot{}
+	execs := make([]workers.JobExecution, 0)
+	for _, t := range tasks {
+		c := byType[t.Type]
+		c.Enqueued++
+		switch t.Status {
+		case workers.StatusCompleted:
+			c.Succeeded++
+		case workers.StatusFailed, workers.StatusRetrying:
+			c.Failed++
+		case workers.StatusDeadLetter:
+			c.Failed++
+			c.DLQ++
+		}
+		byType[t.Type] = c
+		var finished *time.Time
+		if t.CompletedAt != nil {
+			finished = t.CompletedAt
+		} else if t.LastFailedAt != nil {
+			finished = t.LastFailedAt
+		}
+		if finished != nil {
+			execs = append(execs, workers.JobExecution{
+				TaskID: t.ID, Type: t.Type, Queue: t.Queue, Status: t.Status,
+				StartedAt: *finished, FinishedAt: *finished, Err: t.LastErr, Retried: t.Retried,
+			})
+		}
+	}
+	sort.Slice(execs, func(i, j int) bool { return execs[i].FinishedAt.After(execs[j].FinishedAt) })
+	if len(execs) > 50 {
+		execs = execs[:50]
+	}
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"by_type": byType, "recent_executions": execs})
 }
 
 // listDLQ handles GET /api/v1/jobs/dlq

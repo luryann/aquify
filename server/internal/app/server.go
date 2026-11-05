@@ -8,8 +8,12 @@ import (
 	"net/http"
 	"reflect"
 	"strings"
+	"sync"
 	"time"
 
+	"github.com/go-chi/chi/v5"
+	"github.com/go-chi/cors"
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/luryann/aquify/server/internal/app/audit"
 	"github.com/luryann/aquify/server/internal/app/authn"
 	"github.com/luryann/aquify/server/internal/app/billing"
@@ -19,11 +23,16 @@ import (
 	"github.com/luryann/aquify/server/internal/app/exports"
 	"github.com/luryann/aquify/server/internal/app/groups"
 	"github.com/luryann/aquify/server/internal/app/handlers"
+	"github.com/luryann/aquify/server/internal/app/invites"
 	"github.com/luryann/aquify/server/internal/app/meets"
 	"github.com/luryann/aquify/server/internal/app/members"
 	appmiddleware "github.com/luryann/aquify/server/internal/app/middleware"
+	"github.com/luryann/aquify/server/internal/app/offboarding"
+	"github.com/luryann/aquify/server/internal/app/orgs"
 	"github.com/luryann/aquify/server/internal/app/orgsettings"
+	"github.com/luryann/aquify/server/internal/app/payments"
 	"github.com/luryann/aquify/server/internal/app/performance"
+	"github.com/luryann/aquify/server/internal/app/provisioning"
 	"github.com/luryann/aquify/server/internal/app/reports"
 	"github.com/luryann/aquify/server/internal/app/seasons"
 	"github.com/luryann/aquify/server/internal/app/training"
@@ -36,9 +45,6 @@ import (
 	"github.com/luryann/aquify/server/internal/telemetry"
 	"github.com/luryann/aquify/server/internal/workers"
 	"github.com/luryann/aquify/server/internal/workers/jobhandlers"
-	"github.com/go-chi/chi/v5"
-	"github.com/go-chi/cors"
-	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 // NewRouter is a convenience wrapper for tests and simple deployments.
@@ -68,6 +74,10 @@ type RouterDeps struct {
 	Compliance  *compliance.Service
 	Documents   *documents.Service
 	Training    *training.Service
+	// Payments stores each club's Stripe connected account; nil creates one.
+	Payments *payments.Service
+	// Orgs is the tenant registry; nil creates one (Postgres-backed when a pool exists).
+	Orgs *orgs.Service
 	// Workers may be nil; when nil a new in-memory worker server is created,
 	// registered and started automatically.
 	Workers workers.Backend
@@ -244,8 +254,10 @@ func ValidateWorkerConfig(cfg Config) error {
 	if strings.TrimSpace(cfg.Worker.RedisURL) == "" {
 		return fmt.Errorf("worker startup validation failed: REDIS_URL must be configured in non-development environments")
 	}
-	if len(scheduledOrgIDs(cfg)) == 0 {
-		return fmt.Errorf("worker startup validation failed: WORKER_SCHEDULED_ORG_IDS must list at least one org in non-development environments")
+	// Org-scoped jobs discover active orgs from the tenant registry at every
+	// firing; WORKER_SCHEDULED_ORG_IDS is only an optional operator override.
+	if strings.TrimSpace(cfg.DatabaseURL) == "" && len(scheduledOrgIDs(cfg)) == 0 {
+		return fmt.Errorf("worker startup validation failed: DATABASE_URL (tenant registry) or WORKER_SCHEDULED_ORG_IDS is required in non-development environments")
 	}
 	return nil
 }
@@ -288,8 +300,20 @@ func (c unavailableStripeClient) ParseWebhookEvent(_ []byte, _, _ string) (*stri
 	return nil, c.err
 }
 
-func (c unavailableStripeClient) FetchBalanceCents(_ context.Context) (int, error) {
+func (c unavailableStripeClient) FetchBalanceCents(_ context.Context, _ string) (int, error) {
 	return 0, c.err
+}
+
+func (c unavailableStripeClient) CreateConnectedAccount(_ context.Context, _ stripelib.ConnectedAccountParams) (*stripelib.ConnectedAccount, error) {
+	return nil, c.err
+}
+
+func (c unavailableStripeClient) CreateAccountLink(_ context.Context, _, _, _ string) (string, error) {
+	return "", c.err
+}
+
+func (c unavailableStripeClient) GetConnectedAccount(_ context.Context, _ string) (*stripelib.ConnectedAccount, error) {
+	return nil, c.err
 }
 
 func (c unavailableStripeClient) CreateRefund(_ context.Context, _ stripelib.RefundParams) (*stripelib.RefundResult, error) {
@@ -398,6 +422,14 @@ func NewRouterWithServices(cfg Config, logger *slog.Logger, deps RouterDeps) htt
 	// all service repositories; a nil pool falls back to in-memory only.
 	dbPool := openValidatedDBPool(context.Background(), cfg, logger)
 	auditService.SetPool(dbPool)
+	pruneOrgDataVersions(dbPool, logger)
+	orgRegistry := deps.Orgs
+	if orgRegistry == nil {
+		orgRegistry = orgs.NewService()
+		if dbPool != nil {
+			orgRegistry = orgs.NewServiceWithPool(dbPool)
+		}
+	}
 
 	if authService == nil {
 		authService = authn.NewService(authn.Config{
@@ -458,6 +490,10 @@ func NewRouterWithServices(cfg Config, logger *slog.Logger, deps RouterDeps) htt
 		exportsService = exports.NewServiceWithPool(dbPool, objectStore)
 	}
 	orgSettingsService := orgsettings.NewServiceWithPool(dbPool)
+	orgSettingsService.SetSlugReserved(func(slug, orgID string) bool {
+		o, err := orgRegistry.BySlug(context.Background(), slug)
+		return err == nil && o.ID != orgID
+	})
 	exportsHandlers := handlers.NewExportsHandlersWithAudit(exportsService, meetsService, membershipService, orgSettingsService, auditService)
 	if documentsService == nil {
 		documentsService = documents.NewServiceWithPool(dbPool)
@@ -495,6 +531,41 @@ func NewRouterWithServices(cfg Config, logger *slog.Logger, deps RouterDeps) htt
 		logger,
 	)
 	stripeHandlers.SetAllowedReturnOrigins(cfg.AllowedOrigins)
+	stripeHandlers.SetOrgCurrency(func(orgID string) string {
+		if st, err := orgSettingsService.Get(orgID); err == nil && st != nil {
+			return st.Currency
+		}
+		return ""
+	})
+	paymentAccounts := deps.Payments
+	if paymentAccounts == nil {
+		paymentAccounts = payments.NewService()
+		if dbPool != nil {
+			paymentAccounts = payments.NewServiceWithPool(dbPool)
+		}
+	}
+	connectRequired := !allowsProviderStubFallback(appEnv)
+	if cfg.Stripe.ConnectRequired != nil {
+		connectRequired = *cfg.Stripe.ConnectRequired
+	}
+	stripeHandlers.SetConnect(paymentAccounts, connectRequired, cfg.Stripe.ConnectWebhookSecret)
+	billingService.SetStripeAccountResolver(func(orgID string) (string, error) {
+		a, err := paymentAccounts.Get(context.Background(), orgID)
+		if err != nil {
+			if errors.Is(err, payments.ErrNotFound) {
+				if connectRequired {
+					return "", billing.ErrPaymentAccountNotConnected
+				}
+				return "", nil
+			}
+			return "", err
+		}
+		if a.StripeAccountID == "" && connectRequired {
+			return "", billing.ErrPaymentAccountNotConnected
+		}
+		return a.StripeAccountID, nil
+	})
+	paymentAccountHandlers := handlers.NewPaymentAccountHandlers(paymentAccounts, stripeClient, auditService, cfg.AllowedOrigins, connectRequired)
 	stripeHandlers.SetMetrics(metrics)
 	// Apply a tighter per-IP rate limiter to cost-driving Stripe write routes.
 	stripeHandlers.SetWriteLimiter(appmiddleware.NewRateLimiter(
@@ -559,16 +630,73 @@ func NewRouterWithServices(cfg Config, logger *slog.Logger, deps RouterDeps) htt
 	engagement := buildEngagementHandlers(dbPool, logger, membershipService, groupsService, meetsService, trainingService, billingService, auditService)
 	trainingHandlers.SetSeasonsService(seasonsService)
 	orgSettingsHandlers := handlers.NewOrgSettingsHandlers(orgSettingsService, auditService)
+	engagement.clubEvents.SetCalendarProfile(func(orgID string) (string, string) {
+		if st, err := orgSettingsService.Get(orgID); err == nil && st != nil {
+			return st.TeamName, st.Timezone
+		}
+		return "", ""
+	})
+	engagement.eventsService.SetTimezoneResolver(func(orgID string) string {
+		if st, err := orgSettingsService.Get(orgID); err == nil && st != nil {
+			return st.Timezone
+		}
+		return ""
+	})
 	usaSwimmingHandlers := handlers.NewUSASwimmingHandlers(resolveUSASwimming(dbPool, appEnv), performanceService, membershipService, auditService)
+	commsService.SetDailyEmailCap(cfg.Comms.OrgDailyEmailCap)
+	membershipService.SetOrgCacheLimits(cfg.Cache.OrgIdleTTL, cfg.Cache.MaxOrgs)
+	groupsService.SetOrgCacheLimits(cfg.Cache.OrgIdleTTL, cfg.Cache.MaxOrgs)
+	meetsService.SetOrgCacheLimits(cfg.Cache.OrgIdleTTL, cfg.Cache.MaxOrgs)
+	billingService.SetOrgCacheLimits(cfg.Cache.OrgIdleTTL, cfg.Cache.MaxOrgs)
+	exportsService.SetOrgCacheLimits(cfg.Cache.OrgIdleTTL, cfg.Cache.MaxOrgs)
+	commsService.SetOrgCacheLimits(cfg.Cache.OrgIdleTTL, cfg.Cache.MaxOrgs)
+	documentsService.SetOrgCacheLimits(cfg.Cache.OrgIdleTTL, cfg.Cache.MaxOrgs)
+	performanceService.SetOrgCacheLimits(cfg.Cache.OrgIdleTTL, cfg.Cache.MaxOrgs)
+	documentsService.SetStorageQuota(cfg.Comms.OrgDocumentStorageBytes)
+	if !allowsProviderStubFallback(appEnv) {
+		// A shared mail account must not let one club send as another club's address.
+		commsService.SetSenderPolicy(func(orgID string) (string, string, bool) {
+			st, err := orgSettingsService.Get(orgID)
+			if err != nil || st == nil || strings.TrimSpace(st.EmailSenderAddress) == "" {
+				return "", "", false
+			}
+			return st.EmailSenderName, strings.ToLower(strings.TrimSpace(st.EmailSenderAddress)), true
+		})
+	}
 	// Resolve the Keycloak client first: the public site's coach list reads it.
 	kcClient = resolveKeycloakClient(cfg, logger, kcClient)
-	publicSiteHandlers := buildPublicSiteHandlers(cfg, orgSettingsService, commsService, meetsService, engagement.eventsService, performanceService, kcClient, nil)
+	publicSiteHandlers := buildPublicSiteHandlers(cfg, orgSettingsService, commsService, meetsService, engagement.eventsService, kcClient, nil)
+	publicSiteHandlers.SetOrgActive(orgRegistry.IsActive)
+	engagement.clubEvents.SetOrgActive(orgRegistry.IsActive)
+	publicTenantHandlers := handlers.NewPublicTenantHandlers(orgRegistry, orgSettingsService.FindBySlug, publicSiteHandlers.Limiter())
+	platformOrgID := strings.TrimSpace(cfg.Platform.OrgID)
+	if platformOrgID != "" {
+		registerPlatformOrg(logger, orgRegistry, platformOrgID)
+	}
+	platformHandlers := handlers.NewPlatformHandlers(orgRegistry, &provisioning.Provisioner{
+		Orgs: orgRegistry, Keycloak: kcClient, Settings: orgSettingsService, Logger: logger,
+	}, auditService, platformOrgID)
+	if dbPool != nil {
+		platformHandlers.SetOffboarding(&offboarding.Service{
+			Pool: dbPool, Orgs: orgRegistry, Store: objectStore, Keycloak: kcClient, Logger: logger,
+			CoolingOff: cfg.Platform.OffboardingCoolingOff, PlatformOrgID: platformOrgID,
+		})
+	}
 	userHandlers := handlers.NewUserHandlersWithMembers(kcClient, auditService, membershipService)
 	userHandlers.SetSessionRevoker(authService)
+	inviteService := invites.NewService()
+	if dbPool != nil {
+		inviteService = invites.NewServiceWithPool(dbPool)
+	}
+	userHandlers.SetInvites(inviteService)
+	userHandlers.SetRegisterLimiter(appmiddleware.NewRateLimiter(10, time.Hour, cfg.Security.RateLimit.TrustedProxyCIDRs))
+	inviteHandlers := handlers.NewInviteHandlers(inviteService, auditService)
+	userHandlers.SetClubResolver(clubResolver{registry: orgRegistry, settings: orgSettingsService}, allowsProviderStubFallback(effectiveAppEnv(cfg)))
 
 	wireCrossDomainHooks(logger, authService, membershipService, groupsService, meetsService)
 
 	billingService.SetRosterSource(newBillingRosterSource(membershipService, groupsService))
+	billingService.SetHouseholdCheckerDefault(membershipService.HouseholdExists)
 	reportsService := reports.NewService(membershipService, groupsService, meetsService, billingService)
 	reportsService.SetStorage(objectStore)
 	reportsHandlers := handlers.NewReportsHandlers(reportsService, auditService)
@@ -613,6 +741,16 @@ func NewRouterWithServices(cfg Config, logger *slog.Logger, deps RouterDeps) htt
 		pool: dbPool, logger: logger, audit: auditService, members: membershipService, meets: meetsService,
 		seasons: seasonsService, billing: billingService, postmark: postmarkClient, workerBack: workerBackend,
 	})
+	setHouseholdErasers(
+		func(ctx context.Context, orgID, householdID string) error {
+			_, err := volunteerService.EraseHouseholdData(ctx, orgID, householdID)
+			return err
+		},
+		func(ctx context.Context, orgID, householdID string) error {
+			_, err := engagement.eventsService.EraseHouseholdData(ctx, orgID, householdID)
+			return err
+		},
+	)
 	// Right-of-access export: members, groups and billing are read directly;
 	// every other domain holding household records contributes via a source.
 	exportSources := buildHouseholdExportSources(householdExportDeps{
@@ -667,6 +805,7 @@ func NewRouterWithServices(cfg Config, logger *slog.Logger, deps RouterDeps) htt
 		userHandlers.RegisterPublicRoutes(api)
 		engagement.clubEvents.RegisterPublicRoutes(api)
 		publicSiteHandlers.RegisterPublicRoutes(api)
+		publicTenantHandlers.RegisterPublicRoutes(api)
 
 		api.Route("/auth", func(auth chi.Router) {
 			// The strict auth limiter guards credential-bearing writes (OIDC
@@ -712,6 +851,8 @@ func NewRouterWithServices(cfg Config, logger *slog.Logger, deps RouterDeps) htt
 			protected.Use(appmiddleware.CSRFProtection(cfg.Security.CSRFHeaderName))
 			protected.Use(appmiddleware.Auth(authService))
 			protected.Use(appmiddleware.RequireOrgScope)
+			protected.Use(appmiddleware.RequireActiveOrg(orgRegistry))
+			protected.Use(appmiddleware.NewOrgRateLimiter(cfg.Security.RateLimit.OrgRequests, cfg.Security.RateLimit.OrgWindow))
 			protected.Use(appmiddleware.RequireSwimmerAccess(appmiddleware.SwimmerAccessChecks(func(orgID, swimmerID string) (bool, error) {
 				if enabled, err := orgSettingsService.SwimmerAccountsEnabled(orgID); err != nil {
 					return false, err
@@ -737,6 +878,7 @@ func NewRouterWithServices(cfg Config, logger *slog.Logger, deps RouterDeps) htt
 			billingHandlers.RegisterRoutes(protected)
 			billingHandlers.RegisterFinanceRoutes(protected)
 			stripeHandlers.RegisterProtectedRoutes(protected)
+			paymentAccountHandlers.RegisterRoutes(protected)
 			commsHandlers.RegisterRoutes(protected)
 			auditHandlers.RegisterRoutes(protected)
 			complianceHandlers.RegisterRoutes(protected)
@@ -753,6 +895,10 @@ func NewRouterWithServices(cfg Config, logger *slog.Logger, deps RouterDeps) htt
 			jobsHandlers.RegisterRoutes(protected)
 			settingsHandlers.RegisterRoutes(protected)
 			userHandlers.RegisterRoutes(protected)
+			inviteHandlers.RegisterRoutes(protected)
+			if platformOrgID != "" {
+				platformHandlers.RegisterRoutes(protected)
+			}
 		})
 	})
 
@@ -794,18 +940,49 @@ func BuildWorkersWithMetrics(cfg Config, logger *slog.Logger, metrics *telemetry
 	registerWorkerHandlers(withJobMetrics(ws, metrics), logger, exportsService, reportsService, billingService, stripeClient, commsService, complianceService, membershipService, documentsService, objectStore, kcClient, cfg.Stripe.ReconciliationAlertThresholdCents)
 
 	sched := workers.NewScheduler(ws, logger)
-	registerScheduledJobs(sched, cfg)
+	registerScheduledJobs(sched, cfg, nil)
 
 	return ws, sched
 }
 
 // RegisterDurableScheduledJobs wires the configured periodic jobs into the
 // Redis-backed durable backend used by the dedicated worker process.
-func RegisterDurableScheduledJobs(backend *workers.RedisBackend, cfg Config) {
+//
+// orgLister supplies the orgs that receive org-scoped jobs at each firing (see
+// OpenOrgRegistry); nil falls back to WORKER_SCHEDULED_ORG_IDS.
+func RegisterDurableScheduledJobs(backend *workers.RedisBackend, cfg Config, orgLister OrgLister) {
 	if backend == nil {
 		return
 	}
-	registerScheduledJobs(backend, cfg)
+	registerScheduledJobs(backend, cfg, orgLister)
+}
+
+// OrgLister returns the ids of the orgs that should receive org-scoped jobs now.
+type OrgLister func(ctx context.Context) ([]string, error)
+
+// OpenOrgRegistry opens the tenant registry for processes that do not build the
+// full router (the dedicated worker). The returned close func releases the pool.
+// Without a database it returns an in-memory registry.
+func OpenOrgRegistry(cfg Config, logger *slog.Logger) (*orgs.Service, func()) {
+	pool := openValidatedDBPool(context.Background(), cfg, logger)
+	if pool == nil {
+		return orgs.NewService(), func() {}
+	}
+	return orgs.NewServiceWithPool(pool), func() { closeDBPool(pool) }
+}
+
+// OrgListerFor adapts the registry: every active org, or the operator override.
+func OrgListerFor(cfg Config, registry *orgs.Service) OrgLister {
+	if static := scheduledOrgIDs(cfg); len(cfg.Worker.ScheduledOrgIDs) > 0 {
+		return func(context.Context) ([]string, error) { return static, nil }
+	}
+	return func(ctx context.Context) ([]string, error) {
+		ids, err := registry.ActiveIDs(ctx)
+		if err == nil && len(ids) == 0 && allowsProviderStubFallback(effectiveAppEnv(cfg)) {
+			return []string{"org-demo"}, nil
+		}
+		return ids, err
+	}
 }
 
 // registerScheduledJobs wires periodic jobs into the scheduler.
@@ -829,10 +1006,10 @@ func registerWorkerHandlers(registrar workerHandlerRegistrar, logger *slog.Logge
 	registrar.RegisterHandler(workers.TypeBillingLateFees, jobhandlers.BillingLateFeesHandler(logger, billingService))
 	registrar.RegisterHandler(workers.TypePurgeExpiredFiles, jobhandlers.PurgeExpiredFilesHandler(logger, exportsService, reportsService))
 	registrar.RegisterHandler(workers.TypeProcessDataExport, jobhandlers.ProcessDataExportHandler(logger, complianceService, objectStore))
-	registrar.RegisterHandler(workers.TypeProcessDataDeletion, jobhandlers.ProcessDataDeletionHandler(logger, complianceService, membershipService, commsService, documentsService, objectStore, kcClient))
+	registrar.RegisterHandler(workers.TypeProcessDataDeletion, jobhandlers.ProcessDataDeletionHandler(logger, complianceService, membershipService, commsService, documentsService, objectStore, kcClient, runHouseholdErasers))
 }
 
-func registerScheduledJobs(s scheduledJobRegistrar, cfg Config) {
+func registerScheduledJobs(s scheduledJobRegistrar, cfg Config, orgLister OrgLister) {
 	type entry struct {
 		name      string
 		taskType  string
@@ -870,15 +1047,37 @@ func registerScheduledJobs(s scheduledJobRegistrar, cfg Config) {
 			orgScoped: true,
 		},
 		{
-			name:     "purge-expired-files",
-			taskType: workers.TypePurgeExpiredFiles,
-			queue:    workers.QueueDefault,
-			interval: cfg.Worker.CleanupInterval,
+			name:      "purge-expired-files",
+			taskType:  workers.TypePurgeExpiredFiles,
+			queue:     workers.QueueDefault,
+			interval:  cfg.Worker.CleanupInterval,
+			orgScoped: true,
 		},
 	}
 	for _, j := range jobs {
 		d := parseDurationSafe(j.interval)
 		if d <= 0 {
+			continue
+		}
+		if j.orgScoped && orgLister != nil {
+			j := j
+			s.Register(workers.ScheduledJob{
+				Name:     j.name,
+				TaskType: j.taskType,
+				Queue:    j.queue,
+				Interval: d,
+				FanOut: func(ctx context.Context) ([]workers.FanOutItem, error) {
+					ids, err := orgLister(ctx)
+					if err != nil {
+						return nil, err
+					}
+					items := make([]workers.FanOutItem, 0, len(ids))
+					for _, orgID := range ids {
+						items = append(items, workers.FanOutItem{Key: orgID, Payload: map[string]string{"triggered_by": "scheduler", "org_id": orgID}})
+					}
+					return items, nil
+				},
+			})
 			continue
 		}
 		if j.orgScoped {
@@ -1122,4 +1321,30 @@ func resolvePostmarkClient(cfg Config, logger *slog.Logger, appEnv string) postm
 	}
 	logger.Error("postmark init failed; provider unavailable in non-dev environment", "error", err)
 	return unavailablePostmarkClient{err: fmt.Errorf("postmark provider unavailable: %w", err)}
+}
+
+// householdErasers are the per-domain personal-data erasers the data-deletion
+// job runs (volunteer signups, club-event RSVPs and feed tokens). They are set
+// once the services are wired and read lazily when a job executes.
+var (
+	householdErasersMu sync.RWMutex
+	householdErasers   []jobhandlers.HouseholdEraser
+)
+
+func setHouseholdErasers(e ...jobhandlers.HouseholdEraser) {
+	householdErasersMu.Lock()
+	householdErasers = e
+	householdErasersMu.Unlock()
+}
+
+func runHouseholdErasers(ctx context.Context, orgID, householdID string) error {
+	householdErasersMu.RLock()
+	list := append([]jobhandlers.HouseholdEraser(nil), householdErasers...)
+	householdErasersMu.RUnlock()
+	for _, e := range list {
+		if err := e(ctx, orgID, householdID); err != nil {
+			return err
+		}
+	}
+	return nil
 }

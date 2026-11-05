@@ -1,5 +1,6 @@
 import type { Metadata } from 'next'
 import Link from 'next/link'
+import { PRIVACY_PATH, TERMS_PATH } from '@/lib/legal'
 import { notFound } from 'next/navigation'
 import { ClubNav } from '@/components/club/ClubNav'
 import { fetchPublicSite } from '@/lib/publicSiteData'
@@ -13,7 +14,7 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
   const site = await fetchPublicSite(slug)
   if (!site) return { title: 'Club not found', robots: { index: false } }
   const { club } = site
-  const description = club.about?.trim() || `News, meet schedule, events and team records for ${club.name}.`
+  const description = club.about?.trim() || `${club.name} swim club. Join the team or sign in.`
   return {
     title: { default: club.name, template: `%s · ${club.name}` },
     description,
@@ -43,7 +44,8 @@ export default async function ClubLayout({ children, params }: Props) {
           <span className="is-5b301e8">
             {club.contact_email ? <a href={`mailto:${club.contact_email}`}>{club.contact_email}</a> : null}
             {club.contact_phone ? <a href={`tel:${club.contact_phone.replace(/[^+\d]/g, '')}`}>{club.contact_phone}</a> : null}
-            <Link href="/login">Member sign in</Link>
+            <Link href={PRIVACY_PATH}>Privacy policy</Link>
+            <Link href={TERMS_PATH}>Terms of service</Link>
           </span>
         </div>
       </footer>

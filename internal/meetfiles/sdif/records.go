@@ -8,6 +8,7 @@ package sdif
 
 import (
 	"fmt"
+	"math"
 	"strconv"
 	"strings"
 	"time"
@@ -163,6 +164,9 @@ func parseTimeString(s string) (float64, error) {
 		if err != nil || m < 0 || strings.ContainsAny(s[:idx], "+-") {
 			return 0, fmt.Errorf("invalid minutes in %q", s)
 		}
+		if m > maxTimeMinutes {
+			return 0, fmt.Errorf("minutes out of range in %q", s)
+		}
 		minutes = m
 		s = s[idx+1:]
 	}
@@ -174,8 +178,17 @@ func parseTimeString(s string) (float64, error) {
 	if err != nil {
 		return 0, fmt.Errorf("invalid seconds in %q: %w", s, err)
 	}
-	return float64(minutes)*60 + sec, nil
+	total := float64(minutes)*60 + sec
+	if math.IsNaN(total) || total <= 0 || total > maxTimeSeconds {
+		return 0, fmt.Errorf("time out of range: %q", s)
+	}
+	return total, nil
 }
+
+const (
+	maxTimeMinutes = 60
+	maxTimeSeconds = 3600.0
+)
 
 // ─── Name parser ─────────────────────────────────────────────────────────────
 
@@ -227,6 +240,8 @@ func ParseD0(line string, lineNumber int) (meetfiles.ParsedIndividualResult, err
 	ageGroup := field(line, 77, 4)
 	seedTimeRaw := field(line, 89, 8)
 	seedCourseCode := field(line, 97, 1)
+	prelimTimeRaw := field(line, 98, 8)
+	prelimCourseCode := field(line, 106, 1)
 	finalsTimeRaw := field(line, 116, 8)
 	finalsCourseCode := field(line, 124, 1)
 	finalsHeat := parseInt(field(line, 129, 2))
@@ -257,11 +272,13 @@ func ParseD0(line string, lineNumber int) (meetfiles.ParsedIndividualResult, err
 			AgeGroup:    ageGroup,
 			Course:      decodeCourse(courseCode),
 		},
-		SeedTime:   parseTime(seedTimeRaw),
-		FinalsTime: parseTime(finalsTimeRaw),
-		Heat:       finalsHeat,
-		Lane:       finalsLane,
-		Place:      finalsPlace,
+		SeedTime:     parseTime(seedTimeRaw),
+		PrelimTime:   parseTime(prelimTimeRaw),
+		PrelimCourse: decodeCourse(prelimCourseCode),
+		FinalsTime:   parseTime(finalsTimeRaw),
+		Heat:         finalsHeat,
+		Lane:         finalsLane,
+		Place:        finalsPlace,
 	}
 	return result, nil
 }

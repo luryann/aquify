@@ -1,6 +1,7 @@
-export type Role = 'admin' | 'coach' | 'parent' | 'swimmer'
+export type Role = 'platform_admin' | 'admin' | 'coach' | 'parent' | 'swimmer'
 
 export const ROLE_LABELS: Record<Role, string> = {
+  platform_admin: 'Platform operator',
   admin:   'Admin',
   coach:   'Coach',
   parent:  'Parent',
@@ -8,6 +9,7 @@ export const ROLE_LABELS: Record<Role, string> = {
 }
 
 export const ROLE_HIERARCHY: Record<Role, number> = {
+  platform_admin: 4,
   admin:   3,
   coach:   2,
   parent:  1,

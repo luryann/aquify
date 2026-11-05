@@ -2,7 +2,7 @@
 // Backend: server/internal/app/training + handlers/training_workouts.go.
 import type { ApiClient } from '#lib/api'
 import { orgHeaders, queryString } from '#lib/api'
-import type { PracticeRecord } from './adminData.ts'
+import { fetchAllPages, type PracticeRecord } from './adminData.ts'
 
 export type Course = 'SCY' | 'SCM' | 'LCM'
 export type SectionKind = 'warmup' | 'pre_set' | 'main' | 'kick' | 'pull' | 'drill' | 'cooldown' | 'custom'
@@ -63,11 +63,10 @@ export type TrainingPractice = PracticeRecord & { workout_id?: string }
 export type ScheduleItem = { practice: TrainingPractice; workout: Workout | null }
 
 export async function fetchWorkouts(api: ApiClient, orgId: string, params: { q?: string; tag?: string } = {}): Promise<Workout[]> {
-  const query: Record<string, string> = { scope: 'templates', limit: '200' }
+  const query: Record<string, string> = { scope: 'templates' }
   if (params.q) query.q = params.q
   if (params.tag) query.tag = params.tag
-  const res = await api.get<{ workouts?: Workout[] }>(`/api/v1/workouts${queryString(query)}`, undefined, orgHeaders(orgId))
-  return res.workouts ?? []
+  return fetchAllPages<Workout>(api, `/api/v1/workouts${queryString(query)}`, 'workouts', orgId)
 }
 
 export async function fetchWorkout(api: ApiClient, orgId: string, id: string): Promise<{ workout: Workout; text: string }> {

@@ -45,6 +45,9 @@ type PaymentIntentParams struct {
 	Metadata map[string]string
 	// IdempotencyKey deduplicates retries for the same logical payment creation request.
 	IdempotencyKey string
+	// StripeAccount, when set, creates the intent on that connected account
+	// (Stripe-Account header). Empty uses the platform account.
+	StripeAccount string
 }
 
 // PaymentIntentResult is a simplified representation of a Stripe PaymentIntent.
@@ -77,6 +80,8 @@ type CheckoutSessionParams struct {
 	CancelURL string
 	// IdempotencyKey deduplicates retries for the same logical checkout creation request.
 	IdempotencyKey string
+	// StripeAccount, when set, creates the session on that connected account.
+	StripeAccount string
 }
 
 // CheckoutSessionResult is a simplified representation of a Stripe Checkout Session.
@@ -93,6 +98,23 @@ type RefundParams struct {
 	AmountCents     int
 	Reason          string
 	IdempotencyKey  string
+	// StripeAccount is the connected account the payment was taken on ("" = platform).
+	StripeAccount string
+}
+
+// ConnectedAccountParams describes a club's Stripe account to create.
+type ConnectedAccountParams struct {
+	OrgID          string
+	Email          string
+	IdempotencyKey string
+}
+
+// ConnectedAccount is the subset of a Stripe account the platform tracks.
+type ConnectedAccount struct {
+	ID               string `json:"id"`
+	ChargesEnabled   bool   `json:"charges_enabled"`
+	PayoutsEnabled   bool   `json:"payouts_enabled"`
+	DetailsSubmitted bool   `json:"details_submitted"`
 }
 
 // RefundResult is a simplified representation of a Stripe refund object.
@@ -116,6 +138,9 @@ type WebhookEventData struct {
 	Object map[string]any
 	// Metadata is the data.object.metadata map (convenience accessor).
 	Metadata map[string]string
+	// Account is the connected account the event happened on (Connect events
+	// only; empty for platform events). Never trust metadata to attribute these.
+	Account string
 }
 
 // BalanceReport is a simplified response from Stripe's balance or charges API.
@@ -159,10 +184,20 @@ type Client interface {
 	// FetchBalanceCents returns the net succeeded charge total visible to Stripe.
 	// Used by the reconciliation endpoint. Real clients query the Stripe Charges
 	// or Balance Transactions API; the stub returns a configurable value.
-	FetchBalanceCents(ctx context.Context) (int, error)
+	// stripeAccount selects a connected account ("" = platform).
+	FetchBalanceCents(ctx context.Context, stripeAccount string) (int, error)
 
 	// CreateRefund creates a Stripe refund against a succeeded payment intent.
 	CreateRefund(ctx context.Context, params RefundParams) (*RefundResult, error)
+
+	// CreateConnectedAccount creates a Standard connected account for a club.
+	CreateConnectedAccount(ctx context.Context, params ConnectedAccountParams) (*ConnectedAccount, error)
+
+	// CreateAccountLink returns a hosted onboarding URL for the connected account.
+	CreateAccountLink(ctx context.Context, accountID, refreshURL, returnURL string) (string, error)
+
+	// GetConnectedAccount reads the account's current capability flags.
+	GetConnectedAccount(ctx context.Context, accountID string) (*ConnectedAccount, error)
 }
 
 // ─── Webhook signature verification ──────────────────────────────────────────
@@ -240,6 +275,7 @@ func parseWebhookPayload(payload []byte) (*WebhookEventData, error) {
 		ID      string `json:"id"`
 		Type    string `json:"type"`
 		Created int64  `json:"created"`
+		Account string `json:"account"`
 		Data    struct {
 			Object json.RawMessage `json:"object"`
 		} `json:"data"`
@@ -273,6 +309,7 @@ func parseWebhookPayload(payload []byte) (*WebhookEventData, error) {
 		RawPayload: json.RawMessage(cp),
 		Object:     obj,
 		Metadata:   meta,
+		Account:    strings.TrimSpace(raw.Account),
 	}, nil
 }
 
@@ -292,6 +329,15 @@ type StubClient struct {
 	CreateRefundErr error
 	// BalanceCents is returned by FetchBalanceCents. Defaults to 0.
 	BalanceCents int
+	// AccountsNotReady makes new connected accounts report charges_enabled=false
+	// until MarkAccountReady is called (simulates unfinished onboarding).
+	AccountsNotReady bool
+	accounts         map[string]*ConnectedAccount
+	// createdIntentAccounts / createdSessionAccounts record the Stripe-Account
+	// each create call targeted, for test assertions.
+	createdIntentAccounts  []string
+	createdSessionAccounts []string
+	balanceByAccount       map[string]int
 
 	// createdIntents records each PaymentIntent created for test assertions.
 	createdIntents []*PaymentIntentResult
@@ -375,6 +421,7 @@ func (c *StubClient) CreatePaymentIntent(_ context.Context, params PaymentIntent
 		AmountCents:  params.AmountCents,
 	}
 	c.createdIntents = append(c.createdIntents, result)
+	c.createdIntentAccounts = append(c.createdIntentAccounts, params.StripeAccount)
 	if key != "" {
 		c.intentResultsByKey[key] = result
 	}
@@ -403,6 +450,7 @@ func (c *StubClient) CreateCheckoutSession(_ context.Context, params CheckoutSes
 		URL: "https://checkout.stripe.com/pay/" + id,
 	}
 	c.createdSessions = append(c.createdSessions, result)
+	c.createdSessionAccounts = append(c.createdSessionAccounts, params.StripeAccount)
 	if key != "" {
 		c.sessionResultsByKey[key] = result
 	}
@@ -416,10 +464,75 @@ func (c *StubClient) ParseWebhookEvent(payload []byte, _, _ string) (*WebhookEve
 }
 
 // FetchBalanceCents returns the configured BalanceCents value (default 0).
-func (c *StubClient) FetchBalanceCents(_ context.Context) (int, error) {
+func (c *StubClient) FetchBalanceCents(_ context.Context, stripeAccount string) (int, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	if stripeAccount != "" {
+		return c.balanceByAccount[stripeAccount], nil
+	}
 	return c.BalanceCents, nil
+}
+
+// SetAccountBalance sets the balance FetchBalanceCents reports for an account.
+func (c *StubClient) SetAccountBalance(account string, cents int) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.balanceByAccount == nil {
+		c.balanceByAccount = map[string]int{}
+	}
+	c.balanceByAccount[account] = cents
+}
+
+// IntentAccounts returns the Stripe-Account of each PaymentIntent created.
+func (c *StubClient) IntentAccounts() []string {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return append([]string(nil), c.createdIntentAccounts...)
+}
+
+// SessionAccounts returns the Stripe-Account of each Checkout Session created.
+func (c *StubClient) SessionAccounts() []string {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return append([]string(nil), c.createdSessionAccounts...)
+}
+
+// CreateConnectedAccount returns a fake Standard account.
+func (c *StubClient) CreateConnectedAccount(_ context.Context, params ConnectedAccountParams) (*ConnectedAccount, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.accounts == nil {
+		c.accounts = map[string]*ConnectedAccount{}
+	}
+	acct := &ConnectedAccount{ID: "acct_stub_" + stubRandHex(6), ChargesEnabled: !c.AccountsNotReady, PayoutsEnabled: !c.AccountsNotReady, DetailsSubmitted: !c.AccountsNotReady}
+	c.accounts[acct.ID] = acct
+	cp := *acct
+	return &cp, nil
+}
+
+// CreateAccountLink returns a fake hosted onboarding URL.
+func (c *StubClient) CreateAccountLink(_ context.Context, accountID, _, _ string) (string, error) {
+	return "https://connect.stripe.com/setup/" + accountID, nil
+}
+
+// GetConnectedAccount returns the stub account's current flags.
+func (c *StubClient) GetConnectedAccount(_ context.Context, accountID string) (*ConnectedAccount, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if a, ok := c.accounts[accountID]; ok {
+		cp := *a
+		return &cp, nil
+	}
+	return nil, errors.New("stripe: no such account")
+}
+
+// MarkAccountReady simulates finishing onboarding.
+func (c *StubClient) MarkAccountReady(accountID string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if a, ok := c.accounts[accountID]; ok {
+		a.ChargesEnabled, a.PayoutsEnabled, a.DetailsSubmitted = true, true, true
+	}
 }
 
 // CreateRefund returns a fake RefundResult.
@@ -509,6 +622,9 @@ func (c *SDKClient) CreatePaymentIntent(ctx context.Context, params PaymentInten
 	if strings.TrimSpace(params.IdempotencyKey) != "" {
 		req.SetIdempotencyKey(strings.TrimSpace(params.IdempotencyKey))
 	}
+	if acct := strings.TrimSpace(params.StripeAccount); acct != "" {
+		req.SetStripeAccount(acct)
+	}
 	intent, err := c.api.V1PaymentIntents.Create(ctx, req)
 	if err != nil {
 		return nil, err
@@ -551,6 +667,9 @@ func (c *SDKClient) CreateCheckoutSession(ctx context.Context, params CheckoutSe
 	if strings.TrimSpace(params.IdempotencyKey) != "" {
 		req.SetIdempotencyKey(strings.TrimSpace(params.IdempotencyKey))
 	}
+	if acct := strings.TrimSpace(params.StripeAccount); acct != "" {
+		req.SetStripeAccount(acct)
+	}
 	cs, err := c.api.V1CheckoutSessions.Create(ctx, req)
 	if err != nil {
 		return nil, err
@@ -568,10 +687,13 @@ func (c *SDKClient) ParseWebhookEvent(payload []byte, sigHeader, webhookSecret s
 
 // FetchBalanceCents returns the summed gross amount for successful charge-type
 // balance transactions currently visible to the Stripe account.
-func (c *SDKClient) FetchBalanceCents(ctx context.Context) (int, error) {
+func (c *SDKClient) FetchBalanceCents(ctx context.Context, stripeAccount string) (int, error) {
 
 	total := 0
 	params := &stripeapi.BalanceTransactionListParams{Type: stripeapi.String("charge")}
+	if acct := strings.TrimSpace(stripeAccount); acct != "" {
+		params.SetStripeAccount(acct)
+	}
 	for tx, err := range c.api.V1BalanceTransactions.List(ctx, params) {
 		if err != nil {
 			return 0, err
@@ -593,6 +715,9 @@ func (c *SDKClient) CreateRefund(ctx context.Context, params RefundParams) (*Ref
 	if strings.TrimSpace(params.IdempotencyKey) != "" {
 		req.SetIdempotencyKey(strings.TrimSpace(params.IdempotencyKey))
 	}
+	if acct := strings.TrimSpace(params.StripeAccount); acct != "" {
+		req.SetStripeAccount(acct)
+	}
 	switch strings.TrimSpace(strings.ToLower(params.Reason)) {
 	case "fraudulent":
 		req.Reason = stripeapi.String(string(stripeapi.RefundReasonFraudulent))
@@ -610,6 +735,48 @@ func (c *SDKClient) CreateRefund(ctx context.Context, params RefundParams) (*Ref
 		Status:      string(refund.Status),
 		AmountCents: int(refund.Amount),
 	}, nil
+}
+
+// CreateConnectedAccount creates a Standard connected account for a club.
+func (c *SDKClient) CreateConnectedAccount(ctx context.Context, params ConnectedAccountParams) (*ConnectedAccount, error) {
+	req := &stripeapi.AccountCreateParams{
+		Type:     stripeapi.String(string(stripeapi.AccountTypeStandard)),
+		Metadata: map[string]string{"org_id": params.OrgID},
+	}
+	if e := strings.TrimSpace(params.Email); e != "" {
+		req.Email = stripeapi.String(e)
+	}
+	if k := strings.TrimSpace(params.IdempotencyKey); k != "" {
+		req.SetIdempotencyKey(k)
+	}
+	acct, err := c.api.V1Accounts.Create(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+	return &ConnectedAccount{ID: acct.ID, ChargesEnabled: acct.ChargesEnabled, PayoutsEnabled: acct.PayoutsEnabled, DetailsSubmitted: acct.DetailsSubmitted}, nil
+}
+
+// CreateAccountLink returns the hosted Connect onboarding URL.
+func (c *SDKClient) CreateAccountLink(ctx context.Context, accountID, refreshURL, returnURL string) (string, error) {
+	link, err := c.api.V1AccountLinks.Create(ctx, &stripeapi.AccountLinkCreateParams{
+		Account:    stripeapi.String(accountID),
+		RefreshURL: stripeapi.String(refreshURL),
+		ReturnURL:  stripeapi.String(returnURL),
+		Type:       stripeapi.String("account_onboarding"),
+	})
+	if err != nil {
+		return "", err
+	}
+	return link.URL, nil
+}
+
+// GetConnectedAccount reads the connected account's capability flags.
+func (c *SDKClient) GetConnectedAccount(ctx context.Context, accountID string) (*ConnectedAccount, error) {
+	acct, err := c.api.V1Accounts.GetByID(ctx, accountID, nil)
+	if err != nil {
+		return nil, err
+	}
+	return &ConnectedAccount{ID: acct.ID, ChargesEnabled: acct.ChargesEnabled, PayoutsEnabled: acct.PayoutsEnabled, DetailsSubmitted: acct.DetailsSubmitted}, nil
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────

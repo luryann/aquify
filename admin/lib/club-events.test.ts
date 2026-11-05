@@ -52,3 +52,15 @@ test('applyRSVPToSummary moves headcount and spots when a reply changes', () => 
   const no = applyRSVPToSummary(yes, rsvp, { ...rsvp, response: 'no', guest_count: 0 })
   assert.deepEqual(no, { yes: 0, no: 1, maybe: 0, yes_headcount: 0, spots_left: 40 })
 })
+
+test('clubEventInputFromDraft parses fees and capacity strictly', () => {
+  const base = { ...emptyClubEventDraft(), title: 'x', allDay: true, startDate: '2026-11-20', rsvpEnabled: true }
+  const fee = (f: string) => clubEventInputFromDraft({ ...base, fee: f })
+  assert.equal((fee('1,200') as { fee_cents: number }).fee_cents, 120000)
+  assert.equal((fee('1 200') as { fee_cents: number }).fee_cents, 120000)
+  assert.equal((fee('$25') as { fee_cents: number }).fee_cents, 2500)
+  assert.match(fee('12.5abc') as string, /fee/)
+  assert.match(fee('1e3') as string, /fee/)
+  assert.match(clubEventInputFromDraft({ ...base, capacity: '12abc' }) as string, /Capacity/)
+  assert.match(clubEventInputFromDraft({ ...base, capacity: '5.7' }) as string, /Capacity/)
+})

@@ -7,6 +7,9 @@ import { useSession } from '@/lib/session'
 import { useApiClient } from '@/lib/api'
 import { PublicSitePanel } from './PublicSitePanel'
 import { IntegrationsPanel } from './IntegrationsPanel'
+import { PaymentAccountPanel } from './PaymentAccountPanel'
+import { ClubProfilePanel } from './ClubProfilePanel'
+import { InvitesPanel } from './InvitesPanel'
 import { SwimmerSignInPanel } from './SwimmerSignInPanel'
 import { fetchOrgSettings, updateOrgSettings, type OrgSettingsRecord } from '@/lib/adminData'
 import { uiErrorMessage } from '@/lib/frontend-telemetry'
@@ -20,6 +23,8 @@ export default function SettingsPage() {
 
   const [teamForm, setTeamForm] = useState<{ team_code: string; team_name: string; lsc_code: string }>({ team_code: '', team_name: '', lsc_code: '' })
   const [teamLoaded, setTeamLoaded] = useState(false)
+  const [loadErr, setLoadErr] = useState<string | null>(null)
+  const [loadKey, setLoadKey] = useState(0)
   const [teamSaving, setTeamSaving] = useState(false)
   const [teamMsg, setTeamMsg] = useState<string | null>(null)
   const [teamErr, setTeamErr] = useState<string | null>(null)
@@ -37,6 +42,7 @@ export default function SettingsPage() {
   useEffect(() => {
     if (!session) return
     let cancelled = false
+    setLoadErr(null)
     fetchOrgSettings(api, session.user.orgId)
       .then((s: OrgSettingsRecord) => {
         if (cancelled) return
@@ -44,9 +50,9 @@ export default function SettingsPage() {
         setEmailForm({ email_sender_name: s.email_sender_name ?? '', email_sender_address: s.email_sender_address ?? '' })
         setTeamLoaded(true)
       })
-      .catch(() => { if (!cancelled) setTeamLoaded(true) })
+      .catch((err) => { if (!cancelled) setLoadErr(uiErrorMessage(err, 'Couldn’t load settings.')) })
     return () => { cancelled = true }
-  }, [api, session])
+  }, [api, session, loadKey])
 
   async function handleSaveTeam(e: React.FormEvent) {
     e.preventDefault()
@@ -89,6 +95,13 @@ export default function SettingsPage() {
           Settings
         </h1>
       </div>
+
+      {loadErr && (
+        <div className="card u-p-16px-16px u-mb-20px row row-between" role="alert" style={{ borderColor: 'var(--error-border)', background: 'var(--error-bg)' }}>
+          <p className="u-fs-fs-base u-m-0" style={{ color: 'var(--error)' }}>{loadErr} Editing is disabled until settings load, so nothing gets overwritten.</p>
+          <button type="button" className="btn btn-secondary btn-sm" onClick={() => setLoadKey((k) => k + 1)}>Retry</button>
+        </div>
+      )}
 
       <div className="card u-p-20px u-mb-20px" >
         <div className="u-mb-4px" >
@@ -147,9 +160,15 @@ export default function SettingsPage() {
         </form>
       </div>
 
+      <ClubProfilePanel canEdit={canEditTeam} />
+
       <SwimmerSignInPanel canEdit={canEditTeam} />
 
       <PublicSitePanel canEdit={canEditTeam} />
+
+      {canEditTeam ? <InvitesPanel canEdit={canEditTeam} /> : null}
+
+      {canEditTeam ? <PaymentAccountPanel canEdit={canEditTeam} /> : null}
 
       <IntegrationsPanel canEdit={canEditTeam} />
 

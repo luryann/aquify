@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/luryann/aquify/server/internal/testutil"
 	"github.com/google/uuid"
+	"github.com/luryann/aquify/server/internal/testutil"
 )
 
 func seedSwimmerForLoad(t *testing.T, repo *Repository, org string) (Swimmer, SwimmerGroupLink) {
@@ -36,7 +36,7 @@ func TestLoadAllNormalizesGroupCodesAndSurfacesCorruptMedicalFlags(t *testing.T)
 	ctx := context.Background()
 	sw, _ := seedSwimmerForLoad(t, repo, uuid.NewString())
 
-	_, _, _, links, err := repo.LoadAll(ctx)
+	_, _, _, links, err := repo.LoadAll(ctx, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -47,7 +47,7 @@ func TestLoadAllNormalizesGroupCodesAndSurfacesCorruptMedicalFlags(t *testing.T)
 	if _, err := pool.Exec(ctx, `UPDATE swimmers SET medical_flags = '{"asthma":true}'::jsonb WHERE id = $1::uuid`, sw.ID); err != nil {
 		t.Fatal(err)
 	}
-	if _, _, _, _, err := repo.LoadAll(ctx); err == nil || !strings.Contains(err.Error(), "medical_flags") {
+	if _, _, _, _, err := repo.LoadAll(ctx, ""); err == nil || !strings.Contains(err.Error(), "medical_flags") {
 		t.Fatalf("LoadAll err = %v, want medical_flags decode error", err)
 	}
 }

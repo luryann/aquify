@@ -7,12 +7,12 @@ import (
 	"net/url"
 	"strings"
 
+	"github.com/go-chi/chi/v5"
+	"github.com/go-playground/validator/v10"
 	"github.com/luryann/aquify/server/internal/app/audit"
 	"github.com/luryann/aquify/server/internal/app/authn"
 	"github.com/luryann/aquify/server/internal/app/httpx"
 	appmiddleware "github.com/luryann/aquify/server/internal/app/middleware"
-	"github.com/go-chi/chi/v5"
-	"github.com/go-playground/validator/v10"
 )
 
 type AuthHandlers struct {
@@ -162,6 +162,12 @@ func (h *AuthHandlers) OIDCCallback(w http.ResponseWriter, r *http.Request) {
 		case errors.Is(err, authn.ErrOIDCStateInvalid):
 			slog.Warn("oidc callback: invalid state", "error", err)
 			httpx.WriteError(w, r, http.StatusUnauthorized, "invalid_oidc_state", "Sign-in state is invalid or expired. Please start again.", nil)
+		case errors.Is(err, authn.ErrOrgNotActive):
+			slog.Warn("oidc callback: organization unavailable", "error", err)
+			httpx.WriteError(w, r, http.StatusForbidden, "org_unavailable", "Your club's account is not available. Contact your club administrator.", nil)
+		case errors.Is(err, authn.ErrUserOrgMismatch):
+			slog.Warn("oidc callback: token org does not match the user's org", "error", err)
+			httpx.WriteError(w, r, http.StatusForbidden, "org_mismatch", "This account belongs to a different organization.", nil)
 		case errors.Is(err, authn.ErrNoAppRole):
 			slog.Warn("oidc callback: user has no application role", "error", err)
 			httpx.WriteError(w, r, http.StatusForbidden, "no_app_role", "Your account has no role assigned yet. Contact your club administrator.", nil)
@@ -219,6 +225,14 @@ func (h *AuthHandlers) issueSession(w http.ResponseWriter, r *http.Request) {
 	// swimmer_id is resolved server-side from the persisted keycloak_user_id
 	// link (see Service.IssueSession), never accepted from the request body.
 	if err != nil {
+		if errors.Is(err, authn.ErrOrgNotActive) {
+			httpx.WriteError(w, r, http.StatusForbidden, "org_unavailable", "This organization is not available.", nil)
+			return
+		}
+		if errors.Is(err, authn.ErrUserOrgMismatch) {
+			httpx.WriteError(w, r, http.StatusForbidden, "org_mismatch", "This account belongs to a different organization.", nil)
+			return
+		}
 		httpx.WriteError(w, r, http.StatusBadRequest, "invalid_session_request", err.Error(), nil)
 		return
 	}
@@ -264,7 +278,7 @@ func (h *AuthHandlers) listMFAFactors(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	factors := h.service.ListMFAFactors(principal.UserID)
+	factors := h.service.ListMFAFactors(principal.OrgID, principal.UserID)
 	_ = httpx.WriteJSON(w, http.StatusOK, map[string]any{
 		"factors": factors,
 		"count":   len(factors),
@@ -313,6 +327,12 @@ func (h *AuthHandlers) refreshSession(w http.ResponseWriter, r *http.Request) {
 			code = "session_expired"
 		case errors.Is(err, authn.ErrSessionRevoked):
 			code = "session_revoked"
+		default:
+			// Not a known session outcome: the store failed, so tell the
+			// client to retry instead of signing it out.
+			w.Header().Set("Retry-After", "1")
+			httpx.WriteError(w, r, http.StatusServiceUnavailable, "service_unavailable", "Session refresh is temporarily unavailable.", err)
+			return
 		}
 		httpx.WriteError(w, r, status, code, "Unable to refresh session.", nil)
 		return
@@ -350,7 +370,11 @@ func (h *AuthHandlers) revokeSession(w http.ResponseWriter, r *http.Request) {
 	// the session may not exist after a server restart, but the cookies have
 	// already been cleared above so the client is effectively signed out.
 	if refreshToken != "" {
-		_ = h.service.RevokeSession(refreshToken)
+		if err := h.service.RevokeSession(refreshToken); err != nil && !errors.Is(err, authn.ErrSessionNotFound) {
+			// Cookies are already cleared; the client may retry with the token.
+			httpx.WriteError(w, r, http.StatusServiceUnavailable, "session_revocation_failed", "Unable to revoke the session. Retry.", err)
+			return
+		}
 	}
 
 	w.WriteHeader(http.StatusNoContent)
@@ -367,6 +391,10 @@ func (h *AuthHandlers) logoutSession(w http.ResponseWriter, r *http.Request) {
 	}
 
 	result := h.service.LogoutSessionWithAccess(refreshToken, accessToken)
+	if result.RevokeErr != nil && !errors.Is(result.RevokeErr, authn.ErrSessionNotFound) {
+		httpx.WriteError(w, r, http.StatusServiceUnavailable, "session_revocation_failed", "Unable to revoke the session. Retry.", result.RevokeErr)
+		return
+	}
 	_ = httpx.WriteJSON(w, http.StatusOK, map[string]any{
 		"status":       "logged_out",
 		"logout_url":   result.LogoutURL,
@@ -393,9 +421,24 @@ func (h *AuthHandlers) enrollMFA(w http.ResponseWriter, r *http.Request) {
 	// Once a factor exists, adding another is a security-sensitive step-up
 	// action: require a session that already passed MFA, otherwise a stolen
 	// plain session could mint its own factor and self-issue step-up.
-	if len(h.service.ListMFAFactors(principal.UserID)) > 0 && !principal.MFAAuthenticated {
+	// Only verified factors gate this: an abandoned (never verified) enrollment
+	// cannot be completed (its secret is shown once) and is replaced below.
+	hasVerified := false
+	for _, f := range h.service.ListMFAFactors(principal.OrgID, principal.UserID) {
+		if f.IsVerified {
+			hasVerified = true
+			break
+		}
+	}
+	if hasVerified && !principal.MFAAuthenticated {
 		httpx.WriteError(w, r, http.StatusForbidden, "mfa_required", "MFA authentication is required to enroll an additional factor.", nil)
 		return
+	}
+	if !hasVerified {
+		if err := h.service.PurgeUnverifiedMFAFactors(principal.OrgID, principal.UserID, strings.TrimSpace(strings.ToLower(req.FactorType))); err != nil {
+			httpx.WriteError(w, r, http.StatusInternalServerError, "mfa_enroll_failed", "Could not reset the pending MFA enrollment.", err)
+			return
+		}
 	}
 
 	factor, err := h.service.EnrollMFA(principal.UserID, principal.Email, principal.OrgID, req.FactorType, req.Label)

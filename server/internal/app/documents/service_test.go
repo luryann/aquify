@@ -53,3 +53,38 @@ func TestDocumentSubmissionLifecycleAndOrgScope(t *testing.T) {
 		t.Fatalf("GetSubmission() cross-org error = %v, want %v", err, ErrSubmissionNotFound)
 	}
 }
+
+func TestStorageQuotaIsPerOrgAndCountsOtherFiles(t *testing.T) {
+	svc := NewService()
+	svc.SetStorageQuota(100)
+	dt, err := svc.CreateDocumentType("org-a", "Waiver", "waiver", "", "household", true, true, nil, "u")
+	if err != nil {
+		t.Fatal(err)
+	}
+	mk := func(org, name string) *DocumentSubmission {
+		t.Helper()
+		typ := dt
+		if org != "org-a" {
+			typ, _ = svc.CreateDocumentType(org, "Waiver", "waiver", "", "household", true, true, nil, "u")
+		}
+		s, err := svc.CreateSubmission(org, typ.ID, "hh-"+name, "", "u")
+		if err != nil {
+			t.Fatal(err)
+		}
+		return s
+	}
+	s1, s2, s3 := mk("org-a", "1"), mk("org-a", "2"), mk("org-b", "3")
+	if _, err := svc.AttachFile("org-a", s1.ID, "k1", "f", "application/pdf", 60, "u"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.AttachFile("org-a", s2.ID, "k2", "f", "application/pdf", 50, "u"); !errors.Is(err, ErrStorageQuotaExceeded) {
+		t.Fatalf("60+50 exceeds 100: %v", err)
+	}
+	if _, err := svc.AttachFile("org-b", s3.ID, "k3", "f", "application/pdf", 90, "u"); err != nil {
+		t.Fatalf("org B has its own allowance: %v", err)
+	}
+	// Replacing a rejected file counts the new size, not old+new.
+	if _, err := svc.AttachFile("org-a", s2.ID, "k2", "f", "application/pdf", 40, "u"); err != nil {
+		t.Fatalf("60+40 fits exactly: %v", err)
+	}
+}

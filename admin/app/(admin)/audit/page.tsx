@@ -5,7 +5,7 @@ import { EmptyState } from '@/components/ui/EmptyState'
 import { Icon } from '@/components/ui/icons'
 import { useSession } from '@/lib/session'
 import { useApiClient } from '@/lib/api'
-import { displayNameForUser, fetchAuditEvents, fetchUsers, type AuditEventRecord } from '@/lib/adminData'
+import { displayNameForUser, fetchAuditEvents, fetchAllUsers, type AuditEventRecord } from '@/lib/adminData'
 import { uiErrorMessage } from '@/lib/frontend-telemetry'
 import { PageSkeleton } from '@/components/ui/PageSkeleton'
 
@@ -93,7 +93,7 @@ export default function AuditLogPage() {
         setError(null)
         // Best-effort actor-name resolution so the log reads as "who did what"
         // instead of raw UUIDs. Failure here shouldn't block the audit log itself.
-        const usersRequest = fetchUsers(api, session.user.orgId, { limit: 200 }).catch(() => null)
+        const usersRequest = fetchAllUsers(api, session.user.orgId).catch(() => null)
         const response = await fetchAuditEvents(api, session.user.orgId, { limit: '200' })
         if (!cancelled) setEvents(response.events)
         const resolved = await usersRequest

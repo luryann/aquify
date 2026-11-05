@@ -106,7 +106,7 @@ func (r *Repository) ListWorkouts(ctx context.Context, orgID string, f WorkoutFi
 		n := len(args)
 		clauses = append(clauses, fmt.Sprintf("(lower(title) LIKE $%d OR lower(description) LIKE $%d OR EXISTS (SELECT 1 FROM unnest(tags) t WHERE t LIKE $%d))", n, n, n))
 	}
-	rows, err := r.pool.Query(ctx, `SELECT `+workoutColumns+` FROM training_workouts WHERE `+strings.Join(clauses, " AND ")+` ORDER BY updated_at DESC, id`, args...)
+	rows, err := r.at(orgID).Query(ctx, `SELECT `+workoutColumns+` FROM training_workouts WHERE `+strings.Join(clauses, " AND ")+` ORDER BY updated_at DESC, id`, args...)
 	if err != nil {
 		return nil, fmt.Errorf("training: list workouts: %w", err)
 	}
@@ -121,7 +121,7 @@ func (r *Repository) WorkoutsByIDs(ctx context.Context, orgID string, ids []stri
 	if len(ids) == 0 {
 		return out, nil
 	}
-	rows, err := r.pool.Query(ctx, `SELECT `+workoutColumns+` FROM training_workouts WHERE org_id = $1 AND id = ANY($2::uuid[])`, orgID, ids)
+	rows, err := r.at(orgID).Query(ctx, `SELECT `+workoutColumns+` FROM training_workouts WHERE org_id = $1 AND id = ANY($2::uuid[])`, orgID, ids)
 	if err != nil {
 		return nil, fmt.Errorf("training: load workouts: %w", err)
 	}
@@ -146,7 +146,7 @@ func (r *Repository) AttendanceForPractices(ctx context.Context, orgID string, p
 	if len(practiceIDs) == 0 {
 		return []*PracticeAttendance{}, nil
 	}
-	rows, err := r.pool.Query(ctx, `
+	rows, err := r.at(orgID).Query(ctx, `
 		SELECT id::text, org_id, practice_id::text, swimmer_id::text, status,
 		       marked_at, marked_by, created_at, updated_at
 		FROM practice_attendance
@@ -160,6 +160,31 @@ func (r *Repository) AttendanceForPractices(ctx context.Context, orgID string, p
 			&rec.MarkedAt, &rec.MarkedBy, &rec.CreatedAt, &rec.UpdatedAt)
 		return rec, err
 	})
+}
+
+// AttendanceForSwimmer returns one swimmer's attendance status keyed by practice
+// ID for the given practices, in a single query.
+func (r *Repository) AttendanceForSwimmer(ctx context.Context, orgID, swimmerID string, practiceIDs []string) (map[string]string, error) {
+	out := map[string]string{}
+	if len(practiceIDs) == 0 {
+		return out, nil
+	}
+	rows, err := r.at(orgID).Query(ctx, `
+		SELECT practice_id::text, status
+		FROM practice_attendance
+		WHERE org_id = $1 AND swimmer_id = $2::uuid AND practice_id = ANY($3::uuid[])`, orgID, swimmerID, practiceIDs)
+	if err != nil {
+		return nil, fmt.Errorf("training: attendance for swimmer: %w", err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var pid, status string
+		if err := rows.Scan(&pid, &status); err != nil {
+			return nil, fmt.Errorf("training: scan swimmer attendance: %w", err)
+		}
+		out[pid] = status
+	}
+	return out, rows.Err()
 }
 
 // ─── Plan phases ──────────────────────────────────────────────────────────────
@@ -178,7 +203,7 @@ func scanPhase(row pgx.Row) (*PlanPhase, error) {
 
 // ListPhases returns phases for a season (all groups) ordered by group/start.
 func (r *Repository) ListPhases(ctx context.Context, orgID, seasonID string) ([]*PlanPhase, error) {
-	return listPhases(ctx, r.pool, orgID, seasonID)
+	return listPhases(ctx, r.at(orgID), orgID, seasonID)
 }
 
 func listPhases(ctx context.Context, q querier, orgID, seasonID string) ([]*PlanPhase, error) {
@@ -206,7 +231,7 @@ func getPhase(ctx context.Context, q querier, orgID, id string) (*PlanPhase, err
 // SavePhase upserts a phase after re-checking overlap under an advisory lock
 // scoped to (org, season, group) so concurrent writers cannot race past it.
 func (r *Repository) SavePhase(ctx context.Context, p *PlanPhase) error {
-	return r.withTx(ctx, func(q querier) error {
+	return r.withTx(ctx, p.OrgID, func(q querier) error {
 		if _, err := q.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtext($1))`, "training_phase:"+p.OrgID+":"+p.SeasonID+":"+p.GroupID); err != nil {
 			return fmt.Errorf("training: lock phases: %w", err)
 		}
@@ -244,7 +269,7 @@ func (r *Repository) SavePhase(ctx context.Context, p *PlanPhase) error {
 
 // DeletePhase removes one phase (org-scoped).
 func (r *Repository) DeletePhase(ctx context.Context, orgID, id string) error {
-	tag, err := r.pool.Exec(ctx, `DELETE FROM training_plan_phases WHERE id = $1::uuid AND org_id = $2`, id, orgID)
+	tag, err := r.at(orgID).Exec(ctx, `DELETE FROM training_plan_phases WHERE id = $1::uuid AND org_id = $2`, id, orgID)
 	if err != nil {
 		return fmt.Errorf("training: delete phase: %w", err)
 	}

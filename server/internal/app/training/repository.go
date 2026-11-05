@@ -11,6 +11,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/luryann/aquify/server/internal/tenantdb"
 )
 
 // Repository handles DB persistence for the training domain.
@@ -22,6 +23,9 @@ func newRepository(pool *pgxpool.Pool) *Repository {
 	return &Repository{pool: pool}
 }
 
+// at binds orgID to every statement so row-level security on the training tables applies.
+func (r *Repository) at(orgID string) tenantdb.Scoped { return tenantdb.Pool{P: r.pool}.For(orgID) }
+
 // querier is satisfied by both *pgxpool.Pool and pgx.Tx.
 type querier interface {
 	Exec(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error)
@@ -29,9 +33,9 @@ type querier interface {
 	QueryRow(ctx context.Context, sql string, args ...any) pgx.Row
 }
 
-// withTx runs fn inside a transaction, committing on success.
-func (r *Repository) withTx(ctx context.Context, fn func(q querier) error) error {
-	tx, err := r.pool.Begin(ctx)
+// withTx runs fn inside a transaction bound to orgID, committing on success.
+func (r *Repository) withTx(ctx context.Context, orgID string, fn func(q querier) error) error {
+	tx, err := r.at(orgID).Begin(ctx)
 	if err != nil {
 		return fmt.Errorf("training: begin tx: %w", err)
 	}
@@ -44,7 +48,7 @@ func (r *Repository) withTx(ctx context.Context, fn func(q querier) error) error
 
 // Upsert inserts or updates a practice record.
 func (r *Repository) Upsert(ctx context.Context, p *Practice) error {
-	return upsertPractice(ctx, r.pool, p)
+	return upsertPractice(ctx, r.at(p.OrgID), p)
 }
 
 func upsertPractice(ctx context.Context, q querier, p *Practice) error {
@@ -84,7 +88,7 @@ func upsertPractice(ctx context.Context, q querier, p *Practice) error {
 // Delete permanently removes a practice by (org_id, id) so a caller cannot
 // delete another org's practice by guessing/observing its UUID.
 func (r *Repository) Delete(ctx context.Context, orgID, id string) error {
-	tag, err := r.pool.Exec(ctx, `DELETE FROM practices WHERE id = $1::uuid AND org_id = $2`, id, orgID)
+	tag, err := r.at(orgID).Exec(ctx, `DELETE FROM practices WHERE id = $1::uuid AND org_id = $2`, id, orgID)
 	if err != nil {
 		return err
 	}
@@ -95,7 +99,7 @@ func (r *Repository) Delete(ctx context.Context, orgID, id string) error {
 }
 
 func (r *Repository) ListByOrg(ctx context.Context, orgID string) ([]*Practice, error) {
-	rows, err := r.pool.Query(ctx, `
+	rows, err := r.at(orgID).Query(ctx, `
 		SELECT id::text, org_id, date::text, COALESCE(group_id, ''), type,
 		       COALESCE(description, ''), yardage_target,
 		       attendance,
@@ -116,10 +120,19 @@ func (r *Repository) ListByOrg(ctx context.Context, orgID string) ([]*Practice, 
 }
 
 func (r *Repository) GetByID(ctx context.Context, orgID, id string) (*Practice, error) {
-	return getPractice(ctx, r.pool, orgID, id)
+	return getPractice(ctx, r.at(orgID), orgID, id)
 }
 
 func getPractice(ctx context.Context, q querier, orgID, id string) (*Practice, error) {
+	return selectPractice(ctx, q, orgID, id, "")
+}
+
+// getPracticeForUpdate reads the practice and row-locks it for the transaction.
+func getPracticeForUpdate(ctx context.Context, q querier, orgID, id string) (*Practice, error) {
+	return selectPractice(ctx, q, orgID, id, " FOR UPDATE")
+}
+
+func selectPractice(ctx context.Context, q querier, orgID, id, lock string) (*Practice, error) {
 	row := q.QueryRow(ctx, `
 		SELECT id::text, org_id, date::text, COALESCE(group_id, ''), type,
 		       COALESCE(description, ''), yardage_target,
@@ -130,7 +143,7 @@ func getPractice(ctx context.Context, q querier, orgID, id string) (*Practice, e
 		       COALESCE(created_by, ''), COALESCE(updated_by, ''),
 		       COALESCE(workout_id::text, '')
 		FROM practices
-		WHERE id = $1::uuid AND org_id = $2`,
+		WHERE id = $1::uuid AND org_id = $2`+lock,
 		id, orgID,
 	)
 	p := &Practice{}
@@ -152,31 +165,10 @@ func getPractice(ctx context.Context, q querier, orgID, id string) (*Practice, e
 	return p, nil
 }
 
-// LoadAll loads every practice from the DB.
-func (r *Repository) LoadAll(ctx context.Context) ([]*Practice, error) {
-	rows, err := r.pool.Query(ctx, `
-		SELECT id::text, org_id, date::text, COALESCE(group_id, ''), type,
-		       COALESCE(description, ''), yardage_target,
-		       attendance,
-		       strokes_free, strokes_back, strokes_breast, strokes_fly, strokes_im,
-		       COALESCE(notes, ''),
-		       created_at, updated_at,
-		       COALESCE(created_by, ''), COALESCE(updated_by, ''),
-		       COALESCE(workout_id::text, '')
-		FROM practices
-		ORDER BY date DESC, created_at DESC`)
-	if err != nil {
-		return nil, fmt.Errorf("training: load practices: %w", err)
-	}
-	defer rows.Close()
-
-	return scanPractices(rows)
-}
-
 // UpsertAttendance inserts or updates one swimmer's attendance record for a practice.
 func (r *Repository) UpsertAttendance(ctx context.Context, orgID, practiceID, swimmerID, status, markedBy string, markedAt time.Time) (*PracticeAttendance, error) {
 	id := uuid.New().String()
-	row := r.pool.QueryRow(ctx, `
+	row := r.at(orgID).QueryRow(ctx, `
 		INSERT INTO practice_attendance (
 			id, org_id, practice_id, swimmer_id, status, marked_at, marked_by
 		) VALUES (
@@ -203,7 +195,7 @@ func (r *Repository) UpsertAttendance(ctx context.Context, orgID, practiceID, sw
 
 // ListAttendanceForPractice returns all attendance rows recorded for a practice.
 func (r *Repository) ListAttendanceForPractice(ctx context.Context, orgID, practiceID string) ([]*PracticeAttendance, error) {
-	rows, err := r.pool.Query(ctx, `
+	rows, err := r.at(orgID).Query(ctx, `
 		SELECT id::text, org_id, practice_id::text, swimmer_id::text, status,
 		       marked_at, marked_by, created_at, updated_at
 		FROM practice_attendance

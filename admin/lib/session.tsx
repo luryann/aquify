@@ -3,6 +3,7 @@
 import {
   createContext,
   useContext,
+  useRef,
   useState,
   useEffect,
   useCallback,
@@ -14,6 +15,7 @@ import { ROLE_HIERARCHY } from './roles'
 import { DEV_STUB_TOKENS_ENABLED } from './featureFlags'
 import { LOCAL_DEV_USERS } from './localDev'
 import { getCSRFToken } from './api'
+import { clearRollCallStorage } from './roll-call-queue'
 
 export type User = {
   id: string
@@ -183,6 +185,8 @@ async function hydrateDevSession(base: Session): Promise<Session> {
 export function SessionProvider({ children }: { children: ReactNode }) {
   const [session, setSessionState] = useState<Session | null>(null)
   const [loading, setLoading] = useState(true)
+  const sessionRef = useRef<Session | null>(null)
+  sessionRef.current = session
 
   const setSession = useCallback((s: Session | null) => {
     setSessionState(s)
@@ -208,6 +212,8 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     setSessionState(null)
     if (typeof window !== 'undefined') {
       localStorage.removeItem(DEV_TOKEN_KEY)
+      // Rosters and queued marks belong to the club that was signed in.
+      clearRollCallStorage(localStorage)
     }
   }, [])
 
@@ -217,8 +223,9 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       setSessionState(next)
       return next
     } catch {
-      setSessionState(null)
-      return null
+      // Transient failure (network error / 5xx): fetchCurrentSession already returns
+      // null for 401/403, so keep the current session rather than signing the user out.
+      return sessionRef.current
     }
   }, [])
 
@@ -236,7 +243,17 @@ export function SessionProvider({ children }: { children: ReactNode }) {
           }
         }
 
-        const next = await fetchCurrentSession(true)
+        let next: Session | null = null
+        for (let attempt = 0; ; attempt++) {
+          try {
+            next = await fetchCurrentSession(true)
+            break
+          } catch (err) {
+            // Transient (network/5xx): retry with short backoff before giving up.
+            if (attempt >= 2 || cancelled) throw err
+            await new Promise((resolve) => setTimeout(resolve, 400 * (attempt + 1)))
+          }
+        }
         if (!cancelled) setSessionState(next)
       } catch {
         if (!cancelled) setSessionState(null)

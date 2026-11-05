@@ -5,11 +5,12 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/luryann/aquify/server/internal/dbutil"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/luryann/aquify/server/internal/dbutil"
+	"github.com/luryann/aquify/server/internal/tenantdb"
 )
 
 // Repository handles DB persistence for the seasons domain.
@@ -21,9 +22,12 @@ func newRepository(pool *pgxpool.Pool) *Repository {
 	return &Repository{pool: pool}
 }
 
+// at binds orgID to every statement so row-level security on seasons applies.
+func (r *Repository) at(orgID string) tenantdb.Scoped { return tenantdb.Pool{P: r.pool}.For(orgID) }
+
 // Upsert inserts or updates a season record.
 func (r *Repository) Upsert(ctx context.Context, s *Season) error {
-	return upsertSeason(ctx, r.pool, s)
+	return upsertSeason(ctx, r.at(s.OrgID), s)
 }
 
 type execer interface {
@@ -60,7 +64,7 @@ func (r *Repository) UpdateTx(ctx context.Context, orgID, id string, mutate func
 	if _, err := uuid.Parse(id); err != nil {
 		return nil, ErrNotFound
 	}
-	tx, err := r.pool.Begin(ctx)
+	tx, err := r.at(orgID).Begin(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("seasons: begin update: %w", err)
 	}
@@ -100,7 +104,7 @@ func (r *Repository) Delete(ctx context.Context, orgID, id string) error {
 	if _, err := uuid.Parse(id); err != nil {
 		return ErrNotFound
 	}
-	tag, err := r.pool.Exec(ctx, `DELETE FROM seasons WHERE id = $1::uuid AND org_id = $2`, id, orgID)
+	tag, err := r.at(orgID).Exec(ctx, `DELETE FROM seasons WHERE id = $1::uuid AND org_id = $2`, id, orgID)
 	if err != nil {
 		return err
 	}
@@ -111,7 +115,7 @@ func (r *Repository) Delete(ctx context.Context, orgID, id string) error {
 }
 
 func (r *Repository) ListByOrg(ctx context.Context, orgID string) ([]*Season, error) {
-	rows, err := r.pool.Query(ctx, `
+	rows, err := r.at(orgID).Query(ctx, `
 		SELECT id::text, org_id, name,
 		       COALESCE(start_date::text, ''), COALESCE(end_date::text, ''),
 		       status, goals,
@@ -132,7 +136,7 @@ func (r *Repository) GetByID(ctx context.Context, orgID, id string) (*Season, er
 	if _, err := uuid.Parse(id); err != nil {
 		return nil, ErrNotFound
 	}
-	row := r.pool.QueryRow(ctx, `
+	row := r.at(orgID).QueryRow(ctx, `
 		SELECT id::text, org_id, name,
 		       COALESCE(start_date::text, ''), COALESCE(end_date::text, ''),
 		       status, goals,
@@ -156,24 +160,6 @@ func (r *Repository) GetByID(ctx context.Context, orgID, id string) (*Season, er
 		return nil, fmt.Errorf("seasons: get season: %w", err)
 	}
 	return s, nil
-}
-
-// LoadAll loads every season from the DB.
-func (r *Repository) LoadAll(ctx context.Context) ([]*Season, error) {
-	rows, err := r.pool.Query(ctx, `
-		SELECT id::text, org_id, name,
-		       COALESCE(start_date::text, ''), COALESCE(end_date::text, ''),
-		       status, goals,
-		       created_at, updated_at,
-		       COALESCE(created_by, ''), COALESCE(updated_by, '')
-		FROM seasons
-		ORDER BY start_date DESC NULLS LAST, created_at DESC`)
-	if err != nil {
-		return nil, fmt.Errorf("seasons: load seasons: %w", err)
-	}
-	defer rows.Close()
-
-	return scanSeasons(rows)
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────

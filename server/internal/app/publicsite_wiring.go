@@ -10,7 +10,6 @@ import (
 	"github.com/luryann/aquify/server/internal/app/meets"
 	appmiddleware "github.com/luryann/aquify/server/internal/app/middleware"
 	"github.com/luryann/aquify/server/internal/app/orgsettings"
-	"github.com/luryann/aquify/server/internal/app/performance"
 	"github.com/luryann/aquify/server/internal/keycloak"
 )
 
@@ -20,7 +19,7 @@ import (
 // publicStaffCacheTTL bounds Keycloak fan-out from anonymous public-site traffic.
 const publicStaffCacheTTL = time.Minute
 
-func buildPublicSiteHandlers(cfg Config, settings *orgsettings.Service, commsSvc *comms.Service, meetsSvc *meets.Service, eventsSvc *events.Service, perfSvc *performance.Service, kc keycloak.Client, clock func() time.Time) *handlers.PublicSiteHandlers {
+func buildPublicSiteHandlers(cfg Config, settings *orgsettings.Service, commsSvc *comms.Service, meetsSvc *meets.Service, eventsSvc *events.Service, kc keycloak.Client, clock func() time.Time) *handlers.PublicSiteHandlers {
 	src := handlers.PublicSiteSources{
 		Settings: settings.FindBySlug,
 	}
@@ -39,15 +38,6 @@ func buildPublicSiteHandlers(cfg Config, settings *orgsettings.Service, commsSvc
 	if eventsSvc != nil {
 		src.Events = func(orgID string, from time.Time) []*events.Event {
 			list, err := eventsSvc.List(orgID, events.ListFilter{From: &from})
-			if err != nil {
-				return nil
-			}
-			return list
-		}
-	}
-	if perfSvc != nil {
-		src.Records = func(orgID string) []performance.TeamRecord {
-			list, err := perfSvc.ListRecords(orgID, handlers.PublicRecordsPrincipal(orgID), performance.ListRecordsFilters{})
 			if err != nil {
 				return nil
 			}

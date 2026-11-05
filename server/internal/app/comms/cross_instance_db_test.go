@@ -6,9 +6,9 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/google/uuid"
 	"github.com/luryann/aquify/server/internal/postmark"
 	"github.com/luryann/aquify/server/internal/testutil"
-	"github.com/google/uuid"
 )
 
 func twoInstances(t *testing.T) (*Service, *Service, *postmark.StubClient, *postmark.StubClient, string) {

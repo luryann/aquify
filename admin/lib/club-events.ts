@@ -1,6 +1,7 @@
 // Pure helpers for club events (form drafts, date handling, calendar keys).
 import type { ClubEventInput, ClubEventRecord, ClubEventRSVP, ClubEventSummary } from './engagementData'
 import { localInputToISO } from './dates.ts'
+import { parseDollarsToCents } from './financeData.ts'
 
 const pad = (n: number) => String(n).padStart(2, '0')
 
@@ -115,10 +116,13 @@ export function clubEventInputFromDraft(d: ClubEventDraft): ClubEventInput | str
     if (endsAt && endsAt < startsAt) return 'The end time is before the start time.'
   }
   if (d.audience === 'groups' && d.groupCodes.length === 0) return 'Choose at least one group, or invite everyone.'
-  const capacity = d.capacity.trim() ? Number.parseInt(d.capacity, 10) : null
+  const capacityText = d.capacity.trim()
+  if (capacityText && !/^\d+$/.test(capacityText)) return 'Capacity must be a whole number above zero.'
+  const capacity = capacityText ? Number(capacityText) : null
   if (capacity !== null && (!Number.isFinite(capacity) || capacity < 1)) return 'Capacity must be a whole number above zero.'
-  const feeCents = d.fee.trim() ? Math.round(Number.parseFloat(d.fee) * 100) : 0
-  if (!Number.isFinite(feeCents) || feeCents < 0) return 'The fee must be a dollar amount.'
+  const parsedFee = d.fee.trim() ? parseDollarsToCents(d.fee) : 0
+  if (parsedFee === null || parsedFee < 0) return 'The fee must be a dollar amount.'
+  const feeCents = parsedFee
   if (feeCents > 0 && !d.rsvpEnabled) return 'Turn on RSVPs to charge a fee.'
   const rsvpDeadline = d.rsvpEnabled ? localInputToISO(d.rsvpDeadline) : null
   if (rsvpDeadline && rsvpDeadline > startsAt) return 'The RSVP deadline must be before the event starts.'

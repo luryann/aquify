@@ -50,7 +50,7 @@ func (s *Service) HouseholdStatement(orgID string, principal *appmiddleware.Prin
 	if err := s.requireHouseholdFinanceRead(principal, householdID); err != nil {
 		return nil, err
 	}
-	if err := s.refreshForRead(); err != nil {
+	if err := s.refreshForRead(orgID); err != nil {
 		return nil, err
 	}
 	s.mu.RLock()
@@ -227,7 +227,7 @@ func (s *Service) HouseholdUpcomingCharges(orgID string, principal *appmiddlewar
 	if horizonDays <= 0 || horizonDays > 366 {
 		horizonDays = 90
 	}
-	if err := s.refreshForRead(); err != nil {
+	if err := s.refreshForRead(orgID); err != nil {
 		return nil, err
 	}
 	roster, err := s.loadRoster(orgID)

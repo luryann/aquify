@@ -9,8 +9,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/luryann/aquify/server/internal/openapi"
 	"github.com/go-chi/chi/v5"
+	"github.com/luryann/aquify/server/internal/openapi"
 )
 
 var (
@@ -62,7 +62,10 @@ func TestOpenAPIMatchesRegisteredRoutes(t *testing.T) {
 		t.Fatal("found no operations in the packaged OpenAPI spec")
 	}
 
-	router := NewRouter(Config{AppEnv: "test"}, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	// The operator plane is only mounted when a platform org is configured.
+	parityCfg := Config{AppEnv: "test"}
+	parityCfg.Platform.OrgID = "00000000-0000-0000-0000-00000000f001"
+	router := NewRouter(parityCfg, slog.New(slog.NewTextHandler(io.Discard, nil)))
 	served := map[string]bool{}
 	err := chi.Walk(router.(chi.Routes), func(method, route string, _ http.Handler, _ ...func(http.Handler) http.Handler) error {
 		if rest, ok := strings.CutPrefix(route, "/api/v1"); ok {

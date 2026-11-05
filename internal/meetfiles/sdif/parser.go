@@ -24,9 +24,15 @@ package sdif
 import (
 	"bytes"
 	"fmt"
+	"strconv"
 	"strings"
 
 	"github.com/luryann/aquify/meetfiles"
+)
+
+const (
+	maxRecordedParseErrors = 100
+	maxTotalParseErrors    = 10000
 )
 
 // Parse parses an SD3/SDIF v3 file and returns a normalized ParseResult.
@@ -50,6 +56,20 @@ func Parse(data []byte) (*meetfiles.ParseResult, error) {
 	// pendingRelay holds the current E0 relay being built until the next
 	// non-F0 record signals its end.
 	var pendingRelay *meetfiles.ParsedRelayResult
+
+	// Bound memory: a file of millions of junk lines must not allocate a
+	// ParseError each. Keep the first maxRecordedParseErrors, count the rest,
+	// and refuse files that are overwhelmingly malformed.
+	addErr := func(pe meetfiles.ParseError) error {
+		result.TotalParseErrors++
+		if result.TotalParseErrors > maxTotalParseErrors {
+			return fmt.Errorf("too many malformed records (more than %d)", maxTotalParseErrors)
+		}
+		if len(result.ParseErrors) < maxRecordedParseErrors {
+			result.ParseErrors = append(result.ParseErrors, pe)
+		}
+		return nil
+	}
 
 	flush := func() {
 		if pendingRelay != nil {
@@ -92,12 +112,14 @@ func Parse(data []byte) (*meetfiles.ParseResult, error) {
 		case RecordD0:
 			res, err := ParseD0(line, lineNumber)
 			if err != nil {
-				result.ParseErrors = append(result.ParseErrors, meetfiles.ParseError{
+				if err := addErr(meetfiles.ParseError{
 					LineNumber: lineNumber,
 					Raw:        truncate(raw, 120),
 					Code:       meetfiles.ErrCodeMalformedRecord,
 					Message:    err.Error(),
-				})
+				}); err != nil {
+					return nil, err
+				}
 				continue
 			}
 			result.IndividualResults = append(result.IndividualResults, res)
@@ -108,24 +130,28 @@ func Parse(data []byte) (*meetfiles.ParseResult, error) {
 
 		case RecordF0:
 			if pendingRelay == nil {
-				result.ParseErrors = append(result.ParseErrors, meetfiles.ParseError{
+				if err := addErr(meetfiles.ParseError{
 					LineNumber: lineNumber,
 					Raw:        truncate(raw, 120),
 					Code:       meetfiles.ErrCodeMalformedRecord,
 					Message:    "F0 record found without preceding E0",
-				})
+				}); err != nil {
+					return nil, err
+				}
 				continue
 			}
 			leg := ParseF0(line, lineNumber)
 			pendingRelay.Legs = append(pendingRelay.Legs, leg)
 
 		default:
-			result.ParseErrors = append(result.ParseErrors, meetfiles.ParseError{
+			if err := addErr(meetfiles.ParseError{
 				LineNumber: lineNumber,
 				Raw:        truncate(raw, 120),
 				Code:       meetfiles.ErrCodeMalformedRecord,
-				Message:    fmt.Sprintf("unrecognised record ID %q", recordID),
-			})
+				Message:    "unrecognised record ID " + strconv.Quote(recordID),
+			}); err != nil {
+				return nil, err
+			}
 		}
 	}
 

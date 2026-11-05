@@ -6,13 +6,13 @@ import (
 	"log/slog"
 	"net/http"
 
+	"github.com/go-chi/chi/v5"
+	"github.com/go-playground/validator/v10"
 	"github.com/luryann/aquify/server/internal/app/audit"
 	"github.com/luryann/aquify/server/internal/app/billing"
 	"github.com/luryann/aquify/server/internal/app/httpx"
 	appmiddleware "github.com/luryann/aquify/server/internal/app/middleware"
 	stripelib "github.com/luryann/aquify/server/internal/stripe"
-	"github.com/go-chi/chi/v5"
-	"github.com/go-playground/validator/v10"
 )
 
 // BillingHandlers handles HTTP requests for the billing domain.
@@ -100,6 +100,8 @@ func mapBillingError(w http.ResponseWriter, r *http.Request, err error) {
 		httpx.WriteError(w, r, http.StatusForbidden, "forbidden", "Insufficient permissions.", nil)
 	case errors.Is(err, billing.ErrInvoiceNotFound):
 		httpx.WriteError(w, r, http.StatusNotFound, "invoice_not_found", "Invoice not found.", nil)
+	case errors.Is(err, billing.ErrHouseholdNotFound):
+		httpx.WriteError(w, r, http.StatusNotFound, "household_not_found", "Household not found.", nil)
 	case errors.Is(err, billing.ErrInvoiceItemNotFound):
 		httpx.WriteError(w, r, http.StatusNotFound, "item_not_found", "Invoice item not found.", nil)
 	case errors.Is(err, billing.ErrPaymentNotFound):
@@ -130,6 +132,10 @@ func mapBillingError(w http.ResponseWriter, r *http.Request, err error) {
 		httpx.WriteError(w, r, http.StatusNotFound, "household_not_found", "Household not found.", nil)
 	case errors.Is(err, billing.ErrInvalidFinanceInput):
 		httpx.WriteError(w, r, http.StatusUnprocessableEntity, "validation_error", err.Error(), nil)
+	case errors.Is(err, billing.ErrCreditPaymentRefundToCredit):
+		httpx.WriteError(w, r, http.StatusUnprocessableEntity, "credit_payment_refund_to_credit", "Account-credit payments can only be refunded back to account credit.", nil)
+	case errors.Is(err, billing.ErrHouseholdRequired):
+		httpx.WriteError(w, r, http.StatusUnprocessableEntity, "household_required", "This action requires an invoice linked to a household.", nil)
 	case errors.Is(err, billing.ErrAutopayPaymentMethodRequired):
 		httpx.WriteError(w, r, http.StatusUnprocessableEntity, "autopay_payment_method_required", "Payment method details are required to enable autopay.", nil)
 	default:
@@ -402,6 +408,7 @@ func (h *BillingHandlers) createRefund(w http.ResponseWriter, r *http.Request) {
 		}
 		refundResult, err := h.stripeClient.CreateRefund(r.Context(), stripelib.RefundParams{
 			PaymentIntentID: preflight.Payment.StripePaymentIntentID,
+			StripeAccount:   preflight.Payment.StripeAccountID,
 			AmountCents:     input.AmountCents,
 			Reason:          input.Reason,
 			IdempotencyKey:  fmt.Sprintf("refund:%s:%s:%s:%d:%d", orgID, invoiceID, preflight.Payment.ID, input.AmountCents, prior),

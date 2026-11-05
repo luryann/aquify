@@ -319,6 +319,8 @@ export default function SwimmerSchedulePage() {
       return
     }
     const now = new Date()
+    const todayStart = new Date(now)
+    todayStart.setHours(0, 0, 0, 0)
     setLoading(true)
     setLoadError(null)
     Promise.all([
@@ -327,8 +329,8 @@ export default function SwimmerSchedulePage() {
     ])
       .then(async ([meets, practices]) => {
         const futureMeets = meets.filter(m => {
-          if (m.end_date) return parseBackendDate(m.end_date) >= now
-          if (m.start_date) return parseBackendDate(m.start_date) >= now
+          if (m.end_date) return parseBackendDate(m.end_date) >= todayStart
+          if (m.start_date) return parseBackendDate(m.start_date) >= todayStart
           return false
         })
 

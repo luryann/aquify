@@ -20,6 +20,7 @@ security:
 tags:
   - name: Health
   - name: Engagement
+  - name: Platform
   - name: Auth
   - name: Users
   - name: Members
@@ -397,7 +398,7 @@ paths:
     post:
       tags: [Users]
       summary: Submit public self-registration request
-      description: Creates a pending-approval Keycloak user for the provided organization and records the requested role and registration metadata for admin review.
+      description: Creates a pending-approval Keycloak user in the organization that owns the supplied public `club_slug` and records the requested role and registration metadata for admin review. The organization is resolved server-side from the slug; a raw `org_id` is honoured only in explicit development/test environments and is rejected elsewhere.
       security: []
       operationId: selfRegister
       requestBody:
@@ -413,8 +414,12 @@ paths:
               schema: { $ref: "#/components/schemas/SelfRegisterResponse" }
         "400":
           $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
         "409":
           $ref: "#/components/responses/Conflict"
+        "429":
+          description: Too many attempts (per IP, or 3 per hour per email)
         "503":
           $ref: "#/components/responses/ServiceUnavailable"
 
@@ -7047,7 +7052,7 @@ paths:
     get:
       tags: [Engagement]
       summary: Public team website feed
-      description: Unauthenticated, read-only and rate limited. Returns only club identity and contact, announcements marked public, upcoming published meets, upcoming club events marked public, current team records (swimmer names only) and, when enabled in org settings, coach names. Sites that are disabled or unknown return 404.
+      description: Unauthenticated, read-only and rate limited. Returns only club identity and contact, announcements marked public, upcoming published meets, upcoming club events marked public and, when enabled in org settings, coach names. Sites that are disabled or unknown return 404.
       operationId: getPublicTeamSite
       security: []
       parameters:
@@ -7059,6 +7064,297 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/PublicTeamSite" }
         "404": { $ref: "#/components/responses/NotFound" }
+  /billing/payment-account:
+    get:
+      tags: [Billing]
+      summary: Get the club's Stripe payment account status
+      description: Admin only. Refreshes the capability flags from Stripe. `required` is true when the deployment forbids falling back to the platform Stripe account (the default outside development), in which case `can_take_payments` is false until onboarding finishes.
+      operationId: getPaymentAccount
+      responses:
+        "200": { description: Payment account status }
+        "403": { $ref: "#/components/responses/Forbidden" }
+  /billing/payment-account/onboarding:
+    post:
+      tags: [Billing]
+      summary: Start or resume Stripe Connect onboarding
+      description: Admin only. Creates the club's own Standard connected account on first use (idempotent) and returns a hosted onboarding link. return_url and refresh_url must belong to a trusted application origin. Payments, refunds and reconciliation for the club then run on that account; the Connect webhook attributes events by account, never by metadata alone.
+      operationId: startPaymentAccountOnboarding
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [return_url]
+              properties:
+                return_url: { type: string }
+                refresh_url: { type: string }
+      responses:
+        "200": { description: Onboarding link }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "502": { description: Stripe error }
+  /invites:
+    get:
+      tags: [Users]
+      summary: List sign-up invites
+      description: Admin only. Codes are never returned after creation (only a hash is stored).
+      operationId: listInvites
+      responses:
+        "200": { description: Invites }
+        "403": { $ref: "#/components/responses/Forbidden" }
+    post:
+      tags: [Users]
+      summary: Create a sign-up invite
+      description: Admin only. Returns the plaintext code exactly once. Bound to the caller's org and a non-admin role (parent, swimmer, coach); limited by max_uses (default 1) and ttl_days (default 14, max 90). Audited.
+      operationId: createInvite
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [role]
+              properties:
+                label: { type: string }
+                role: { type: string, enum: [parent, swimmer, coach] }
+                max_uses: { type: integer, minimum: 1, maximum: 1000 }
+                ttl_days: { type: integer, minimum: 1, maximum: 90 }
+      responses:
+        "201": { description: Created; includes the one-time `code` }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+  /invites/{id}:
+    delete:
+      tags: [Users]
+      summary: Revoke a sign-up invite
+      operationId: revokeInvite
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        "204": { description: Revoked }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /public/tenant:
+    get:
+      tags: [Engagement]
+      summary: Resolve a public club handle
+      description: Unauthenticated and rate limited. Resolves a club slug, or the host of a verified custom domain, to the club's public identity (slug and name only; the org id is never returned). Unknown, unverified and inactive clubs all return the same 404.
+      operationId: resolvePublicTenant
+      security: []
+      parameters:
+        - { name: slug, in: query, required: false, schema: { type: string } }
+        - { name: host, in: query, required: false, schema: { type: string } }
+      responses:
+        "200":
+          description: Club identity
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  slug: { type: string }
+                  name: { type: string }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /platform/orgs:
+    get:
+      tags: [Platform]
+      summary: List organizations
+      description: Operator plane. Requires the platform_admin role, membership of the platform org and MFA. Optional `status` filter.
+      operationId: platformListOrgs
+      parameters:
+        - { name: status, in: query, required: false, schema: { type: string, enum: [provisioning, active, suspended, offboarding, deleted] } }
+      responses:
+        "200": { description: Organizations }
+        "403": { $ref: "#/components/responses/Forbidden" }
+    post:
+      tags: [Platform]
+      summary: Provision an organization
+      description: Creates the org, its club settings and first administrator, then activates it. Idempotent for a half-finished provisioning of the same slug (200 when resumed).
+      operationId: platformCreateOrg
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, slug, admin_email]
+              properties:
+                name: { type: string }
+                slug: { type: string }
+                plan: { type: string }
+                region: { type: string }
+                team_code: { type: string }
+                admin_email: { type: string, format: email }
+                admin_first_name: { type: string }
+                admin_last_name: { type: string }
+      responses:
+        "200": { description: Resumed an unfinished provisioning }
+        "201": { description: Provisioned }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "502": { description: Provisioning incomplete; repeat the request to resume }
+  /platform/orgs/{id}:
+    get:
+      tags: [Platform]
+      summary: Get an organization
+      operationId: platformGetOrg
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        "200": { description: Organization }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /platform/orgs/{id}/suspend:
+    post:
+      tags: [Platform]
+      summary: Suspend an organization
+      description: All of the org's API access is refused immediately (403 org_unavailable). The platform org cannot be suspended. Audited.
+      operationId: platformSuspendOrg
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        "200": { description: Suspended }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+  /platform/orgs/{id}/resume:
+    post:
+      tags: [Platform]
+      summary: Resume a suspended organization
+      operationId: platformResumeOrg
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        "200": { description: Resumed }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+  /platform/orgs/{id}/offboard:
+    post:
+      tags: [Platform]
+      summary: Start offboarding an organization
+      description: "Operator plane. Moves the org to offboarding: access stops immediately and the cooling-off period (PLATFORM_OFFBOARDING_COOLING_OFF, default 14 days) starts. The platform org cannot be offboarded. Audited."
+      operationId: platformOffboardOrg
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        "200": { description: Offboarding started }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+  /platform/orgs/{id}/cancel-offboarding:
+    post:
+      tags: [Platform]
+      summary: Cancel offboarding
+      description: "Operator plane. Returns the org to suspended (access stays off until it is resumed) and clears the cooling-off clock."
+      operationId: platformCancelOffboarding
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        "200": { description: Offboarding cancelled; org suspended }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+  /platform/orgs/{id}/export:
+    post:
+      tags: [Platform]
+      summary: Export an organization's data
+      description: "Operator plane. Writes a zip of every table row the org owns (one NDJSON file per table) plus a manifest of its stored files to object storage and returns a 24-hour download link. Credentials (sessions, MFA factors, feed tokens, invite hashes, integration secrets, payment account link, raw webhook payloads) are never included. Audited."
+      operationId: platformExportOrg
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        "200": { description: Export written }
+        "501": { description: Offboarding needs a database }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+  /platform/orgs/{id}/purge:
+    post:
+      tags: [Platform]
+      summary: Permanently delete an organization's data
+      description: "Operator plane. Requires status offboarding for at least the cooling-off period and `confirm_slug` equal to the org slug. Deletes the org's identity-provider users, stored files and database rows; the audit trail is retained and the org row stays as a tombstone (status deleted, slug released). Irreversible. Audited."
+      operationId: platformPurgeOrg
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [confirm_slug]
+              properties:
+                confirm_slug: { type: string }
+      responses:
+        "200": { description: Purged }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "501": { description: Offboarding needs a database }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+  /platform/orgs/{id}/restore:
+    post:
+      tags: [Platform]
+      summary: Restore an organization from its export
+      description: "Operator plane. Loads an earlier offboarding export of this org back into the database (single-org recovery; other orgs are untouched). Only rows whose org_id is this org are inserted, existing rows are left alone, credentials were never exported so people re-enrol MFA, and stored files are not restored. The org returns suspended; an operator resumes it deliberately."
+      operationId: platformRestoreOrg
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [export_key]
+              properties:
+                export_key: { type: string }
+      responses:
+        "200": { description: Restored }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "501": { description: Offboarding needs a database }
+  /platform/orgs/{id}/domains:
+    post:
+      tags: [Platform]
+      summary: Register a custom domain
+      description: Returns the DNS TXT challenge (`_aquify-verify.<domain>` = `aquify-verify=<org id>`). The domain resolves only after verification.
+      operationId: platformAddOrgDomain
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [domain]
+              properties:
+                domain: { type: string }
+      responses:
+        "201": { description: Registered, unverified }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+  /platform/orgs/{id}/domains/{domain}/verify:
+    post:
+      tags: [Platform]
+      summary: Verify a custom domain via DNS
+      operationId: platformVerifyOrgDomain
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+        - { name: domain, in: path, required: true, schema: { type: string } }
+      responses:
+        "200": { description: Verified }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
   /wellness/checkins:
     put:
       tags: [Engagement]
@@ -9165,16 +9461,17 @@ components:
 
     SelfRegisterRequest:
       type: object
-      required: [email, org_id]
+      required: [email]
       properties:
         first_name: { type: string }
         last_name: { type: string }
         email: { type: string, format: email }
-        org_id: { type: string }
+        club_slug: { type: string, description: Public club handle (org_settings.public_slug); resolved to the org server-side. }
+        org_id: { type: string, description: Development/test environments only; rejected in staging/production. }
         requested_role:
           type: string
           enum: [admin, coach, parent, swimmer]
-        club_code: { type: string, maxLength: 20 }
+        club_code: { type: string, maxLength: 20, description: With club_slug, an invite code created by the club's admins; an invalid code returns 400 invalid_invite and the invite's role overrides requested_role. }
         note: { type: string, maxLength: 500 }
 
     SelfRegisterResponse:
@@ -9327,6 +9624,8 @@ components:
               items: { type: string }
             notes: { type: string }
             portal_access_disabled: { type: boolean, description: "When true, this swimmer cannot sign in (swimmer role); records are kept." }
+            guardian_consent_at: { type: string, format: date-time, description: "When a parent consented to this swimmer having their own account. Required for swimmers under 13; absent otherwise." }
+            guardian_consent_version: { type: string, description: "Privacy policy version the parent consented to." }
 
     SwimmerResponse:
       type: object
@@ -9377,6 +9676,7 @@ components:
           items: { type: string }
         notes: { type: string }
         portal_access_disabled: { type: boolean, description: "Admin/coach, or a parent for their own household's swimmers. Swimmers cannot change it." }
+        guardian_consent: { type: boolean, description: "true records a parent's consent for a swimmer under 13 to have their own account (parent of the household only); false withdraws it (staff or parent) and unlinks the swimmer's sign-in." }
 
     # Groups ───────────────────────────────────────────────────────────────────
     Group:
@@ -9723,6 +10023,9 @@ components:
         public_contact_email: { type: string }
         public_contact_phone: { type: string }
         swimmer_accounts_enabled: { type: boolean, default: true }
+        timezone: { type: string, description: "IANA zone name such as America/Los_Angeles; empty = UTC. Sets the zone advertised in the club's .ics feeds." }
+        currency: { type: string, description: "ISO 4217 code in lower case; empty = the deployment default. Used for the club's Stripe payments." }
+        legal_name: { type: string, maxLength: 120, description: "Legal entity name for invoices." }
         updated_at: { type: string, format: date-time }
         updated_by: { type: string }
     PublicTeamSite:
@@ -9771,21 +10074,6 @@ components:
               starts_at: { type: string, format: date-time }
               ends_at: { type: [string, "null"], format: date-time }
               all_day: { type: boolean }
-        records:
-          type: array
-          items:
-            type: object
-            properties:
-              label: { type: string }
-              course: { type: string }
-              gender: { type: string }
-              age_group: { type: string }
-              distance: { type: integer }
-              stroke: { type: string }
-              time_ms: { type: integer }
-              swimmer_name: { type: string }
-              swim_date: { type: string }
-              meet_name: { type: string }
         coaches:
           type: array
           items:

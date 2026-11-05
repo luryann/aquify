@@ -77,6 +77,9 @@ func round2(v float64) float64 { return math.Round(v*100) / 100 }
 // ProgressReport computes time drops between two periods. Staff see every
 // swimmer; parent/swimmer callers see only their own household.
 func (s *Service) ProgressReport(orgID string, principal *appmiddleware.Principal, in ProgressReportInput) (*ProgressReport, error) {
+	if err := s.ensureOrg(orgID); err != nil {
+		return nil, err
+	}
 	if err := s.requireReadAccess(principal); err != nil {
 		return nil, err
 	}

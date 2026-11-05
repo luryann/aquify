@@ -153,6 +153,12 @@ type quickParser struct {
 	lastClosed *WorkoutSet
 }
 
+// failNesting rejects a round that would exceed the nesting cap before it is
+// opened, so hostile input cannot drive the parser into deep recursion.
+func (p *quickParser) failNesting(line int, text string) {
+	p.fail(line, text, fmt.Sprintf("rounds may be nested at most %d levels", MaxNestingDepth-1))
+}
+
 func (p *quickParser) currentSection() *WorkoutSection {
 	if len(p.sections) == 0 {
 		p.sections = append(p.sections, WorkoutSection{Kind: "main", Sets: []WorkoutSet{}})
@@ -282,6 +288,10 @@ func (p *quickParser) parseLine(text string, indent, lineNo int) {
 	if m := reRoundHead.FindStringSubmatch(lower); m != nil {
 		reps, _ := strconv.Atoi(m[1])
 		opener := m[2]
+		if len(p.stack) >= MaxNestingDepth-1 {
+			p.failNesting(lineNo, text)
+			return
+		}
 		restText := originalTail(text, m[3])
 		round := p.addSet(WorkoutSet{Repeats: reps, Sets: []WorkoutSet{}})
 		if opener == ":" {
@@ -306,6 +316,10 @@ func (p *quickParser) parseLine(text string, indent, lineNo int) {
 	}
 	if m := reRoundHeadNL.FindStringSubmatch(lower); m != nil {
 		reps, _ := strconv.Atoi(m[1])
+		if len(p.stack) >= MaxNestingDepth-1 {
+			p.failNesting(lineNo, text)
+			return
+		}
 		round := p.addSet(WorkoutSet{Repeats: reps, Sets: []WorkoutSet{}})
 		p.stack = append(p.stack, &roundFrame{set: round, indent: indent})
 		return

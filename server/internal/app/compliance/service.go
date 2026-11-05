@@ -32,11 +32,10 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"log/slog"
+	"github.com/luryann/aquify/server/internal/dbutil"
 	"slices"
 	"sort"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/google/uuid"
@@ -93,7 +92,7 @@ type DataDeletionRequest struct {
 
 // Service manages compliance data-export and data-deletion requests.
 type Service struct {
-	mu        sync.RWMutex
+	mu        dbutil.GenMutex
 	repo      *Repository
 	exports   map[string]*DataExportRequest
 	deletions map[string]*DataDeletionRequest
@@ -148,90 +147,94 @@ func NewServiceWithPool(pool *pgxpool.Pool, exportTTLDays, deletionReviewDays in
 		return s
 	}
 	s.repo = newRepository(pool)
-	if err := s.loadFromDB(context.Background()); err != nil {
-		slog.Error("compliance: failed to load from DB", "err", err)
-	}
 	return s
-}
-
-func (s *Service) loadFromDB(ctx context.Context) error {
-	exports, deletions, err := s.repo.LoadAll(ctx)
-	if err != nil {
-		return err
-	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	for _, e := range exports {
-		s.exports[e.ID] = e
-	}
-	for _, d := range deletions {
-		s.deletions[d.ID] = d
-	}
-	return nil
 }
 
 // syncExport refreshes one export request from Postgres so reads and
 // transitions observe changes made by another process (API vs worker).
 // Caller must NOT hold s.mu. No-op in in-memory mode.
-func (s *Service) syncExport(requestID string) error {
+func (s *Service) syncExport(orgID, requestID string) error {
 	if s.repo == nil {
 		return nil
 	}
-	fresh, err := s.repo.GetDataExportRequest(context.Background(), requestID)
+	fresh, err := s.repo.GetDataExportRequest(context.Background(), orgID, requestID)
 	if err != nil {
 		return err
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.syncExportLocked(requestID, fresh)
+	s.syncExportLocked(orgID, requestID, fresh)
 	return nil
 }
 
-func (s *Service) syncExportLocked(requestID string, fresh *DataExportRequest) {
+func (s *Service) syncExportLocked(orgID, requestID string, fresh *DataExportRequest) {
 	if fresh == nil {
-		delete(s.exports, requestID)
+		// Absent for this club: drop only a cached copy that belongs to it (a request id
+		// from another club must not evict that club's entry).
+		if cached, ok := s.exports[requestID]; ok && cached.OrgID == orgID {
+			delete(s.exports, requestID)
+		}
 		return
 	}
 	s.exports[requestID] = fresh
 }
 
-func (s *Service) syncDeletion(requestID string) error {
+func (s *Service) syncDeletion(orgID, requestID string) error {
 	if s.repo == nil {
 		return nil
 	}
-	fresh, err := s.repo.GetDataDeletionRequest(context.Background(), requestID)
+	fresh, err := s.repo.GetDataDeletionRequest(context.Background(), orgID, requestID)
 	if err != nil {
 		return err
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if fresh == nil {
-		delete(s.deletions, requestID)
+		if cached, ok := s.deletions[requestID]; ok && cached.OrgID == orgID {
+			delete(s.deletions, requestID)
+		}
 		return nil
 	}
 	s.deletions[requestID] = fresh
 	return nil
 }
 
-// reloadAll replaces the caches with the current Postgres state.
-func (s *Service) reloadAll() error {
+// reloadOrg replaces one club's cached requests with the current Postgres state. The
+// read runs without the service lock (so one club's reload does not block the others);
+// a writer that finished meanwhile forces a re-read, and repeated conflicts fall back to
+// loading under the lock so an older snapshot never overwrites a newer write.
+func (s *Service) reloadOrg(orgID string) error {
 	if s.repo == nil {
 		return nil
 	}
-	exports, deletions, err := s.repo.LoadAll(context.Background())
-	if err != nil {
+	ctx := context.Background()
+	swap := func(exports []*DataExportRequest, deletions []*DataDeletionRequest) {
+		dbutil.DropByOrg(s.exports, orgID, func(e *DataExportRequest) string { return e.OrgID })
+		for _, e := range exports {
+			s.exports[e.ID] = e
+		}
+		dbutil.DropByOrg(s.deletions, orgID, func(d *DataDeletionRequest) string { return d.OrgID })
+		for _, d := range deletions {
+			s.deletions[d.ID] = d
+		}
+	}
+	done, err := dbutil.ReloadUnlocked(&s.mu, nil, func() (func(), error) {
+		exports, deletions, err := s.repo.LoadOrg(ctx, orgID)
+		if err != nil {
+			return nil, err
+		}
+		return func() { swap(exports, deletions) }, nil
+	})
+	if done || err != nil {
 		return err
 	}
 	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.exports = make(map[string]*DataExportRequest, len(exports))
-	for _, e := range exports {
-		s.exports[e.ID] = e
+	defer s.mu.UnlockWithoutBump()
+	exports, deletions, err := s.repo.LoadOrg(ctx, orgID)
+	if err != nil {
+		return err
 	}
-	s.deletions = make(map[string]*DataDeletionRequest, len(deletions))
-	for _, d := range deletions {
-		s.deletions[d.ID] = d
-	}
+	swap(exports, deletions)
 	return nil
 }
 
@@ -278,7 +281,7 @@ func (s *Service) CreateDataExportRequest(orgID, householdID, requestedBy string
 // GetDataExportRequest returns the export request identified by requestID.
 // Callers must enforce org-scope and ownership checks before calling.
 func (s *Service) GetDataExportRequest(orgID, requestID string) (*DataExportRequest, error) {
-	if err := s.syncExport(requestID); err != nil {
+	if err := s.syncExport(orgID, requestID); err != nil {
 		return nil, err
 	}
 	s.mu.RLock()
@@ -294,7 +297,7 @@ func (s *Service) GetDataExportRequest(orgID, requestID string) (*DataExportRequ
 // ListDataExportRequests returns all export requests for an org (or a specific household).
 // Pass householdID="" to list all requests for the org.
 func (s *Service) ListDataExportRequests(orgID, householdID string) ([]DataExportRequest, error) {
-	if err := s.reloadAll(); err != nil {
+	if err := s.reloadOrg(orgID); err != nil {
 		return nil, err
 	}
 	s.mu.RLock()
@@ -345,7 +348,7 @@ func (s *Service) FailDataExport(orgID, requestID string) (*DataExportRequest, e
 // transitionExport moves a data export request out of one of the allowed
 // statuses: it applies the change to a copy, persists it, then updates the cache.
 func (s *Service) transitionExport(orgID, requestID string, from []string, apply func(req *DataExportRequest, now time.Time)) (*DataExportRequest, error) {
-	if err := s.syncExport(requestID); err != nil {
+	if err := s.syncExport(orgID, requestID); err != nil {
 		return nil, err
 	}
 	s.mu.Lock()
@@ -403,7 +406,7 @@ func (s *Service) CreateDataDeletionRequest(orgID, householdID, requestedBy, rea
 
 // GetDataDeletionRequest returns the deletion request identified by requestID.
 func (s *Service) GetDataDeletionRequest(orgID, requestID string) (*DataDeletionRequest, error) {
-	if err := s.syncDeletion(requestID); err != nil {
+	if err := s.syncDeletion(orgID, requestID); err != nil {
 		return nil, err
 	}
 	s.mu.RLock()
@@ -419,7 +422,7 @@ func (s *Service) GetDataDeletionRequest(orgID, requestID string) (*DataDeletion
 // ListDataDeletionRequests returns all deletion requests for an org.
 // Pass householdID="" to list all.
 func (s *Service) ListDataDeletionRequests(orgID, householdID string) ([]DataDeletionRequest, error) {
-	if err := s.reloadAll(); err != nil {
+	if err := s.reloadOrg(orgID); err != nil {
 		return nil, err
 	}
 	s.mu.RLock()
@@ -479,10 +482,22 @@ func (s *Service) MarkDataDeletionProcessing(orgID, requestID string) (*DataDele
 	})
 }
 
+// appendSystemNotes keeps the admin's review notes and appends the worker message.
+func appendSystemNotes(existing, msg string) string {
+	msg = strings.TrimSpace(msg)
+	if msg == "" {
+		return existing
+	}
+	if existing == "" {
+		return msg
+	}
+	return existing + "\n\n[system] " + msg
+}
+
 func (s *Service) CompleteDataDeletion(orgID, requestID, reviewNotes string) (*DataDeletionRequest, error) {
 	return s.transitionDeletion(orgID, requestID, []string{"processing"}, func(req *DataDeletionRequest, now time.Time) {
 		req.Status = "completed"
-		req.ReviewNotes = strings.TrimSpace(reviewNotes)
+		req.ReviewNotes = appendSystemNotes(req.ReviewNotes, reviewNotes)
 		req.CompletedAt = &now
 	})
 }
@@ -490,13 +505,13 @@ func (s *Service) CompleteDataDeletion(orgID, requestID, reviewNotes string) (*D
 func (s *Service) FailDataDeletion(orgID, requestID, reviewNotes string) (*DataDeletionRequest, error) {
 	return s.transitionDeletion(orgID, requestID, []string{"processing"}, func(req *DataDeletionRequest, _ time.Time) {
 		req.Status = "failed"
-		req.ReviewNotes = strings.TrimSpace(reviewNotes)
+		req.ReviewNotes = appendSystemNotes(req.ReviewNotes, reviewNotes)
 	})
 }
 
 // transitionDeletion is the data deletion counterpart of transitionExport.
 func (s *Service) transitionDeletion(orgID, requestID string, from []string, apply func(req *DataDeletionRequest, now time.Time)) (*DataDeletionRequest, error) {
-	if err := s.syncDeletion(requestID); err != nil {
+	if err := s.syncDeletion(orgID, requestID); err != nil {
 		return nil, err
 	}
 	s.mu.Lock()
@@ -514,7 +529,7 @@ func (s *Service) transitionDeletion(orgID, requestID string, from []string, app
 	apply(&cp, now)
 	cp.UpdatedAt = now
 	if s.repo != nil {
-		if err := s.repo.UpsertDataDeletionRequest(context.Background(), &cp); err != nil {
+		if err := s.repo.TransitionDataDeletionRequest(context.Background(), &cp, from); err != nil {
 			return nil, err
 		}
 	}

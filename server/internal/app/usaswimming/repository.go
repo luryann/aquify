@@ -5,15 +5,19 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/luryann/aquify/server/internal/dbutil"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/luryann/aquify/server/internal/dbutil"
+	"github.com/luryann/aquify/server/internal/tenantdb"
 )
 
 type repository struct{ pool *pgxpool.Pool }
 
+// at binds orgID to every statement so row-level security on the integration table applies.
+func (r *repository) at(orgID string) tenantdb.Scoped { return tenantdb.Pool{P: r.pool}.For(orgID) }
+
 func (r *repository) upsert(ctx context.Context, s *Settings) error {
-	_, err := r.pool.Exec(ctx, `
+	_, err := r.at(s.OrgID).Exec(ctx, `
 		INSERT INTO usa_swimming_integrations (org_id, base_url, api_key_encrypted, api_key_hint, enabled,
 			last_test_at, last_test_ok, last_test_message, last_sync_at, last_sync_message, updated_at, updated_by, token_url, client_id, club_id)
 		VALUES ($1::uuid,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)
@@ -30,7 +34,7 @@ func (r *repository) upsert(ctx context.Context, s *Settings) error {
 
 func (r *repository) get(ctx context.Context, orgID string) (*Settings, error) {
 	s := &Settings{}
-	err := r.pool.QueryRow(ctx, `
+	err := r.at(orgID).QueryRow(ctx, `
 		SELECT org_id::text, base_url, api_key_encrypted, api_key_hint, enabled, last_test_at, last_test_ok,
 		       last_test_message, last_sync_at, last_sync_message, updated_at, COALESCE(updated_by::text,''), token_url, client_id, club_id
 		FROM usa_swimming_integrations WHERE org_id=$1::uuid`, orgID).

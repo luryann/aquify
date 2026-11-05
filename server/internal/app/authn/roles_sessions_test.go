@@ -79,7 +79,7 @@ func TestRevokeUserSessionsInvalidatesExistingSessions(t *testing.T) {
 		return s
 	}
 	a1, a2, b := mk("user-a"), mk("user-a"), mk("user-b")
-	n, err := service.RevokeUserSessions(context.Background(), "user-a")
+	n, err := service.RevokeUserSessions(context.Background(), "", "user-a")
 	if err != nil || n != 2 {
 		t.Fatalf("n=%d err=%v", n, err)
 	}

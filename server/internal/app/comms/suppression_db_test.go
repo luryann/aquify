@@ -3,8 +3,8 @@ package comms
 import (
 	"testing"
 
-	"github.com/luryann/aquify/server/internal/testutil"
 	"github.com/google/uuid"
+	"github.com/luryann/aquify/server/internal/testutil"
 )
 
 // System actors such as "postmark-webhook" must not reach the uuid created_by column.
@@ -23,7 +23,11 @@ func TestApplyPostmarkBouncePersistsSuppression(t *testing.T) {
 	if err := pool.QueryRow(t.Context(), `SELECT count(*) FROM suppression_list WHERE org_id = $1::uuid AND created_by IS NULL`, org).Scan(&n); err != nil || n != 2 {
 		t.Fatalf("persisted suppression rows = %d err=%v", n, err)
 	}
-	if reloaded := NewServiceWithPool(pool); len(reloaded.suppression) != 2 {
+	reloaded := NewServiceWithPool(pool)
+	if err := reloaded.RefreshOrg(t.Context(), org); err != nil { // clubs load on demand, not at startup
+		t.Fatal(err)
+	}
+	if len(reloaded.suppression) != 2 {
 		t.Fatalf("reload suppression = %d", len(reloaded.suppression))
 	}
 }

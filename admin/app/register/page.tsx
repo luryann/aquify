@@ -4,6 +4,7 @@ import { AuthBackdrop } from '@/components/auth/AuthBackdrop'
 import { Suspense, useState, useCallback, type FormEvent } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { resolvePublicOrg } from '@/lib/public-org'
+import { resolveClubSlug } from '@/lib/public-tenant'
 import './register.css'
 
 type Role = 'parent' | 'coach'
@@ -54,6 +55,8 @@ function RegisterPageContent() {
   const [submitStatus, setSubmitStatus] = useState<SubmitStatus>('idle')
   const [apiError, setApiError] = useState('')
   const [submitted, setSubmitted] = useState(false)
+  const [agreed, setAgreed] = useState(false)
+  const [agreeError, setAgreeError] = useState(false)
 
   const set = useCallback((k: keyof FormState) => (
     (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
@@ -72,16 +75,25 @@ function RegisterPageContent() {
   const handleSubmit = useCallback(async (e: FormEvent) => {
     e.preventDefault()
     const errs = validate(form)
-    if (Object.keys(errs).length > 0) { setErrors(errs); return }
+    if (!agreed) setAgreeError(true)
+    if (Object.keys(errs).length > 0 || !agreed) { setErrors(errs); return }
     setSubmitStatus('loading')
     setApiError('')
     try {
-      const resolved = resolvePublicOrg({
+      // The club slug (from the club site's "Join" link) is the tenant handle;
+      // the server resolves it to an org. Raw org ids are a dev/test fallback only.
+      const clubSlug = await resolveClubSlug({
         searchParams,
         host: typeof window === 'undefined' ? '' : window.location.hostname,
-        clubCode: form.clubCode,
       })
-      if (!resolved.orgId) {
+      const resolved = clubSlug
+        ? { orgId: '', clubCode: form.clubCode.trim().toUpperCase() }
+        : resolvePublicOrg({
+            searchParams,
+            host: typeof window === 'undefined' ? '' : window.location.hostname,
+            clubCode: form.clubCode,
+          })
+      if (!clubSlug && !resolved.orgId) {
         setApiError('We could not determine your club. Use the registration link from your club or enter a valid club code.')
         setSubmitStatus('error')
         return
@@ -93,7 +105,8 @@ function RegisterPageContent() {
           first_name: form.firstName.trim(),
           last_name: form.lastName.trim(),
           email: form.email.trim().toLowerCase(),
-          org_id: resolved.orgId,
+          club_slug: clubSlug || undefined,
+          org_id: clubSlug ? undefined : resolved.orgId,
           requested_role: form.role,
           club_code: resolved.clubCode || undefined,
           note: form.message.trim() || undefined,
@@ -110,15 +123,21 @@ function RegisterPageContent() {
         return
       }
       const data = await res.json().catch(() => ({}))
+      const code = (data as { error?: { code?: string } }).error?.code
       const message = (data as { message?: string; error?: { message?: string } }).error?.message
         ?? (data as { message?: string }).message
-      setApiError(message ?? 'Couldn’t send your request. Try again.')
+      const byCode: Record<string, string> = {
+        club_not_found: 'We couldn’t find that club. Use the Join link from your club’s website.',
+        invalid_invite: 'That invite code isn’t valid. It may have expired or been used already. Ask your club for a new one.',
+        rate_limited: 'Too many requests for this email. Try again in an hour.',
+      }
+      setApiError((code && byCode[code]) ?? message ?? 'Couldn’t send your request. Try again.')
       setSubmitStatus('error')
     } catch {
       setApiError('Couldn’t connect. Check your connection and try again.')
       setSubmitStatus('error')
     }
-  }, [form, searchParams])
+  }, [form, searchParams, agreed])
 
   const submitting = submitStatus === 'loading'
 
@@ -332,6 +351,25 @@ function RegisterPageContent() {
                 disabled={submitting}
                 maxLength={500}
               />
+            </div>
+
+            <div className="rp-field">
+              <label className="rp-agree" htmlFor="rp-agree">
+                <input
+                  id="rp-agree"
+                  type="checkbox"
+                  checked={agreed}
+                  disabled={submitting}
+                  aria-invalid={agreeError && !agreed}
+                  onChange={(e) => { setAgreed(e.target.checked); setAgreeError(false) }}
+                />
+                <span>
+                  I agree to the <a href="/terms" target="_blank" rel="noopener" className="rp-link">Terms of service</a> and have
+                  read the <a href="/privacy" target="_blank" rel="noopener" className="rp-link">Privacy policy</a>. If I’m
+                  registering a child, I’m their parent or legal guardian.
+                </span>
+              </label>
+              {agreeError && !agreed ? <p className="rp-err" role="alert">Agree to continue</p> : null}
             </div>
 
             <button

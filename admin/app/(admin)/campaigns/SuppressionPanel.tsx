@@ -11,10 +11,14 @@ import { createSuppression, fetchSuppression, removeSuppression, type Suppressio
 import { uiErrorMessage } from '@/lib/frontend-telemetry'
 import { formatDateTime } from '@/lib/dates'
 import { FIELD_INPUT_STYLE } from '@/lib/form-styles'
+import { useStaffNames } from '@/lib/useStaffNames'
+import { useConfirm } from '@/components/ui/ConfirmDialog'
 
 export function SuppressionPanel() {
   const { session } = useSession()
   const api = useApiClient(session?.token)
+  const staffName = useStaffNames(api, session?.user.orgId)
+  const confirm = useConfirm()
   const [entries, setEntries] = useState<SuppressionRecord[]>([])
   const [email, setEmail] = useState('')
   const [reason, setReason] = useState('manual')
@@ -124,7 +128,7 @@ export function SuppressionPanel() {
       ),
     }),
     col<SuppressionRecord>({ key: 'created_at', label: 'Added', sortable: true, render: (row) => formatDateTime(row.created_at) }),
-    col<SuppressionRecord>({ key: 'created_by', label: 'Added by', sortable: true, cellStyle: { color: 'var(--text-muted)' } }),
+    col<SuppressionRecord>({ key: 'created_by', label: 'Added by', sortable: true, cellStyle: { color: 'var(--text-muted)' }, render: (row) => staffName(row.created_by) }),
     col<SuppressionRecord>({
       key: 'actions',
       label: '',
@@ -132,7 +136,19 @@ export function SuppressionPanel() {
       align: 'right',
       render: (row) => (
         <button
-          onClick={(e) => { e.stopPropagation(); void handleRemove(row.id) }}
+          onClick={async (e) => {
+            e.stopPropagation()
+            if (row.reason === 'bounce' || row.reason === 'complaint') {
+              const ok = await confirm({
+                title: 'Remove suppression?',
+                message: `${row.email} is suppressed because of a ${row.reason}. Future campaigns will email this address again.`,
+                confirmLabel: 'Remove',
+                destructive: true,
+              })
+              if (!ok) return
+            }
+            void handleRemove(row.id)
+          }}
           disabled={workingId === row.id}
           className="btn btn-sm btn-secondary"
         >

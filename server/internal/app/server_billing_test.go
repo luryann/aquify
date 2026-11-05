@@ -1201,6 +1201,7 @@ func TestHouseholdAutopayParentCanManageOwnHouseholdAndPreviewNextCharge(t *test
 	t.Parallel()
 
 	svc := billing.NewService()
+	svc.SetHouseholdChecker(func(string, string) bool { return true }) // fixture uses made-up household ids
 	router := newBillingRouter(t, svc)
 	adminToken := issueSessionToken(t, router, "org-demo", []string{"admin"}, false)
 	parentToken := issueSessionTokenWithHousehold(t, router, "parent-autopay", "org-demo", "hh-parent", []string{"parent"}, false)
@@ -1270,6 +1271,7 @@ func TestListHouseholdAutopayAdminCanReadAll(t *testing.T) {
 	t.Parallel()
 
 	svc := billing.NewService()
+	svc.SetHouseholdChecker(func(string, string) bool { return true }) // fixture uses made-up household ids
 	router := newBillingRouter(t, svc)
 	adminToken := issueSessionToken(t, router, "org-demo", []string{"admin"}, false)
 
@@ -1309,6 +1311,7 @@ func TestHouseholdAutopayActionsEmitAuditEvents(t *testing.T) {
 	t.Parallel()
 
 	svc := billing.NewService()
+	svc.SetHouseholdChecker(func(string, string) bool { return true }) // fixture uses made-up household ids
 	auditSvc := audit.NewService()
 	router := newBillingRouterWithAudit(t, svc, auditSvc)
 	adminToken := issueSessionToken(t, router, "org-demo", []string{"admin"}, false)

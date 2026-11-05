@@ -7,8 +7,9 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/luryann/aquify/server/internal/dbutil"
 	"github.com/jackc/pgx/v5"
+	"github.com/luryann/aquify/server/internal/dbutil"
+	"github.com/luryann/aquify/server/internal/tenantdb"
 )
 
 // webhookLease is how long a claimed webhook delivery is considered in flight
@@ -36,6 +37,13 @@ func isUUIDString(s string) bool {
 
 // claimWebhookEvent inserts the event or re-claims it for processing. It
 // returns false for terminal events and ErrWebhookInFlight for an active lease.
+// forEvent binds a provider event key. Delivery dedupe is global across clubs (one provider
+// event id is processed once) and the owning club may not be known yet, so these statements
+// bind the event itself: the webhook_event policy exposes exactly the row for that key.
+func (r *Repository) forEvent(provider, eventID string) tenantdb.Scoped {
+	return tenantdb.Pool{P: r.pool}.ForLookup(tenantdb.LookupWebhookEvent, provider+":"+eventID)
+}
+
 func (r *Repository) claimWebhookEvent(ctx context.Context, rec *WebhookEventRecord) (bool, error) {
 	payload := string(rec.Payload)
 	if payload == "" {
@@ -46,7 +54,7 @@ func (r *Repository) claimWebhookEvent(ctx context.Context, rec *WebhookEventRec
 		org = rec.OrgID
 	}
 	var id string
-	err := r.pool.QueryRow(ctx, `
+	err := r.forEvent(rec.Provider, rec.EventID).QueryRow(ctx, `
 		INSERT INTO webhook_events (id, org_id, provider, event_id, event_type, payload, processed, retryable,
 		       processing_until, created_at)
 		VALUES ($1::uuid, $2::uuid, $3, $4, $5, $6::jsonb, FALSE, FALSE, now() + make_interval(secs => $7), $8)
@@ -59,7 +67,7 @@ func (r *Repository) claimWebhookEvent(ctx context.Context, rec *WebhookEventRec
 		rec.ID, org, rec.Provider, rec.EventID, rec.EventType, payload, webhookLease.Seconds(), rec.CreatedAt).Scan(&id)
 	if errors.Is(err, pgx.ErrNoRows) {
 		var terminal bool
-		if err := r.pool.QueryRow(ctx, `SELECT processed OR (COALESCE(error_message, '') <> '' AND NOT retryable) FROM webhook_events WHERE provider = $1 AND event_id = $2`, rec.Provider, rec.EventID).Scan(&terminal); err != nil {
+		if err := r.forEvent(rec.Provider, rec.EventID).QueryRow(ctx, `SELECT processed OR (COALESCE(error_message, '') <> '' AND NOT retryable) FROM webhook_events WHERE provider = $1 AND event_id = $2`, rec.Provider, rec.EventID).Scan(&terminal); err != nil {
 			return false, err
 		}
 		if !terminal {
@@ -75,7 +83,7 @@ func (r *Repository) claimWebhookEvent(ctx context.Context, rec *WebhookEventRec
 
 // finishWebhookEvent records the outcome of a claimed delivery and releases its lease.
 func (r *Repository) finishWebhookEvent(ctx context.Context, rec *WebhookEventRecord) error {
-	_, err := r.pool.Exec(ctx, `
+	_, err := r.forEvent(rec.Provider, rec.EventID).Exec(ctx, `
 		UPDATE webhook_events
 		   SET processed = $3, processed_at = $4, error_message = NULLIF($5, ''), retryable = $6,
 		       processing_until = NULL
@@ -87,7 +95,8 @@ func (r *Repository) finishWebhookEvent(ctx context.Context, rec *WebhookEventRe
 	return nil
 }
 
-// loadWebhookEvents returns the most recent webhook events, for one org (empty orgID means all orgs).
+// loadWebhookEvents returns the most recent webhook events attributed to one org. An empty
+// orgID sees nothing: events are tenant data and are read per club.
 func (r *Repository) loadWebhookEvents(ctx context.Context, orgID string, limit int) ([]*WebhookEventRecord, error) {
 	var org interface{}
 	if orgID != "" {
@@ -98,7 +107,7 @@ func (r *Repository) loadWebhookEvents(ctx context.Context, orgID string, limit 
 		}
 		org = orgID
 	}
-	rows, err := r.pool.Query(ctx, `
+	rows, err := r.at(orgID).Query(ctx, `
 		SELECT id::text, COALESCE(org_id::text, ''), provider, event_id, event_type, payload::text, processed,
 		       processed_at, COALESCE(error_message, ''), retryable, created_at
 		  FROM webhook_events

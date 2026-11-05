@@ -8,15 +8,19 @@ import (
 	"net/http"
 	"slices"
 	"strings"
+	"sync"
 	"time"
 
-	"github.com/luryann/aquify/server/internal/app/audit"
-	"github.com/luryann/aquify/server/internal/app/httpx"
-	"github.com/luryann/aquify/server/internal/app/members"
-	appmiddleware "github.com/luryann/aquify/server/internal/app/middleware"
-	"github.com/luryann/aquify/server/internal/keycloak"
 	"github.com/go-chi/chi/v5"
 	"github.com/go-playground/validator/v10"
+	"github.com/google/uuid"
+	"github.com/luryann/aquify/server/internal/app/audit"
+	"github.com/luryann/aquify/server/internal/app/httpx"
+	"github.com/luryann/aquify/server/internal/app/invites"
+	"github.com/luryann/aquify/server/internal/app/members"
+	appmiddleware "github.com/luryann/aquify/server/internal/app/middleware"
+	"github.com/luryann/aquify/server/internal/app/orgsettings"
+	"github.com/luryann/aquify/server/internal/keycloak"
 )
 
 var userFieldValidator = validator.New()
@@ -55,7 +59,7 @@ func requireValidUserFields(w http.ResponseWriter, r *http.Request, email, first
 
 // SessionRevoker revokes all API sessions of a user.
 type SessionRevoker interface {
-	RevokeUserSessions(ctx context.Context, userID string) (int, error)
+	RevokeUserSessions(ctx context.Context, orgID, userID string) (int, error)
 }
 
 // roleTier maps each role name to its numeric tier (higher = more privileged).
@@ -65,6 +69,17 @@ var roleTier = map[string]int{
 	"coach":   2,
 	"parent":  1,
 	"swimmer": 1,
+}
+
+// requireMFAForPrivilegedRole refuses (403 mfa_required) to hand out a staff
+// role (above parent/swimmer tier) from a session that has not passed MFA, so
+// a stolen plain session cannot mint a persistent privileged account.
+func requireMFAForPrivilegedRole(w http.ResponseWriter, r *http.Request, principal *appmiddleware.Principal, role string) bool {
+	if roleTier[role] > roleTier["parent"] && !principal.MFAAuthenticated {
+		httpx.WriteError(w, r, http.StatusForbidden, "mfa_required", "MFA authentication is required to grant the "+role+" role.", nil)
+		return false
+	}
+	return true
 }
 
 // requireAssignableRole writes a 400/403 unless role exists and sits at or below the actor's tier.
@@ -104,15 +119,21 @@ func (h *UserHandlers) countOrgAdmins(ctx context.Context, orgID string) (int, e
 	return len(admins), nil
 }
 
-// orgHasOnlyOneAdmin reports whether orgID currently has at most one admin.
-// A lookup failure is returned (never folded into the answer) so callers can
-// refuse the destructive action with a clear "could not verify" response.
-func (h *UserHandlers) orgHasOnlyOneAdmin(ctx context.Context, orgID string) (bool, error) {
-	count, err := h.countOrgAdmins(ctx, orgID)
+// orgHasOnlyOneAdmin reports whether targetID is the org's only usable admin:
+// true when no other enabled admin exists. Disabled admins cannot administer
+// the org, so they do not count. A lookup failure is returned (never folded
+// into the answer) so callers can refuse the destructive action.
+func (h *UserHandlers) orgHasOnlyOneAdmin(ctx context.Context, orgID, targetID string) (bool, error) {
+	admins, err := h.kc.ListUsersWithRealmRole(ctx, orgID, "admin")
 	if err != nil {
-		return false, err
+		return false, fmt.Errorf("list admin role members: %w", err)
 	}
-	return count <= 1, nil
+	for _, a := range admins {
+		if a.ID != targetID && a.Enabled {
+			return false, nil
+		}
+	}
+	return true, nil
 }
 
 // userIsOrgAdmin reports whether userID currently holds the admin realm role.
@@ -223,41 +244,87 @@ type UserHandlers struct {
 	auditService      *audit.Service
 	membershipService *members.Service
 	sessions          SessionRevoker
+	clubs             ClubResolver
+	allowBodyOrgID    bool
+	invites           InviteRedeemer
+	registerLimiter   func(http.Handler) http.Handler
+	emailLimiter      *attemptLimiter
 }
+
+// ClubResolver maps a public club slug to its org. Public registration resolves
+// the tenant server-side through it instead of trusting a caller-supplied org_id.
+type ClubResolver interface {
+	FindBySlug(slug string) (*orgsettings.OrgSettings, error)
+}
+
+// SetClubResolver wires slug -> org resolution for public self-registration.
+// allowBodyOrgID keeps the legacy raw org_id body field working; it must only be
+// true in explicit development/test environments (anyone could otherwise attach
+// an account to an arbitrary org).
+func (h *UserHandlers) SetClubResolver(c ClubResolver, allowBodyOrgID bool) {
+	h.clubs = c
+	h.allowBodyOrgID = allowBodyOrgID
+}
+
+// InviteRedeemer consumes sign-up invite codes (implemented by invites.Service).
+type InviteRedeemer interface {
+	Redeem(ctx context.Context, orgID, code string) (*invites.Invite, error)
+	Release(ctx context.Context, orgID, id string) error
+}
+
+// SetInvites wires invite validation for slug-based self-registration.
+func (h *UserHandlers) SetInvites(r InviteRedeemer) { h.invites = r }
+
+// SetRegisterLimiter installs the per-IP limiter for POST /register. A per-email
+// limit (3 attempts per hour per instance) is always applied on top.
+func (h *UserHandlers) SetRegisterLimiter(l func(http.Handler) http.Handler) { h.registerLimiter = l }
 
 // SetSessionRevoker wires session revocation for disable/delete/reject.
 func (h *UserHandlers) SetSessionRevoker(sr SessionRevoker) { h.sessions = sr }
 
 // revokeSessions revokes the user's API sessions and audits the result.
-func (h *UserHandlers) revokeSessions(r *http.Request, principal *appmiddleware.Principal, userID, reason string) {
+// It reports false when revocation failed so callers can refuse to claim the
+// account was locked out.
+func (h *UserHandlers) revokeSessions(r *http.Request, principal *appmiddleware.Principal, userID, reason string) bool {
 	if h.sessions == nil {
-		return
+		return true
 	}
-	n, err := h.sessions.RevokeUserSessions(r.Context(), userID)
+	n, err := h.sessions.RevokeUserSessions(r.Context(), principal.OrgID, userID)
 	meta := map[string]string{"reason": reason, "revoked_count": fmt.Sprint(n)}
 	if err != nil {
 		slog.Error("revoke user sessions failed", "user_id", userID, "reason", reason, "error", err)
 		meta["error"] = "revoke_failed"
 	}
 	h.emitAudit(principal, audit.ActionAuthSessionRevoke, userID, meta)
+	return err == nil
+}
+
+func writeSessionRevocationFailed(w http.ResponseWriter, r *http.Request) {
+	httpx.WriteError(w, r, http.StatusServiceUnavailable, "session_revocation_failed",
+		"The change was applied but the user's active sessions could not be revoked. Retry the request.", nil)
 }
 
 // NewUserHandlers returns a UserHandlers wired to the given Keycloak client and
 // audit service.
 func NewUserHandlers(kc keycloak.Client, auditSvc *audit.Service) *UserHandlers {
-	return &UserHandlers{kc: kc, auditService: auditSvc}
+	return &UserHandlers{kc: kc, auditService: auditSvc, emailLimiter: newAttemptLimiter(3, time.Hour)}
 }
 
 // NewUserHandlersWithMembers returns a UserHandlers with the members service
 // wired in for household linkage operations.
 func NewUserHandlersWithMembers(kc keycloak.Client, auditSvc *audit.Service, membersSvc *members.Service) *UserHandlers {
-	return &UserHandlers{kc: kc, auditService: auditSvc, membershipService: membersSvc}
+	return &UserHandlers{kc: kc, auditService: auditSvc, membershipService: membersSvc, emailLimiter: newAttemptLimiter(3, time.Hour)}
 }
 
 // RegisterPublicRoutes mounts unauthenticated user routes (e.g. self-registration).
 // Must be called on an unprotected router segment.
 func (h *UserHandlers) RegisterPublicRoutes(r chi.Router) {
-	r.Post("/register", h.selfRegister)
+	r.Group(func(g chi.Router) {
+		if h.registerLimiter != nil {
+			g.Use(h.registerLimiter)
+		}
+		g.Post("/register", h.selfRegister)
+	})
 }
 
 // RegisterRoutes mounts all user management routes under the given router.
@@ -422,8 +489,11 @@ func (h *UserHandlers) assignInitialRole(ctx context.Context, principal *appmidd
 	}
 }
 
-func writeUserCreated(w http.ResponseWriter, userID, householdID string, householdFailed bool) {
+func writeUserCreated(w http.ResponseWriter, userID, householdID string, householdFailed bool, emailFailed ...bool) {
 	resp := map[string]any{"status": "created", "user_id": userID}
+	if len(emailFailed) > 0 && emailFailed[0] {
+		resp["warnings"] = []string{"verification_email_failed"}
+	}
 	if householdID != "" {
 		resp["household_id"] = householdID
 	}
@@ -647,6 +717,7 @@ type selfRegisterRequest struct {
 	LastName      string `json:"last_name"`
 	Email         string `json:"email"`
 	OrgID         string `json:"org_id"`
+	ClubSlug      string `json:"club_slug"`
 	RequestedRole string `json:"requested_role"`
 	ClubCode      string `json:"club_code"`
 	Note          string `json:"note"`
@@ -663,6 +734,7 @@ func (h *UserHandlers) selfRegister(w http.ResponseWriter, r *http.Request) {
 	req.FirstName = strings.TrimSpace(req.FirstName)
 	req.LastName = strings.TrimSpace(req.LastName)
 	req.OrgID = strings.TrimSpace(req.OrgID)
+	req.ClubSlug = strings.ToLower(strings.TrimSpace(req.ClubSlug))
 	req.RequestedRole = normalizeUserRole(req.RequestedRole)
 	req.ClubCode = strings.ToUpper(strings.TrimSpace(req.ClubCode))
 	req.Note = strings.TrimSpace(req.Note)
@@ -675,8 +747,35 @@ func (h *UserHandlers) selfRegister(w http.ResponseWriter, r *http.Request) {
 	if !requireValidUserFields(w, r, req.Email, req.FirstName, req.LastName, true) {
 		return
 	}
-	if req.OrgID == "" {
-		httpx.WriteError(w, r, http.StatusBadRequest, "invalid_request", "org_id is required.", nil)
+	// Tenant resolution is server-side: the club slug is the public handle. A raw
+	// org_id from an unauthenticated caller is only honoured in dev/test.
+	switch {
+	case req.ClubSlug != "":
+		if h.clubs == nil {
+			httpx.WriteError(w, r, http.StatusNotFound, "club_not_found", "Club not found.", nil)
+			return
+		}
+		found, err := h.clubs.FindBySlug(req.ClubSlug)
+		if err != nil {
+			httpx.WriteError(w, r, http.StatusInternalServerError, "internal_error", "Could not resolve club.", err)
+			return
+		}
+		if found == nil || strings.TrimSpace(found.OrgID) == "" {
+			httpx.WriteError(w, r, http.StatusNotFound, "club_not_found", "Club not found.", nil)
+			return
+		}
+		if req.OrgID != "" && req.OrgID != found.OrgID {
+			httpx.WriteError(w, r, http.StatusBadRequest, "invalid_request", "org_id does not match club_slug.", nil)
+			return
+		}
+		req.OrgID = found.OrgID
+	case req.OrgID != "" && h.allowBodyOrgID:
+		// legacy dev/test path
+	case req.OrgID != "":
+		httpx.WriteError(w, r, http.StatusBadRequest, "invalid_request", "club_slug is required.", nil)
+		return
+	default:
+		httpx.WriteError(w, r, http.StatusBadRequest, "invalid_request", "club_slug is required.", nil)
 		return
 	}
 	if req.RequestedRole != "" {
@@ -685,9 +784,50 @@ func (h *UserHandlers) selfRegister(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+	if !h.emailAttempts().allow(req.Email) {
+		httpx.WriteError(w, r, http.StatusTooManyRequests, "rate_limited", "Too many registration attempts for this email. Try again later.", nil)
+		return
+	}
 
-	newUserID, ok := h.createKeycloakUser(w, r, req.Email, req.FirstName, req.LastName, req.OrgID)
-	if !ok {
+	// An invite code (slug-based sign-ups) must be valid for the resolved org; its
+	// role overrides whatever the form requested and one use is consumed.
+	var redeemed *invites.Invite
+	if req.ClubCode != "" && req.ClubSlug != "" && h.invites != nil {
+		inv, err := h.invites.Redeem(r.Context(), req.OrgID, req.ClubCode)
+		if errors.Is(err, invites.ErrInvalidCode) {
+			httpx.WriteError(w, r, http.StatusBadRequest, "invalid_invite", "The invite code is not valid.", nil)
+			return
+		}
+		if err != nil {
+			httpx.WriteError(w, r, http.StatusInternalServerError, "internal_error", "Could not check the invite code.", err)
+			return
+		}
+		redeemed = inv
+		req.RequestedRole = inv.Role
+	}
+	releaseInvite := func() {
+		if redeemed != nil {
+			if err := h.invites.Release(context.Background(), redeemed.OrgID, redeemed.ID); err != nil {
+				slog.Error("register: releasing invite use failed", "invite_id", redeemed.ID, "error", err)
+			}
+		}
+	}
+
+	// Not createKeycloakUser: on this unauthenticated route an existing email
+	// must look exactly like a new registration, or the endpoint is an account
+	// existence oracle (Keycloak emails are unique realm-wide, across clubs).
+	newUserID, err := h.kc.CreateUser(r.Context(), req.Email, req.FirstName, req.LastName, req.OrgID)
+	if errors.Is(err, keycloak.ErrConflict) {
+		releaseInvite()
+		_ = httpx.WriteJSON(w, http.StatusCreated, map[string]any{
+			"status":  "pending_approval",
+			"user_id": uuid.NewString(),
+		})
+		return
+	}
+	if err != nil {
+		releaseInvite()
+		writeKeycloakAdminError(w, r, err, "Failed to create user.")
 		return
 	}
 
@@ -702,6 +842,9 @@ func (h *UserHandlers) selfRegister(w http.ResponseWriter, r *http.Request) {
 	if req.ClubCode != "" {
 		registrationAttributes["registration_club_code"] = []string{req.ClubCode}
 	}
+	if redeemed != nil {
+		registrationAttributes["registration_invite_id"] = []string{redeemed.ID}
+	}
 	if req.Note != "" {
 		registrationAttributes["registration_note"] = []string{req.Note}
 	}
@@ -715,6 +858,7 @@ func (h *UserHandlers) selfRegister(w http.ResponseWriter, r *http.Request) {
 		if derr := h.kc.DeleteUser(r.Context(), newUserID); derr != nil {
 			slog.Error("register: cleanup of half-registered user failed", "user_id", newUserID, "error", derr)
 		}
+		releaseInvite()
 		writeKeycloakAdminError(w, r, err, "Failed to record the registration. Please try again.")
 		return
 	}
@@ -795,6 +939,9 @@ func (h *UserHandlers) createUser(w http.ResponseWriter, r *http.Request) {
 
 	// Tier guard.
 	if req.Role != "" && !requireAssignableRole(w, r, principal, req.Role, "assign") {
+		return
+	}
+	if !requireMFAForPrivilegedRole(w, r, principal, req.Role) {
 		return
 	}
 
@@ -880,6 +1027,9 @@ func (h *UserHandlers) inviteUser(w http.ResponseWriter, r *http.Request) {
 	if req.Role != "" && !requireAssignableRole(w, r, principal, req.Role, "assign") {
 		return
 	}
+	if !requireMFAForPrivilegedRole(w, r, principal, req.Role) {
+		return
+	}
 
 	newUserID, ok := h.createKeycloakUser(w, r, req.Email, req.FirstName, req.LastName, orgID)
 	if !ok {
@@ -906,15 +1056,19 @@ func (h *UserHandlers) inviteUser(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Send welcome / verification email.
-	_ = h.kc.SendVerificationEmail(r.Context(), newUserID)
-
-	h.emitAudit(principal, audit.ActionAuthUserInvite, newUserID, map[string]string{
+	emailErr := h.kc.SendVerificationEmail(r.Context(), newUserID)
+	auditMeta := map[string]string{
 		"email":        req.Email,
 		"role":         req.Role,
 		"household_id": householdID,
-	})
+	}
+	if emailErr != nil {
+		slog.Error("invite user: verification email failed", "user_id", newUserID, "error", emailErr)
+		auditMeta["verification_email_failed"] = "true"
+	}
+	h.emitAudit(principal, audit.ActionAuthUserInvite, newUserID, auditMeta)
 
-	writeUserCreated(w, newUserID, householdID, householdFailed)
+	writeUserCreated(w, newUserID, householdID, householdFailed, emailErr != nil)
 }
 
 // ── PUT /users/{id} ────────────────────────────────────────────────────────────
@@ -1019,7 +1173,10 @@ func (h *UserHandlers) disableUser(w http.ResponseWriter, r *http.Request) {
 	}
 
 	h.emitAudit(principal, audit.ActionAuthUserDisable, userID, nil)
-	h.revokeSessions(r, principal, userID, "user_disabled")
+	if !h.revokeSessions(r, principal, userID, "user_disabled") {
+		writeSessionRevocationFailed(w, r)
+		return
+	}
 	_ = httpx.WriteJSON(w, http.StatusOK, map[string]any{"status": "disabled"})
 }
 
@@ -1071,6 +1228,9 @@ func (h *UserHandlers) approveUser(w http.ResponseWriter, r *http.Request) {
 	// their own. It runs before any change so a refusal leaves the account untouched.
 	if actorMaxTier(principal.Roles) < roleTier[requestedRole] {
 		httpx.WriteError(w, r, http.StatusForbidden, "insufficient_role_tier", "You cannot approve a user for a role above your own.", nil)
+		return
+	}
+	if !requireMFAForPrivilegedRole(w, r, principal, requestedRole) {
 		return
 	}
 
@@ -1174,7 +1334,10 @@ func (h *UserHandlers) rejectUser(w http.ResponseWriter, r *http.Request) {
 		meta["reason"] = req.Reason
 	}
 	h.emitAudit(principal, audit.ActionAuthUserReject, userID, meta)
-	h.revokeSessions(r, principal, userID, "user_rejected")
+	if !h.revokeSessions(r, principal, userID, "user_rejected") {
+		writeSessionRevocationFailed(w, r)
+		return
+	}
 
 	_ = httpx.WriteJSON(w, http.StatusOK, map[string]any{"status": "rejected"})
 }
@@ -1194,6 +1357,10 @@ func (h *UserHandlers) deleteUser(w http.ResponseWriter, r *http.Request) {
 	}
 
 	userID := chi.URLParam(r, "id")
+	if userID == principal.UserID {
+		httpx.WriteError(w, r, http.StatusConflict, "cannot_delete_self", "You cannot delete your own account.", nil)
+		return
+	}
 	if _, ok := h.requireUserInOrg(w, r, userID, orgID); !ok {
 		return
 	}
@@ -1206,7 +1373,7 @@ func (h *UserHandlers) deleteUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if targetIsAdmin {
-		onlyOne, err := h.orgHasOnlyOneAdmin(r.Context(), orgID)
+		onlyOne, err := h.orgHasOnlyOneAdmin(r.Context(), orgID, userID)
 		if err != nil {
 			writeKeycloakAdminError(w, r, err, "Could not verify the org's admin count; nothing was deleted.")
 			return
@@ -1223,7 +1390,10 @@ func (h *UserHandlers) deleteUser(w http.ResponseWriter, r *http.Request) {
 	}
 
 	h.emitAudit(principal, audit.ActionAuthUserDelete, userID, nil)
-	h.revokeSessions(r, principal, userID, "user_deleted")
+	if !h.revokeSessions(r, principal, userID, "user_deleted") {
+		writeSessionRevocationFailed(w, r)
+		return
+	}
 	_ = httpx.WriteJSON(w, http.StatusOK, map[string]any{"status": "deleted"})
 }
 
@@ -1304,7 +1474,10 @@ func (h *UserHandlers) assignRole(w http.ResponseWriter, r *http.Request) {
 	}
 
 	h.emitAudit(principal, audit.ActionAuthRoleAssign, userID, map[string]string{"role": req.Role})
-	h.revokeSessions(r, principal, userID, "role_changed")
+	if !h.revokeSessions(r, principal, userID, "role_changed") {
+		writeSessionRevocationFailed(w, r)
+		return
+	}
 	_ = httpx.WriteJSON(w, http.StatusOK, map[string]any{"status": "assigned"})
 }
 
@@ -1346,7 +1519,7 @@ func (h *UserHandlers) removeRole(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if targetIsAdmin {
-		onlyOne, err := h.orgHasOnlyOneAdmin(r.Context(), orgID)
+		onlyOne, err := h.orgHasOnlyOneAdmin(r.Context(), orgID, userID)
 		if err != nil {
 			writeKeycloakAdminError(w, r, err, "Could not verify the org's admin count; the role was not removed.")
 			return
@@ -1369,7 +1542,10 @@ func (h *UserHandlers) removeRole(w http.ResponseWriter, r *http.Request) {
 	}
 
 	h.emitAudit(principal, audit.ActionAuthRoleRemove, userID, map[string]string{"role": roleName})
-	h.revokeSessions(r, principal, userID, "role_changed")
+	if !h.revokeSessions(r, principal, userID, "role_changed") {
+		writeSessionRevocationFailed(w, r)
+		return
+	}
 	_ = httpx.WriteJSON(w, http.StatusOK, map[string]any{"status": "removed"})
 }
 
@@ -1512,6 +1688,12 @@ func (h *UserHandlers) linkUserHousehold(w http.ResponseWriter, r *http.Request)
 	h.emitAudit(principal, "user.household.link", userID, map[string]string{
 		"household_id": householdID,
 	})
+	// Sessions snapshot household_id at sign-in; force a fresh sign-in so the
+	// new link takes effect.
+	if !h.revokeSessions(r, principal, userID, "household_linked") {
+		writeSessionRevocationFailed(w, r)
+		return
+	}
 	_ = httpx.WriteJSON(w, http.StatusOK, map[string]any{
 		"status":       "linked",
 		"household_id": householdID,
@@ -1550,7 +1732,10 @@ func (h *UserHandlers) unlinkUserHousehold(w http.ResponseWriter, r *http.Reques
 	h.emitAudit(principal, "user.household.unlink", userID, map[string]string{
 		"household_id": householdID,
 	})
-	h.revokeSessions(r, principal, userID, "household_unlinked")
+	if !h.revokeSessions(r, principal, userID, "household_unlinked") {
+		writeSessionRevocationFailed(w, r)
+		return
+	}
 	_ = httpx.WriteJSON(w, http.StatusOK, map[string]any{
 		"status":       "unlinked",
 		"household_id": householdID,
@@ -1606,6 +1791,8 @@ func (h *UserHandlers) linkUserSwimmer(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case errors.Is(err, members.ErrSwimmerNotFound):
 			httpx.WriteError(w, r, http.StatusNotFound, "swimmer_not_found", "Swimmer not found.", nil)
+		case errors.Is(err, members.ErrGuardianConsentRequired):
+			httpx.WriteError(w, r, http.StatusConflict, "guardian_consent_required", err.Error(), nil)
 		default:
 			httpx.WriteError(w, r, http.StatusConflict, "link_conflict", err.Error(), nil)
 		}
@@ -1615,6 +1802,10 @@ func (h *UserHandlers) linkUserSwimmer(w http.ResponseWriter, r *http.Request) {
 	h.emitAudit(principal, "user.swimmer.link", userID, map[string]string{
 		"swimmer_id": swimmerID,
 	})
+	if !h.revokeSessions(r, principal, userID, "swimmer_linked") {
+		writeSessionRevocationFailed(w, r)
+		return
+	}
 	_ = httpx.WriteJSON(w, http.StatusOK, map[string]any{
 		"status":     "linked",
 		"swimmer_id": swimmerID,
@@ -1652,7 +1843,10 @@ func (h *UserHandlers) unlinkUserSwimmer(w http.ResponseWriter, r *http.Request)
 	h.emitAudit(principal, "user.swimmer.unlink", userID, map[string]string{
 		"swimmer_id": swimmerID,
 	})
-	h.revokeSessions(r, principal, userID, "swimmer_unlinked")
+	if !h.revokeSessions(r, principal, userID, "swimmer_unlinked") {
+		writeSessionRevocationFailed(w, r)
+		return
+	}
 	_ = httpx.WriteJSON(w, http.StatusOK, map[string]any{
 		"status":     "unlinked",
 		"swimmer_id": swimmerID,
@@ -1682,6 +1876,10 @@ func (h *UserHandlers) createSwimmerLinkRequest(w http.ResponseWriter, r *http.R
 	}
 
 	req, err := h.membershipService.CreateLinkRequest(orgID, principal.UserID, body.RequestedSwimmerName, body.Note)
+	if errors.Is(err, members.ErrLinkRequestInvalid) {
+		httpx.WriteError(w, r, http.StatusBadRequest, "invalid_request", err.Error(), nil)
+		return
+	}
 	if err != nil {
 		httpx.WriteError(w, r, http.StatusInternalServerError, "internal_error", "Failed to create link request.", err)
 		return
@@ -1759,6 +1957,8 @@ func (h *UserHandlers) resolveSwimmerLinkRequest(w http.ResponseWriter, r *http.
 	if err := h.membershipService.LinkSwimmerToUser(orgID, body.SwimmerID, target.UserID); err != nil {
 		if errors.Is(err, members.ErrSwimmerNotFound) {
 			httpx.WriteError(w, r, http.StatusNotFound, "swimmer_not_found", "Swimmer not found.", nil)
+		} else if errors.Is(err, members.ErrGuardianConsentRequired) {
+			httpx.WriteError(w, r, http.StatusConflict, "guardian_consent_required", err.Error(), nil)
 		} else {
 			httpx.WriteError(w, r, http.StatusConflict, "link_conflict", err.Error(), nil)
 		}
@@ -1773,8 +1973,56 @@ func (h *UserHandlers) resolveSwimmerLinkRequest(w http.ResponseWriter, r *http.
 		"request_id": requestID,
 		"swimmer_id": body.SwimmerID,
 	})
+	if !h.revokeSessions(r, principal, target.UserID, "swimmer_linked") {
+		writeSessionRevocationFailed(w, r)
+		return
+	}
 	_ = httpx.WriteJSON(w, http.StatusOK, map[string]any{
 		"status":     "resolved",
 		"swimmer_id": body.SwimmerID,
 	})
 }
+
+// attemptLimiter caps how often one key (an email address) may attempt an action
+// inside a sliding window. State is per process; the per-IP limiter and the
+// admin approval queue are the cross-instance backstops.
+type attemptLimiter struct {
+	mu     sync.Mutex
+	limit  int
+	window time.Duration
+	seen   map[string][]time.Time
+	now    func() time.Time
+}
+
+func newAttemptLimiter(limit int, window time.Duration) *attemptLimiter {
+	return &attemptLimiter{limit: limit, window: window, seen: map[string][]time.Time{}, now: time.Now}
+}
+
+func (l *attemptLimiter) allow(key string) bool {
+	key = strings.ToLower(strings.TrimSpace(key))
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	now := l.now()
+	cutoff := now.Add(-l.window)
+	kept := l.seen[key][:0]
+	for _, t := range l.seen[key] {
+		if t.After(cutoff) {
+			kept = append(kept, t)
+		}
+	}
+	if len(kept) >= l.limit {
+		l.seen[key] = kept
+		return false
+	}
+	l.seen[key] = append(kept, now)
+	if len(l.seen) > 10000 { // bound memory under a flood of distinct emails
+		for k, ts := range l.seen {
+			if len(ts) == 0 || !ts[len(ts)-1].After(cutoff) {
+				delete(l.seen, k)
+			}
+		}
+	}
+	return true
+}
+
+func (h *UserHandlers) emailAttempts() *attemptLimiter { return h.emailLimiter }

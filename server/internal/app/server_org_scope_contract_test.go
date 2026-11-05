@@ -140,6 +140,7 @@ var publicRoutes = map[string]string{
 	"GET /api/v1/health/ready":            "readiness probe",
 	"GET /api/v1/openapi":                 "public API spec",
 	"GET /api/v1/public/orgs/{slug}/site": "public team website feed",
+	"GET /api/v1/public/tenant":           "public club handle resolution (slug/host -> name only)",
 	"POST /api/v1/register":               "self-service access request (pre-auth)",
 	"POST /api/v1/webhooks/postmark":      "provider webhook, authenticated by signature",
 	"POST /api/v1/webhooks/stripe":        "provider webhook, authenticated by signature",

@@ -104,3 +104,13 @@ test('describeCutQualification reports no-data state when no best time exists', 
   assert.equal(status.tone, 'muted')
   assert.match(status.detail, /No recorded best time/i)
 })
+
+test('describeCutQualification never renders a 60.00 seconds component', () => {
+  for (const [ms, expected] of [[119996, /2:00\.00/], [59996, /1:00\.00/]] as const) {
+    const status = describeCutQualification({
+      ...baseCard,
+      qualification: { ...baseCard.qualification, qualified: false, best_time_ms: 1, margin_ms: -ms },
+    })
+    assert.match(status.detail, expected)
+  }
+})

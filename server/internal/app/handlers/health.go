@@ -5,8 +5,8 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/luryann/aquify/server/internal/app/httpx"
 	"github.com/go-chi/chi/v5"
+	"github.com/luryann/aquify/server/internal/app/httpx"
 )
 
 type healthResponse struct {

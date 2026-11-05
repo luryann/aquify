@@ -54,10 +54,10 @@ function fmtDate(dateStr?: string): string {
 }
 
 // Convert raw commitment status to display status
-function commitStatus(raw: string | undefined): 'committed' | 'pending' | 'no' | 'closed' | 'open' {
+function commitStatus(raw: string | undefined, meetStatus?: string): 'committed' | 'pending' | 'no' | 'closed' | 'open' {
   if (!raw) return 'open'
   if (raw === 'committed_yes') return 'committed'
-  if (raw === 'invited') return 'pending'
+  if (raw === 'invited') return !meetStatus || meetStatus === 'commitment_open' ? 'pending' : 'closed'
   if (raw === 'committed_no') return 'no'
   if (raw === 'coach_reviewed' || raw === 'locked') return 'closed'
   return 'open'
@@ -278,7 +278,7 @@ export default function SwimmerDashboardPage() {
             try {
               const commitments = await fetchMeetCommitments(api, orgId, m.id)
               const myCommitment = commitments.find(c => c.swimmer_id === mySwimmer.id)
-              cs = commitStatus(myCommitment?.status)
+              cs = commitStatus(myCommitment?.status, m.status)
             } catch (error) {
               // Only a missing commitment list means "open"; any other failure
               // must reach the page-level banner instead of reading as a status.

@@ -2,6 +2,10 @@
 
 import { useEffect, useRef, type RefObject } from 'react'
 
+// Open overlays, topmost last. Only the topmost handles Escape and Tab so a confirm
+// dialog over a drawer doesn't close (or fight focus with) the drawer underneath.
+const overlayStack: symbol[] = []
+
 /**
  * Escape-to-close, Tab focus trap, initial focus and focus restore for
  * hand-built overlays (drawers, sheets). Modal.tsx wraps it for the centered case.
@@ -13,6 +17,8 @@ export function useDialogA11y(ref: RefObject<HTMLElement | null>, onClose: () =>
   onCloseRef.current = onClose
   useEffect(() => {
     if (!active) return
+    const id = Symbol('dialog')
+    overlayStack.push(id)
     const returnTo = document.activeElement as HTMLElement | null
     const focusables = () =>
       Array.from(
@@ -25,6 +31,7 @@ export function useDialogA11y(ref: RefObject<HTMLElement | null>, onClose: () =>
       ;(auto ?? focusables().find((el) => el.getAttribute('aria-label') !== 'Close') ?? ref.current)?.focus()
     }, 0)
     const onKeyDown = (e: KeyboardEvent) => {
+      if (overlayStack[overlayStack.length - 1] !== id) return
       if (e.key === 'Escape') {
         e.stopPropagation()
         onCloseRef.current()
@@ -47,6 +54,8 @@ export function useDialogA11y(ref: RefObject<HTMLElement | null>, onClose: () =>
     document.addEventListener('keydown', onKeyDown)
     return () => {
       window.clearTimeout(t)
+      const at = overlayStack.indexOf(id)
+      if (at !== -1) overlayStack.splice(at, 1)
       returnTo?.focus?.()
       document.removeEventListener('keydown', onKeyDown)
     }

@@ -3,11 +3,12 @@ package app
 import (
 	"context"
 	"errors"
+	"github.com/luryann/aquify/server/internal/testutil"
 	"testing"
 
+	"github.com/google/uuid"
 	"github.com/luryann/aquify/server/internal/app/seasons"
 	"github.com/luryann/aquify/server/internal/app/training"
-	"github.com/google/uuid"
 )
 
 // TestDBRepoTrainingWorkouts_RoundTrip exercises the workout library,
@@ -16,7 +17,8 @@ import (
 func TestDBRepoTrainingWorkouts_RoundTrip(t *testing.T) {
 	pool := openTestPool(t)
 	ctx := context.Background()
-	orgID := "org-dbtrain-" + uuid.NewString()[:8]
+	orgID := uuid.NewString()
+	testutil.SeedOrgs(t, pool, orgID)
 	t.Cleanup(func() {
 		_, _ = pool.Exec(ctx, `DELETE FROM practices WHERE org_id = $1`, orgID)
 		_, _ = pool.Exec(ctx, `DELETE FROM training_workouts WHERE org_id = $1`, orgID)
@@ -40,7 +42,7 @@ func TestDBRepoTrainingWorkouts_RoundTrip(t *testing.T) {
 	if err != nil || got.Totals.Distance != 1900 || got.Course != "SCM" || len(got.Sections[1].Sets[0].Sets) != 2 {
 		t.Fatalf("cross-instance get = %+v err=%v", got, err)
 	}
-	if _, err := b.GetWorkout("other-org", tmpl.ID); !errors.Is(err, training.ErrWorkoutNotFound) {
+	if _, err := b.GetWorkout(uuid.NewString(), tmpl.ID); !errors.Is(err, training.ErrWorkoutNotFound) {
 		t.Fatalf("cross-org get err = %v", err)
 	}
 	for _, f := range []training.WorkoutFilter{{TemplatesOnly: true, Query: "%_"}, {Tag: "en2"}, {Query: "SENIOR"}} {

@@ -43,19 +43,18 @@ function LoginPageContent() {
   }, [loading, session, router])
 
   const handleSSO = useCallback(() => {
-    const resolved = resolvePublicOrg({
-      searchParams,
-      host: typeof window === 'undefined' ? '' : window.location.hostname,
-    })
-    if (!resolved.orgId) {
-      setOrgError('We could not determine your club. Retry with your club link or ask your administrator for the correct sign-in URL.')
-      return
-    }
     setSubmitting(true)
     setOrgError('')
     const q = new URLSearchParams()
     if (email.trim()) q.set('login_hint', email.trim())
-    q.set('org_id', resolved.orgId)
+    // The server takes the club from the signed-in identity (the org_id claim),
+    // never from the browser. The hint below only helps local development, where
+    // the identity provider may not carry the claim.
+    const resolved = resolvePublicOrg({
+      searchParams,
+      host: typeof window === 'undefined' ? '' : window.location.hostname,
+    })
+    if (resolved.orgId) q.set('org_id', resolved.orgId)
     window.location.href = `/api/v1/auth/oidc/authorize?${q}`
   }, [email, searchParams])
 

@@ -9,8 +9,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/luryann/aquify/server/internal/storage"
 	"github.com/go-chi/chi/v5"
+	"github.com/luryann/aquify/server/internal/storage"
 )
 
 func TestDevStorageHandlerServesPresignedStubURLs(t *testing.T) {

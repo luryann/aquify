@@ -6,26 +6,96 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"github.com/luryann/aquify/server/internal/dbutil"
 	"log/slog"
 	"slices"
 	"sort"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 
+	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/luryann/aquify/meetfiles"
 	"github.com/luryann/aquify/meetfiles/cl2"
 	"github.com/luryann/aquify/meetfiles/sdif"
 	appmiddleware "github.com/luryann/aquify/server/internal/app/middleware"
-	"github.com/google/uuid"
-	"github.com/jackc/pgx/v5/pgxpool"
 )
+
+// persistenceError wraps a storage failure. Its text includes the driver error
+// for logs; handlers match it with ErrPersistence and never echo it.
+type persistenceError struct {
+	op  string
+	err error
+}
+
+func (e *persistenceError) Error() string        { return "persist " + e.op + ": " + e.err.Error() }
+func (e *persistenceError) Unwrap() error        { return e.err }
+func (e *persistenceError) Is(target error) bool { return target == ErrPersistence }
+
+func validateEventBounds(minAge, maxAge *int, feeCents int) error {
+	if feeCents < 0 {
+		return validationErr("entry_fee_cents must not be negative")
+	}
+	if (minAge != nil && *minAge < 0) || (maxAge != nil && *maxAge < 0) {
+		return validationErr("min_age and max_age must not be negative")
+	}
+	if minAge != nil && maxAge != nil && *minAge > *maxAge {
+		return validationErr("min_age must not be greater than max_age")
+	}
+	return nil
+}
+
+// maxSeedTimeMs bounds a declared seed time to one hour.
+const maxSeedTimeMs = 3600000
+
+func validateSeedTimeMs(v *int) error {
+	if v != nil && (*v <= 0 || *v > maxSeedTimeMs) {
+		return validationErr("seed_time_ms must be between 1 and %d", maxSeedTimeMs)
+	}
+	return nil
+}
+
+func validationErr(format string, args ...any) error {
+	return fmt.Errorf("%w: %s", ErrValidation, fmt.Sprintf(format, args...))
+}
+
+// parseOptionalDate parses an optional YYYY-MM-DD field; empty returns the zero time.
+func parseOptionalDate(field, raw string) (time.Time, error) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return time.Time{}, nil
+	}
+	t, err := time.Parse("2006-01-02", raw)
+	if err != nil {
+		return time.Time{}, validationErr("%s must be a YYYY-MM-DD date", field)
+	}
+	return t, nil
+}
+
+// validateOptionalClock checks an optional HH:MM (or HH:MM:SS) time of day.
+func validateOptionalClock(field, raw string) error {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return nil
+	}
+	if _, err := time.Parse("15:04", raw); err == nil {
+		return nil
+	}
+	if _, err := time.Parse("15:04:05", raw); err == nil {
+		return nil
+	}
+	return validationErr("%s must be an HH:MM time", field)
+}
 
 // ─── Sentinel errors ─────────────────────────────────────────────────────────
 
 var (
-	ErrForbidden             = errors.New("forbidden")
+	ErrForbidden = errors.New("forbidden")
+	// ErrValidation marks request input that failed validation.
+	ErrValidation = errors.New("validation failed")
+	// ErrPersistence marks a storage failure; its text must not reach clients.
+	ErrPersistence           = errors.New("persistence failure")
 	ErrMeetNotFound          = errors.New("meet not found")
 	ErrSessionNotFound       = errors.New("meet session not found")
 	ErrEventNotFound         = errors.New("meet event not found")
@@ -348,10 +418,12 @@ type householdRef struct {
 
 // Service is the in-memory meets/commitments/entries service.
 type Service struct {
+	// orgCache bounds how many clubs' rows stay cached (idle TTL + LRU cap).
+	orgCache dbutil.OrgCache
 	// syncHook runs after a reload has read Postgres and before it replaces the
 	// in-memory state; tests use it to land a write inside that window.
 	syncHook        func()
-	mu              sync.RWMutex
+	mu              dbutil.GenMutex
 	repo            *Repository // nil = in-memory only
 	meets           map[string]Meet
 	sessions        map[string]MeetSession
@@ -470,9 +542,8 @@ func NewServiceWithPool(pool *pgxpool.Pool) *Service {
 		return s
 	}
 	s.repo = newRepository(pool)
-	if err := s.syncFromDB(context.Background()); err != nil {
-		slog.Error("meets: failed to load initial state from DB", "error", err)
-	}
+	// No eager load: every request path loads its own org on demand (syncFromDB(ctx, orgID)),
+	// so the process holds only the clubs it has served, not every club's data.
 	return s
 }
 
@@ -482,28 +553,95 @@ func (s *Service) SetSyncHookForTest(fn func()) { s.syncHook = fn }
 
 // Refresh reloads the in-memory state from Postgres (no-op in in-memory mode)
 // so snapshot readers observe meets created by another instance.
-func (s *Service) Refresh(ctx context.Context) error { return s.syncFromDB(ctx) }
+// Refresh reloads every club (an operator/test hook; request paths use RefreshOrg).
+func (s *Service) Refresh(ctx context.Context) error { return s.syncFromDB(ctx, "") }
 
-// syncFromDB reloads the in-memory maps from the database (no-op without a repository).
-func (s *Service) syncFromDB(ctx context.Context) error {
+// RefreshOrg reloads one club from Postgres. Prefer it to Refresh on any path that already
+// knows its club: Refresh reads every club.
+func (s *Service) RefreshOrg(ctx context.Context, orgID string) error {
+	return s.syncFromDB(ctx, orgID)
+}
+
+// syncFromDB reloads the cache from the database. A non-empty orgID reloads and
+// replaces only that org's rows (the normal request path); an empty orgID reloads
+// every org (Refresh, and the few lookups made before an org is known).
+func (s *Service) syncFromDB(ctx context.Context, orgID string) error {
 	if s.repo == nil {
 		return nil
 	}
-	// Load under the write lock: writers persist and update memory while holding
-	// it, so a snapshot read outside the lock could predate a write that lands
-	// before the swap and then wipe that write from memory.
+	// Scoped reloads read Postgres WITHOUT holding the service lock, so a slow load for
+	// one club does not block the others. A writer that ran during the load bumps the
+	// write generation, and then the possibly-stale snapshot is discarded and re-read;
+	// after a few conflicts it falls back to loading under the lock (below).
+	if orgID != "" {
+		done, err := dbutil.ReloadUnlocked(&s.mu, s.syncHook, func() (func(), error) {
+			ms, sessions, events, commitments, entries, swimmers, households, selections, err := s.repo.LoadAll(ctx, orgID)
+			if err != nil {
+				return nil, err
+			}
+			return func() {
+				s.replaceOrgLocked(orgID, ms, sessions, events, commitments, entries, swimmers, households, selections)
+			}, nil
+		})
+		if done || err != nil {
+			return err
+		}
+	}
+	// Full reload, or a scoped one that kept losing to writers: load under the write
+	// lock so a concurrent write cannot be overwritten by an older snapshot (writers
+	// persist and update memory while holding it).
 	s.mu.Lock()
-	defer s.mu.Unlock()
-	ms, sessions, events, commitments, entries, swimmers, households, selections, err := s.repo.LoadAll(ctx)
+	defer s.mu.UnlockWithoutBump()
+	ms, sessions, events, commitments, entries, swimmers, households, selections, err := s.repo.LoadAll(ctx, orgID)
 	if err != nil {
 		return err
 	}
 	if s.syncHook != nil {
 		s.syncHook()
 	}
-	s.resetDBBackedStateLocked()
-	s.populateDBBackedStateLocked(ms, sessions, events, commitments, entries, swimmers, households, selections)
+	if orgID == "" {
+		s.resetDBBackedStateLocked()
+		s.populateDBBackedStateLocked(ms, sessions, events, commitments, entries, swimmers, households, selections)
+		return nil
+	}
+	s.replaceOrgLocked(orgID, ms, sessions, events, commitments, entries, swimmers, households, selections)
 	return nil
+}
+
+// replaceOrgLocked swaps one org's cached rows for freshly loaded ones and evicts
+// clubs that are idle or beyond the cache cap. The caller holds the write lock.
+func (s *Service) replaceOrgLocked(orgID string,
+	ms []Meet,
+	sessions []MeetSession,
+	events []MeetEvent,
+	commitments []Commitment,
+	entries []Entry,
+	swimmers []swimmerRef,
+	households []householdRef,
+	selections []EventSelection,
+) {
+	s.dropOrgLocked(orgID)
+	s.populateDBBackedStateLocked(ms, sessions, events, commitments, entries, swimmers, households, selections)
+	s.orgCache.Touch(orgID, s.dropOrgLocked)
+}
+
+// SetOrgCacheLimits bounds the per-org cache: idle clubs older than ttl and the least
+// recently served clubs beyond maxOrgs are evicted (0 = unlimited). Safe because every
+// request reloads its own org first.
+func (s *Service) SetOrgCacheLimits(ttl time.Duration, maxOrgs int) {
+	s.orgCache.ConfigureLocked(&s.mu, ttl, maxOrgs)
+}
+
+// dropOrgLocked removes one org's cached rows so a scoped reload replaces exactly them.
+func (s *Service) dropOrgLocked(orgID string) {
+	dbutil.DropByOrg(s.meets, orgID, func(v Meet) string { return v.OrgID })
+	dbutil.DropByOrg(s.sessions, orgID, func(v MeetSession) string { return v.OrgID })
+	dbutil.DropByOrg(s.events, orgID, func(v MeetEvent) string { return v.OrgID })
+	dbutil.DropByOrg(s.commitments, orgID, func(v Commitment) string { return v.OrgID })
+	dbutil.DropByOrg(s.entries, orgID, func(v Entry) string { return v.OrgID })
+	dbutil.DropByOrg(s.swimmers, orgID, func(v swimmerRef) string { return v.OrgID })
+	dbutil.DropByOrg(s.households, orgID, func(v householdRef) string { return v.OrgID })
+	dbutil.DropByOrg(s.selections, orgID, func(v EventSelection) string { return v.OrgID })
 }
 
 func (s *Service) resetDBBackedStateLocked() {
@@ -870,6 +1008,11 @@ func deriveSessionDrafts(result *meetfiles.ParsedMeetDefinition) []ParsedSession
 	if endDay.Before(startDay) {
 		endDay = startDay
 	}
+	// Bound the one-session-per-day expansion (matches the HYV/EV3 cap) so a
+	// corrupt B1 date range cannot allocate millions of drafts.
+	if endDay.Sub(startDay) > time.Duration(maxDerivedMeetDays-1)*24*time.Hour {
+		endDay = startDay.AddDate(0, 0, maxDerivedMeetDays-1)
+	}
 
 	var drafts []ParsedSessionDraft
 	for day := startDay; !day.After(endDay); day = day.Add(24 * time.Hour) {
@@ -886,6 +1029,11 @@ func deriveSessionDrafts(result *meetfiles.ParsedMeetDefinition) []ParsedSession
 	}
 	return drafts
 }
+
+const maxInMemoryAuditEvents = 1000
+
+// maxDerivedMeetDays bounds the one-session-per-day fallback.
+const maxDerivedMeetDays = 366
 
 func deriveEventDrafts(result *meetfiles.ParsedMeetDefinition) []ParsedEventDraft {
 	if result == nil || len(result.Events) == 0 {
@@ -1029,7 +1177,7 @@ func (s *Service) CreateMeet(principal *appmiddleware.Principal, orgID string, i
 		return Meet{}, MeetAuditEvent{}, ErrForbidden
 	}
 	// Pick up writes made through other API instances before acting on state.
-	if err := s.syncFromDB(context.Background()); err != nil {
+	if err := s.syncFromDB(context.Background(), orgID); err != nil {
 		return Meet{}, MeetAuditEvent{}, err
 	}
 
@@ -1046,6 +1194,24 @@ func (s *Service) CreateMeet(principal *appmiddleware.Principal, orgID string, i
 	course := normalizeChoice(input.Course, "SCY")
 	if err := validateCourse(course); err != nil {
 		return Meet{}, MeetAuditEvent{}, err
+	}
+
+	startDate, err := parseOptionalDate("start_date", input.StartDate)
+	if err != nil {
+		return Meet{}, MeetAuditEvent{}, err
+	}
+	endDate, err := parseOptionalDate("end_date", input.EndDate)
+	if err != nil {
+		return Meet{}, MeetAuditEvent{}, err
+	}
+	if _, err := parseOptionalDate("entry_deadline", input.EntryDeadline); err != nil {
+		return Meet{}, MeetAuditEvent{}, err
+	}
+	if _, err := parseOptionalDate("commitment_deadline", input.CommitmentDeadline); err != nil {
+		return Meet{}, MeetAuditEvent{}, err
+	}
+	if !startDate.IsZero() && !endDate.IsZero() && endDate.Before(startDate) {
+		return Meet{}, MeetAuditEvent{}, validationErr("end_date must not be before start_date")
 	}
 
 	signupSettings := CreateMeetSignupSettingsInput{
@@ -1095,7 +1261,7 @@ func (s *Service) CreateMeet(principal *appmiddleware.Principal, orgID string, i
 
 	if s.repo != nil {
 		if err := s.repo.CreateMeetBundle(context.Background(), meet, sessionsToCreate, eventsToCreate); err != nil {
-			return Meet{}, MeetAuditEvent{}, fmt.Errorf("persist meet bundle: %w", err)
+			return Meet{}, MeetAuditEvent{}, &persistenceError{op: "meet bundle", err: err}
 		}
 	}
 	s.meets[meet.ID] = meet
@@ -1146,6 +1312,15 @@ func (s *Service) buildMeetSessions(principal *appmiddleware.Principal, orgID, m
 		if item.SessionNumber <= 0 {
 			return nil, nil, errors.New("session_number must be a positive integer")
 		}
+		if _, err := parseOptionalDate("session_date", item.SessionDate); err != nil {
+			return nil, nil, err
+		}
+		if err := validateOptionalClock("warmup_time", item.WarmupTime); err != nil {
+			return nil, nil, err
+		}
+		if err := validateOptionalClock("start_time", item.StartTime); err != nil {
+			return nil, nil, err
+		}
 		if _, exists := sessionByNumber[item.SessionNumber]; exists {
 			return nil, nil, fmt.Errorf("session_number %d already exists in this meet", item.SessionNumber)
 		}
@@ -1194,6 +1369,9 @@ func (s *Service) buildMeetEvents(principal *appmiddleware.Principal, orgID stri
 		if item.Distance <= 0 {
 			return nil, errors.New("distance must be a positive integer")
 		}
+		if err := validateEventBounds(item.MinAge, item.MaxAge, item.EntryFeeCents); err != nil {
+			return nil, err
+		}
 		eventCourse := normalizeChoice(item.Course, meet.Course)
 		if err := validateCourse(eventCourse); err != nil {
 			return nil, err
@@ -1241,7 +1419,7 @@ func (s *Service) ListMeets(principal *appmiddleware.Principal, orgID string) ([
 		return nil, ErrForbidden
 	}
 	// Pick up writes made through other API instances before acting on state.
-	if err := s.syncFromDB(context.Background()); err != nil {
+	if err := s.syncFromDB(context.Background(), orgID); err != nil {
 		return nil, err
 	}
 
@@ -1270,7 +1448,7 @@ func (s *Service) GetMeet(principal *appmiddleware.Principal, orgID, meetID stri
 		return Meet{}, ErrForbidden
 	}
 	// Pick up writes made through other API instances before acting on state.
-	if err := s.syncFromDB(context.Background()); err != nil {
+	if err := s.syncFromDB(context.Background(), orgID); err != nil {
 		return Meet{}, err
 	}
 
@@ -1303,7 +1481,7 @@ func (s *Service) TransitionMeetStatus(principal *appmiddleware.Principal, orgID
 		return Meet{}, MeetAuditEvent{}, ErrForbidden
 	}
 	// Pick up writes made through other API instances before acting on state.
-	if err := s.syncFromDB(context.Background()); err != nil {
+	if err := s.syncFromDB(context.Background(), orgID); err != nil {
 		return Meet{}, MeetAuditEvent{}, err
 	}
 
@@ -1343,7 +1521,7 @@ func (s *Service) TransitionMeetStatus(principal *appmiddleware.Principal, orgID
 
 	if s.repo != nil {
 		if err := s.repo.UpsertMeet(context.Background(), meet); err != nil {
-			return Meet{}, MeetAuditEvent{}, fmt.Errorf("persist meet transition: %w", err)
+			return Meet{}, MeetAuditEvent{}, &persistenceError{op: "meet transition", err: err}
 		}
 	}
 	s.meets[meet.ID] = meet
@@ -1367,7 +1545,7 @@ func (s *Service) CreateMeetSession(principal *appmiddleware.Principal, orgID, m
 		return MeetSession{}, MeetAuditEvent{}, ErrForbidden
 	}
 	// Pick up writes made through other API instances before acting on state.
-	if err := s.syncFromDB(context.Background()); err != nil {
+	if err := s.syncFromDB(context.Background(), orgID); err != nil {
 		return MeetSession{}, MeetAuditEvent{}, err
 	}
 
@@ -1377,6 +1555,15 @@ func (s *Service) CreateMeetSession(principal *appmiddleware.Principal, orgID, m
 	}
 	if input.SessionNumber <= 0 {
 		return MeetSession{}, MeetAuditEvent{}, errors.New("session_number must be a positive integer")
+	}
+	if _, err := parseOptionalDate("session_date", input.SessionDate); err != nil {
+		return MeetSession{}, MeetAuditEvent{}, err
+	}
+	if err := validateOptionalClock("warmup_time", input.WarmupTime); err != nil {
+		return MeetSession{}, MeetAuditEvent{}, err
+	}
+	if err := validateOptionalClock("start_time", input.StartTime); err != nil {
+		return MeetSession{}, MeetAuditEvent{}, err
 	}
 
 	s.mu.Lock()
@@ -1415,7 +1602,7 @@ func (s *Service) CreateMeetSession(principal *appmiddleware.Principal, orgID, m
 	}
 	if s.repo != nil {
 		if err := s.repo.UpsertMeetSession(context.Background(), session); err != nil {
-			return MeetSession{}, MeetAuditEvent{}, fmt.Errorf("persist meet session: %w", err)
+			return MeetSession{}, MeetAuditEvent{}, &persistenceError{op: "meet session", err: err}
 		}
 	}
 	s.sessions[session.ID] = session
@@ -1436,7 +1623,7 @@ func (s *Service) ListMeetSessions(principal *appmiddleware.Principal, orgID, me
 		return nil, ErrForbidden
 	}
 	// Pick up writes made through other API instances before acting on state.
-	if err := s.syncFromDB(context.Background()); err != nil {
+	if err := s.syncFromDB(context.Background(), orgID); err != nil {
 		return nil, err
 	}
 
@@ -1466,7 +1653,7 @@ func (s *Service) CreateMeetEvent(principal *appmiddleware.Principal, orgID, mee
 		return MeetEvent{}, MeetAuditEvent{}, ErrForbidden
 	}
 	// Pick up writes made through other API instances before acting on state.
-	if err := s.syncFromDB(context.Background()); err != nil {
+	if err := s.syncFromDB(context.Background(), orgID); err != nil {
 		return MeetEvent{}, MeetAuditEvent{}, err
 	}
 
@@ -1483,6 +1670,9 @@ func (s *Service) CreateMeetEvent(principal *appmiddleware.Principal, orgID, mee
 	}
 	if input.Distance <= 0 {
 		return MeetEvent{}, MeetAuditEvent{}, errors.New("distance must be a positive integer")
+	}
+	if err := validateEventBounds(input.MinAge, input.MaxAge, input.EntryFeeCents); err != nil {
+		return MeetEvent{}, MeetAuditEvent{}, err
 	}
 
 	gender := normalizeChoice(input.Gender, "O")
@@ -1545,7 +1735,7 @@ func (s *Service) CreateMeetEvent(principal *appmiddleware.Principal, orgID, mee
 	}
 	if s.repo != nil {
 		if err := s.repo.UpsertMeetEvent(context.Background(), meetEvent); err != nil {
-			return MeetEvent{}, MeetAuditEvent{}, fmt.Errorf("persist meet event: %w", err)
+			return MeetEvent{}, MeetAuditEvent{}, &persistenceError{op: "meet event", err: err}
 		}
 	}
 	s.events[meetEvent.ID] = meetEvent
@@ -1566,7 +1756,7 @@ func (s *Service) ListMeetEvents(principal *appmiddleware.Principal, orgID, meet
 		return nil, ErrForbidden
 	}
 	// Pick up writes made through other API instances before acting on state.
-	if err := s.syncFromDB(context.Background()); err != nil {
+	if err := s.syncFromDB(context.Background(), orgID); err != nil {
 		return nil, err
 	}
 
@@ -1602,7 +1792,7 @@ func (s *Service) PublishCommitmentRequest(principal *appmiddleware.Principal, o
 	if !appmiddleware.HasAnyRole(principal, "admin", "coach") {
 		return Meet{}, nil, MeetAuditEvent{}, ErrForbidden
 	}
-	if err := s.syncFromDB(context.Background()); err != nil {
+	if err := s.syncFromDB(context.Background(), orgID); err != nil {
 		return Meet{}, nil, MeetAuditEvent{}, err
 	}
 
@@ -1647,7 +1837,7 @@ func (s *Service) PublishCommitmentRequest(principal *appmiddleware.Principal, o
 		}
 		if s.repo != nil {
 			if err := s.repo.UpsertCommitment(context.Background(), c); err != nil {
-				return Meet{}, nil, MeetAuditEvent{}, fmt.Errorf("persist commitment (publish): %w", err)
+				return Meet{}, nil, MeetAuditEvent{}, &persistenceError{op: "commitment (publish)", err: err}
 			}
 		}
 		s.commitments[c.ID] = c
@@ -1660,7 +1850,7 @@ func (s *Service) PublishCommitmentRequest(principal *appmiddleware.Principal, o
 	meet.UpdatedBy = principal.UserID
 	if s.repo != nil {
 		if err := s.repo.UpsertMeet(context.Background(), meet); err != nil {
-			return Meet{}, nil, MeetAuditEvent{}, fmt.Errorf("persist meet (commitment_open): %w", err)
+			return Meet{}, nil, MeetAuditEvent{}, &persistenceError{op: "meet (commitment_open)", err: err}
 		}
 	}
 	s.meets[meet.ID] = meet
@@ -1684,7 +1874,7 @@ func (s *Service) InviteSwimmerToOpenMeets(orgID, swimmerID, householdID, actorU
 	if orgID == "" || swimmerID == "" {
 		return nil, errors.New("org_id and swimmer_id are required")
 	}
-	if err := s.syncFromDB(context.Background()); err != nil {
+	if err := s.syncFromDB(context.Background(), orgID); err != nil {
 		return nil, err
 	}
 
@@ -1720,7 +1910,7 @@ func (s *Service) InviteSwimmerToOpenMeets(orgID, swimmerID, householdID, actorU
 		}
 		if s.repo != nil {
 			if err := s.repo.UpsertCommitment(context.Background(), c); err != nil {
-				return created, fmt.Errorf("persist commitment (late invite): %w", err)
+				return created, &persistenceError{op: "commitment (late invite)", err: err}
 			}
 		}
 		s.commitments[c.ID] = c
@@ -1743,7 +1933,7 @@ func (s *Service) ListCommitments(principal *appmiddleware.Principal, orgID, mee
 	if !appmiddleware.HasAnyRole(principal, "admin", "coach", "parent", "swimmer") {
 		return nil, ErrForbidden
 	}
-	if err := s.syncFromDB(context.Background()); err != nil {
+	if err := s.syncFromDB(context.Background(), orgID); err != nil {
 		return nil, err
 	}
 
@@ -1784,7 +1974,7 @@ func (s *Service) RespondToCommitment(principal *appmiddleware.Principal, orgID,
 		return Commitment{}, MeetAuditEvent{}, ErrForbidden
 	}
 	// Pick up writes made through other API instances before acting on state.
-	if err := s.syncFromDB(context.Background()); err != nil {
+	if err := s.syncFromDB(context.Background(), orgID); err != nil {
 		return Commitment{}, MeetAuditEvent{}, err
 	}
 	// Coach role is not permitted to respond to commitments per RBAC table.
@@ -1834,7 +2024,7 @@ func (s *Service) RespondToCommitment(principal *appmiddleware.Principal, orgID,
 	cmt.UpdatedBy = principal.UserID
 	if s.repo != nil {
 		if err := s.repo.UpsertCommitment(context.Background(), cmt); err != nil {
-			return Commitment{}, MeetAuditEvent{}, fmt.Errorf("persist commitment (respond): %w", err)
+			return Commitment{}, MeetAuditEvent{}, &persistenceError{op: "commitment (respond)", err: err}
 		}
 	}
 	s.commitments[cmt.ID] = cmt
@@ -1844,8 +2034,8 @@ func (s *Service) RespondToCommitment(principal *appmiddleware.Principal, orgID,
 		for selID, sel := range s.selections {
 			if sel.CommitmentID == cmt.ID {
 				if s.repo != nil {
-					if err := s.repo.DeleteEventSelection(context.Background(), selID); err != nil {
-						return Commitment{}, MeetAuditEvent{}, fmt.Errorf("persist event selection removal: %w", err)
+					if err := s.repo.DeleteEventSelection(context.Background(), sel.OrgID, selID); err != nil {
+						return Commitment{}, MeetAuditEvent{}, &persistenceError{op: "event selection removal", err: err}
 					}
 				}
 				delete(s.selections, selID)
@@ -1873,13 +2063,16 @@ func (s *Service) SelectCommitmentEvent(principal *appmiddleware.Principal, orgI
 		return EventSelection{}, ErrForbidden
 	}
 	// Pick up writes made through other API instances before acting on state.
-	if err := s.syncFromDB(context.Background()); err != nil {
+	if err := s.syncFromDB(context.Background(), orgID); err != nil {
 		return EventSelection{}, err
 	}
 
 	meetEventID := strings.TrimSpace(input.MeetEventID)
 	if meetEventID == "" {
 		return EventSelection{}, errors.New("meet_event_id is required")
+	}
+	if err := validateSeedTimeMs(input.SeedTimeMs); err != nil {
+		return EventSelection{}, err
 	}
 
 	s.mu.Lock()
@@ -1933,8 +2126,11 @@ func (s *Service) SelectCommitmentEvent(principal *appmiddleware.Principal, orgI
 		if sel.CommitmentID == cmt.ID && sel.MeetEventID == meetEventID {
 			return EventSelection{}, ErrDuplicateSelection
 		}
+		// Relays do not count toward the individual-entry cap.
 		if sel.CommitmentID == cmt.ID {
-			selected++
+			if e, ok := s.events[sel.MeetEventID]; ok && !e.IsRelay {
+				selected++
+			}
 		}
 	}
 	if !ev.IsRelay && meet.MaxEntriesPerSwimmer > 0 && selected >= meet.MaxEntriesPerSwimmer {
@@ -1966,7 +2162,7 @@ func (s *Service) RemoveCommitmentEventSelection(principal *appmiddleware.Princi
 		return ErrForbidden
 	}
 	// Pick up writes made through other API instances before acting on state.
-	if err := s.syncFromDB(context.Background()); err != nil {
+	if err := s.syncFromDB(context.Background(), orgID); err != nil {
 		return err
 	}
 
@@ -2000,7 +2196,7 @@ func (s *Service) RemoveCommitmentEventSelection(principal *appmiddleware.Princi
 	}
 
 	if s.repo != nil {
-		if err := s.repo.DeleteEventSelection(context.Background(), sel.ID); err != nil {
+		if err := s.repo.DeleteEventSelection(context.Background(), sel.OrgID, sel.ID); err != nil {
 			return err
 		}
 	}
@@ -2014,7 +2210,7 @@ func (s *Service) ListCommitmentEventSelections(principal *appmiddleware.Princip
 		return nil, ErrForbidden
 	}
 	// Pick up writes made through other API instances before acting on state.
-	if err := s.syncFromDB(context.Background()); err != nil {
+	if err := s.syncFromDB(context.Background(), orgID); err != nil {
 		return nil, err
 	}
 
@@ -2056,13 +2252,15 @@ func (s *Service) ListCommitmentEventSelections(principal *appmiddleware.Princip
 
 // ─── Lock commitments ─────────────────────────────────────────────────────────
 
-// LockCommitments closes the commitment window and locks all commitments.
-// Transitions meet to commitment_closed and all commitments to locked.
+// LockCommitments closes the commitment window and locks only committed_yes
+// and coach_reviewed commitments (declines and non-responses keep their
+// status). Each locked commitment's event selections become submitted entries.
+// Transitions the meet to commitment_closed.
 func (s *Service) LockCommitments(principal *appmiddleware.Principal, orgID, meetID string) (Meet, MeetAuditEvent, error) {
 	if !appmiddleware.HasAnyRole(principal, "admin", "coach") {
 		return Meet{}, MeetAuditEvent{}, ErrForbidden
 	}
-	if err := s.syncFromDB(context.Background()); err != nil {
+	if err := s.syncFromDB(context.Background(), orgID); err != nil {
 		return Meet{}, MeetAuditEvent{}, err
 	}
 
@@ -2097,10 +2295,12 @@ func (s *Service) LockCommitments(principal *appmiddleware.Principal, orgID, mee
 			if sel.CommitmentID != cmt.ID || s.hasEntryLocked(meet.ID, cmt.SwimmerID, sel.MeetEventID) {
 				continue
 			}
-			if ev, ok := s.events[sel.MeetEventID]; !ok || ev.MeetID != meet.ID {
+			ev, ok := s.events[sel.MeetEventID]
+			if !ok || ev.MeetID != meet.ID {
 				continue
 			}
 			entry := Entry{
+				IsRelay:      ev.IsRelay,
 				ID:           s.newID("ent_"),
 				OrgID:        orgID,
 				MeetID:       meet.ID,
@@ -2117,7 +2317,7 @@ func (s *Service) LockCommitments(principal *appmiddleware.Principal, orgID, mee
 			}
 			if s.repo != nil {
 				if err := s.repo.UpsertEntry(context.Background(), entry); err != nil {
-					return Meet{}, MeetAuditEvent{}, fmt.Errorf("persist entry (from selection): %w", err)
+					return Meet{}, MeetAuditEvent{}, &persistenceError{op: "entry (from selection)", err: err}
 				}
 			}
 			s.entries[entry.ID] = entry
@@ -2130,7 +2330,7 @@ func (s *Service) LockCommitments(principal *appmiddleware.Principal, orgID, mee
 		cmt.UpdatedBy = principal.UserID
 		if s.repo != nil {
 			if err := s.repo.UpsertCommitment(context.Background(), cmt); err != nil {
-				return Meet{}, MeetAuditEvent{}, fmt.Errorf("persist commitment (lock): %w", err)
+				return Meet{}, MeetAuditEvent{}, &persistenceError{op: "commitment (lock)", err: err}
 			}
 		}
 		s.commitments[id] = cmt
@@ -2143,7 +2343,7 @@ func (s *Service) LockCommitments(principal *appmiddleware.Principal, orgID, mee
 	meet.UpdatedBy = principal.UserID
 	if s.repo != nil {
 		if err := s.repo.UpsertMeet(context.Background(), meet); err != nil {
-			return Meet{}, MeetAuditEvent{}, fmt.Errorf("persist meet (lock commitments): %w", err)
+			return Meet{}, MeetAuditEvent{}, &persistenceError{op: "meet (lock commitments)", err: err}
 		}
 	}
 	s.meets[meet.ID] = meet
@@ -2207,7 +2407,7 @@ func (s *Service) ListEntries(principal *appmiddleware.Principal, orgID, meetID 
 	if !appmiddleware.HasAnyRole(principal, "admin", "coach", "parent") {
 		return nil, ErrForbidden
 	}
-	if err := s.syncFromDB(context.Background()); err != nil {
+	if err := s.syncFromDB(context.Background(), orgID); err != nil {
 		return nil, err
 	}
 
@@ -2249,12 +2449,15 @@ func (s *Service) ProposeEntry(principal *appmiddleware.Principal, orgID, meetID
 		return Entry{}, MeetAuditEvent{}, ErrForbidden
 	}
 	// Pick up writes made through other API instances before acting on state.
-	if err := s.syncFromDB(context.Background()); err != nil {
+	if err := s.syncFromDB(context.Background(), orgID); err != nil {
 		return Entry{}, MeetAuditEvent{}, err
 	}
 
 	swimmerID := strings.TrimSpace(input.SwimmerID)
 	meetEventID := strings.TrimSpace(input.MeetEventID)
+	if err := validateSeedTimeMs(input.SeedTimeMs); err != nil {
+		return Entry{}, MeetAuditEvent{}, err
+	}
 	if swimmerID == "" || meetEventID == "" {
 		return Entry{}, MeetAuditEvent{}, errors.New("swimmer_id and meet_event_id are required")
 	}
@@ -2352,7 +2555,7 @@ func (s *Service) ProposeEntry(principal *appmiddleware.Principal, orgID, meetID
 	}
 	if s.repo != nil {
 		if err := s.repo.UpsertEntry(context.Background(), entry); err != nil {
-			return Entry{}, MeetAuditEvent{}, fmt.Errorf("persist entry (propose): %w", err)
+			return Entry{}, MeetAuditEvent{}, &persistenceError{op: "entry (propose)", err: err}
 		}
 	}
 	s.entries[entry.ID] = entry
@@ -2379,12 +2582,15 @@ func (s *Service) OverrideEntry(principal *appmiddleware.Principal, orgID, meetI
 		return Entry{}, MeetAuditEvent{}, ErrForbidden
 	}
 	// Pick up writes made through other API instances before acting on state.
-	if err := s.syncFromDB(context.Background()); err != nil {
+	if err := s.syncFromDB(context.Background(), orgID); err != nil {
 		return Entry{}, MeetAuditEvent{}, err
 	}
 
 	newMeetEventID := strings.TrimSpace(input.NewMeetEventID)
 	reason := strings.TrimSpace(input.Reason)
+	if err := validateSeedTimeMs(input.SeedTimeMs); err != nil {
+		return Entry{}, MeetAuditEvent{}, err
+	}
 	if newMeetEventID == "" {
 		return Entry{}, MeetAuditEvent{}, errors.New("new_meet_event_id is required")
 	}
@@ -2451,7 +2657,7 @@ func (s *Service) OverrideEntry(principal *appmiddleware.Principal, orgID, meetI
 	entry.UpdatedBy = principal.UserID
 	if s.repo != nil {
 		if err := s.repo.UpsertEntry(context.Background(), entry); err != nil {
-			return Entry{}, MeetAuditEvent{}, fmt.Errorf("persist entry (override): %w", err)
+			return Entry{}, MeetAuditEvent{}, &persistenceError{op: "entry (override)", err: err}
 		}
 	}
 	s.entries[entry.ID] = entry
@@ -2486,7 +2692,7 @@ func (s *Service) ScratchEntry(principal *appmiddleware.Principal, orgID, meetID
 		return Entry{}, MeetAuditEvent{}, ErrForbidden
 	}
 	// Pick up writes made through other API instances before acting on state.
-	if err := s.syncFromDB(context.Background()); err != nil {
+	if err := s.syncFromDB(context.Background(), orgID); err != nil {
 		return Entry{}, MeetAuditEvent{}, err
 	}
 	reason = strings.TrimSpace(reason)
@@ -2522,7 +2728,7 @@ func (s *Service) ScratchEntry(principal *appmiddleware.Principal, orgID, meetID
 	entry.UpdatedBy = principal.UserID
 	if s.repo != nil {
 		if err := s.repo.UpsertEntry(context.Background(), entry); err != nil {
-			return Entry{}, MeetAuditEvent{}, fmt.Errorf("persist entry (scratch): %w", err)
+			return Entry{}, MeetAuditEvent{}, &persistenceError{op: "entry (scratch)", err: err}
 		}
 	}
 	s.entries[entry.ID] = entry
@@ -2549,7 +2755,7 @@ func (s *Service) ApproveEntry(principal *appmiddleware.Principal, orgID, meetID
 		return Entry{}, MeetAuditEvent{}, ErrForbidden
 	}
 	// Pick up writes made through other API instances before acting on state.
-	if err := s.syncFromDB(context.Background()); err != nil {
+	if err := s.syncFromDB(context.Background(), orgID); err != nil {
 		return Entry{}, MeetAuditEvent{}, err
 	}
 
@@ -2582,7 +2788,7 @@ func (s *Service) ApproveEntry(principal *appmiddleware.Principal, orgID, meetID
 	entry.UpdatedBy = principal.UserID
 	if s.repo != nil {
 		if err := s.repo.UpsertEntry(context.Background(), entry); err != nil {
-			return Entry{}, MeetAuditEvent{}, fmt.Errorf("persist entry (approve): %w", err)
+			return Entry{}, MeetAuditEvent{}, &persistenceError{op: "entry (approve)", err: err}
 		}
 	}
 	s.entries[entry.ID] = entry
@@ -2611,7 +2817,7 @@ func (s *Service) MarkEntriesExported(principal *appmiddleware.Principal, orgID,
 		return 0, MeetAuditEvent{}, ErrForbidden
 	}
 	// Pick up writes made through other API instances before acting on state.
-	if err := s.syncFromDB(context.Background()); err != nil {
+	if err := s.syncFromDB(context.Background(), orgID); err != nil {
 		return 0, MeetAuditEvent{}, err
 	}
 
@@ -2635,7 +2841,7 @@ func (s *Service) MarkEntriesExported(principal *appmiddleware.Principal, orgID,
 		entry.UpdatedBy = principal.UserID
 		if s.repo != nil {
 			if err := s.repo.UpsertEntry(context.Background(), entry); err != nil {
-				return marked, MeetAuditEvent{}, fmt.Errorf("persist entry (exported): %w", err)
+				return marked, MeetAuditEvent{}, &persistenceError{op: "entry (exported)", err: err}
 			}
 		}
 		s.entries[entry.ID] = entry
@@ -2666,6 +2872,9 @@ func (s *Service) MarkEntriesExported(principal *appmiddleware.Principal, orgID,
 // Returns the number of entries updated.
 func (s *Service) UpdateSeedTimesForSwimmer(orgID, swimmerID string, distance int, stroke, course string, newBestTimeMs *int) int {
 	meetsStroke := normalizePerfStroke(stroke)
+
+	// Entries live in the per-org cache; make sure this org's are loaded (and fresh).
+	_ = s.syncFromDB(context.Background(), orgID)
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -2748,6 +2957,11 @@ func (s *Service) recordAuditEventLocked(event MeetAuditEvent) MeetAuditEvent {
 	event.ID = "aud_" + randomToken(12)
 	event.CreatedAt = time.Now().UTC()
 	s.auditEvents = append(s.auditEvents, event)
+	// Durable audit rows are written by the handlers; keep only a bounded tail
+	// in memory so a long-lived process does not grow without limit.
+	if over := len(s.auditEvents) - maxInMemoryAuditEvents; over > 0 {
+		s.auditEvents = append([]MeetAuditEvent(nil), s.auditEvents[over:]...)
+	}
 	return event
 }
 

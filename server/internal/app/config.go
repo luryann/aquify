@@ -2,6 +2,7 @@ package app
 
 import (
 	"fmt"
+	"net/url"
 	"os"
 	"strconv"
 	"strings"
@@ -24,11 +25,49 @@ type Config struct {
 	Storage        StorageConfig
 	Stripe         StripeConfig
 	Postmark       PostmarkConfig
-	Compliance     ComplianceConfig
-	Worker         WorkerConfig
-	Security       SecurityConfig
-	Telemetry      TelemetryConfig
-	Keycloak       KeycloakAdminConfig
+	// Comms limits.
+	Comms CommsConfig
+	// Cache bounds the per-club in-memory caches.
+	Cache      CacheConfig
+	Compliance ComplianceConfig
+	Worker     WorkerConfig
+	Security   SecurityConfig
+	Telemetry  TelemetryConfig
+	Keycloak   KeycloakAdminConfig
+	// Platform configures the operator plane (tenant provisioning/suspension).
+	Platform PlatformConfig
+}
+
+// CacheConfig bounds how many clubs' rows the member, group, meet and billing
+// services keep in process memory.
+type CacheConfig struct {
+	// OrgIdleTTL evicts a club's rows after this long without a request
+	// (CACHE_ORG_IDLE_TTL, default 30m, 0 = never).
+	OrgIdleTTL time.Duration
+	// MaxOrgs caps how many clubs are cached per service; the least recently served
+	// are evicted first (CACHE_MAX_ORGS, default 200, 0 = unlimited).
+	MaxOrgs int
+}
+
+// CommsConfig holds per-org email limits.
+type CommsConfig struct {
+	// OrgDailyEmailCap caps emails per org per rolling 24h (COMMS_ORG_DAILY_EMAIL_CAP,
+	// default 20000, 0 = unlimited).
+	OrgDailyEmailCap int
+	// OrgDocumentStorageBytes caps document files per org (ORG_DOCUMENT_STORAGE_BYTES,
+	// default 10 GiB, 0 = unlimited).
+	OrgDocumentStorageBytes int64
+}
+
+// PlatformConfig holds the operator-plane settings. With OrgID empty the
+// /api/v1/platform routes are not mounted at all (fail closed).
+type PlatformConfig struct {
+	// OrgID is the UUID of the dedicated platform org whose members may hold the
+	// platform_admin role. It is registered in the tenant registry at startup.
+	OrgID string
+	// OffboardingCoolingOff is how long an org stays in offboarding before it can
+	// be permanently deleted (PLATFORM_OFFBOARDING_COOLING_OFF, default 336h).
+	OffboardingCoolingOff time.Duration
 }
 
 // KeycloakAdminConfig holds credentials for the Keycloak Admin REST API.
@@ -126,6 +165,14 @@ type StripeConfig struct {
 	WebhookSecret string `json:"-"`
 	// Currency is the default ISO 4217 currency code.
 	Currency string
+	// ConnectWebhookSecret signs the Connect webhook endpoint (events on clubs'
+	// connected accounts); the platform endpoint uses WebhookSecret.
+	ConnectWebhookSecret string `json:"-"`
+	// ConnectRequired makes every club use its own connected account: a club
+	// that has not finished onboarding cannot take online payments (no fallback to
+	// the platform account). STRIPE_CONNECT_REQUIRED unset = required outside
+	// explicit development/test environments.
+	ConnectRequired *bool
 	// ReconciliationAlertThresholdCents is the ledger vs Stripe mismatch amount
 	// above which the reconciliation endpoint sets alert_triggered=true.
 	ReconciliationAlertThresholdCents int
@@ -193,6 +240,11 @@ type RateLimitConfig struct {
 	// cost-driving Stripe write endpoints (payment-intents, checkout-sessions).
 	StripeRequests int
 	StripeWindow   time.Duration
+	// OrgRequests / OrgWindow cap authenticated API requests per organization
+	// (across all of its users and IPs), so one busy club cannot starve the rest.
+	// OrgRequests <= 0 disables the per-org limit.
+	OrgRequests int
+	OrgWindow   time.Duration
 	// TrustedProxyCIDRs is the list of CIDR ranges whose requests may set
 	// X-Forwarded-For. When empty, X-Forwarded-For is never trusted.
 	TrustedProxyCIDRs []string
@@ -232,9 +284,13 @@ func LoadConfig() Config {
 	if isExplicitDevelopmentEnv(appEnv) {
 		metricsAddrDefault = ":9090"
 	}
+	allowedOriginsDefault := ""
+	if isExplicitDevelopmentEnv(appEnv) {
+		allowedOriginsDefault = defaultAllowedOrigin
+	}
 	return Config{
 		Addr:           getEnv("API_ADDR", defaultAPIAddr),
-		AllowedOrigins: splitCSV(getEnv("API_ALLOWED_ORIGINS", defaultAllowedOrigin)),
+		AllowedOrigins: splitCSV(getEnv("API_ALLOWED_ORIGINS", allowedOriginsDefault)),
 		AppEnv:         appEnv,
 		DatabaseURL:    getEnvTrimmed("DATABASE_URL", ""),
 		Storage: StorageConfig{
@@ -266,6 +322,8 @@ func LoadConfig() Config {
 		Stripe: StripeConfig{
 			SecretKey:                         getEnvTrimmed("STRIPE_SECRET_KEY", ""),
 			WebhookSecret:                     getEnvTrimmed("STRIPE_WEBHOOK_SECRET", ""),
+			ConnectWebhookSecret:              getEnvTrimmed("STRIPE_CONNECT_WEBHOOK_SECRET", ""),
+			ConnectRequired:                   getEnvOptionalBool("STRIPE_CONNECT_REQUIRED"),
 			Currency:                          strings.ToLower(getEnvTrimmed("STRIPE_CURRENCY", "usd")),
 			ReconciliationAlertThresholdCents: getEnvInt("STRIPE_RECONCILIATION_ALERT_THRESHOLD_CENTS", 100),
 		},
@@ -297,6 +355,8 @@ func LoadConfig() Config {
 			RateLimit: RateLimitConfig{
 				GlobalRequests:    getEnvInt("SECURITY_RATE_LIMIT_GLOBAL_REQUESTS", 1200),
 				GlobalWindow:      getEnvDuration("SECURITY_RATE_LIMIT_GLOBAL_WINDOW", time.Minute),
+				OrgRequests:       getEnvInt("SECURITY_RATE_LIMIT_ORG_REQUESTS", 6000),
+				OrgWindow:         getEnvDuration("SECURITY_RATE_LIMIT_ORG_WINDOW", time.Minute),
 				AuthRequests:      getEnvInt("SECURITY_RATE_LIMIT_AUTH_REQUESTS", 20),
 				AuthWindow:        getEnvDuration("SECURITY_RATE_LIMIT_AUTH_WINDOW", time.Minute),
 				StripeRequests:    getEnvInt("SECURITY_RATE_LIMIT_STRIPE_REQUESTS", 10),
@@ -319,6 +379,9 @@ func LoadConfig() Config {
 			SampleRate:     getEnvFloat64("OTEL_TRACES_SAMPLER_ARG", 1.0),
 			MetricsAddr:    getEnvTrimmed("METRICS_ADDR", metricsAddrDefault),
 		},
+		Cache:    CacheConfig{OrgIdleTTL: getEnvDuration("CACHE_ORG_IDLE_TTL", 30*time.Minute), MaxOrgs: getEnvInt("CACHE_MAX_ORGS", 200)},
+		Comms:    CommsConfig{OrgDailyEmailCap: getEnvInt("COMMS_ORG_DAILY_EMAIL_CAP", 20000), OrgDocumentStorageBytes: int64(getEnvInt("ORG_DOCUMENT_STORAGE_BYTES", 10<<30))},
+		Platform: PlatformConfig{OrgID: getEnvTrimmed("PLATFORM_ORG_ID", ""), OffboardingCoolingOff: getEnvDuration("PLATFORM_OFFBOARDING_COOLING_OFF", 14*24*time.Hour)},
 		Keycloak: KeycloakAdminConfig{
 			AdminURL:     getEnvTrimmed("KEYCLOAK_ADMIN_URL", ""),
 			Realm:        getEnvTrimmed("KEYCLOAK_REALM", ""),
@@ -355,6 +418,32 @@ func ValidateDevAuthConfig(cfg Config) error {
 			"SESSION_COOKIE_SECURE=false is not permitted when APP_ENV=%q; non-Secure session cookies are only allowed in development, local or test",
 			cfg.AppEnv,
 		)
+	}
+	return nil
+}
+
+// ValidateAllowedOrigins requires API_ALLOWED_ORIGINS outside development: it
+// must be set and contain only https, non-localhost origins, otherwise CORS and
+// Stripe/Connect return-URL checks silently reject the real admin origin.
+func ValidateAllowedOrigins(cfg Config) error {
+	if isExplicitDevelopmentEnv(NormalizeAppEnv(cfg.AppEnv)) {
+		return nil
+	}
+	if len(cfg.AllowedOrigins) == 0 {
+		return fmt.Errorf("API_ALLOWED_ORIGINS must be set when APP_ENV=%q (comma-separated https admin origins)", cfg.AppEnv)
+	}
+	for _, origin := range cfg.AllowedOrigins {
+		u, err := url.Parse(origin)
+		if err != nil || u.Scheme != "https" || u.Host == "" {
+			return fmt.Errorf("API_ALLOWED_ORIGINS entry %q must be an https origin when APP_ENV=%q", origin, cfg.AppEnv)
+		}
+		if u.Path != "" || u.RawQuery != "" || u.Fragment != "" || u.User != nil || strings.HasSuffix(origin, "/") {
+			return fmt.Errorf("API_ALLOWED_ORIGINS entry %q must be a bare origin (scheme://host[:port]) with no trailing slash or path when APP_ENV=%q", origin, cfg.AppEnv)
+		}
+		switch strings.ToLower(u.Hostname()) {
+		case "localhost", "127.0.0.1", "::1":
+			return fmt.Errorf("API_ALLOWED_ORIGINS entry %q must not be a loopback origin when APP_ENV=%q", origin, cfg.AppEnv)
+		}
 	}
 	return nil
 }
@@ -448,4 +537,13 @@ func isRecognizedAppEnv(appEnv string) bool {
 	default:
 		return false
 	}
+}
+
+// getEnvOptionalBool returns nil when the variable is unset or empty.
+func getEnvOptionalBool(key string) *bool {
+	if strings.TrimSpace(os.Getenv(key)) == "" {
+		return nil
+	}
+	v := getEnvBool(key, false)
+	return &v
 }

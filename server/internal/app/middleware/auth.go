@@ -20,10 +20,20 @@ type Principal struct {
 	SwimmerID        string   `json:"swimmer_id,omitempty"`
 	Roles            []string `json:"roles"`
 	MFAAuthenticated bool     `json:"mfa_authenticated"`
+	// SessionStartedAt (unix seconds) is when the sign-in that produced this
+	// session happened; refresh rotation carries it forward so the chain has an
+	// absolute lifetime. Zero for sessions that predate the field.
+	SessionStartedAt int64 `json:"session_started_at,omitempty"`
 }
 
 type PrincipalResolver interface {
 	ResolvePrincipal(token string) (*Principal, bool)
+}
+
+// PrincipalResolverErr is optionally implemented by resolvers that can tell an
+// unknown token (nil, nil) from an unavailable session store (non-nil error).
+type PrincipalResolverErr interface {
+	ResolvePrincipalErr(token string) (*Principal, error)
 }
 
 func Auth(resolver PrincipalResolver) func(http.Handler) http.Handler {
@@ -39,7 +49,15 @@ func Auth(resolver PrincipalResolver) func(http.Handler) http.Handler {
 				principal *Principal
 				ok        bool
 			)
-			if resolver != nil {
+			if resolverErr, isErr := resolver.(PrincipalResolverErr); isErr && resolver != nil {
+				p, err := resolverErr.ResolvePrincipalErr(token)
+				if err != nil {
+					w.Header().Set("Retry-After", "1")
+					httpx.WriteError(w, r, http.StatusServiceUnavailable, "service_unavailable", "Authentication temporarily unavailable.", err)
+					return
+				}
+				principal, ok = p, p != nil
+			} else if resolver != nil {
 				principal, ok = resolver.ResolvePrincipal(token)
 			}
 			if !ok {
@@ -48,6 +66,7 @@ func Auth(resolver PrincipalResolver) func(http.Handler) http.Handler {
 			}
 
 			ctx := context.WithValue(r.Context(), principalContextKey{}, principal)
+			recordLoggedPrincipal(ctx, principal)
 			next.ServeHTTP(w, r.WithContext(ctx))
 		})
 	}
@@ -108,4 +127,10 @@ func HasAnyRole(principal *Principal, required ...string) bool {
 		}
 	}
 	return false
+}
+
+// ContextWithPrincipal returns ctx carrying p, as Auth does after resolving a
+// token. Intended for tests and for components that act on a principal's behalf.
+func ContextWithPrincipal(ctx context.Context, p *Principal) context.Context {
+	return context.WithValue(ctx, principalContextKey{}, p)
 }

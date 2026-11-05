@@ -11,10 +11,9 @@ import (
 	"sync"
 	"time"
 
-	"log/slog"
-
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/luryann/aquify/server/internal/dbutil"
 )
 
 // ─── Sentinel errors ──────────────────────────────────────────────────────────
@@ -23,7 +22,9 @@ var (
 	ErrTypeNotFound       = errors.New("document type not found")
 	ErrSubmissionNotFound = errors.New("document submission not found")
 	ErrInvalidTransition  = errors.New("invalid status transition")
-	ErrDuplicateName      = errors.New("a document type with this name already exists for the org")
+	// ErrStorageQuotaExceeded: attaching this file would take the org past its document storage allowance.
+	ErrStorageQuotaExceeded = errors.New("your club's document storage is full")
+	ErrDuplicateName        = errors.New("a document type with this name already exists for the org")
 )
 
 // ─── Domain types ─────────────────────────────────────────────────────────────
@@ -76,10 +77,12 @@ type DocumentSubmission struct {
 
 // Service manages document types and submissions.
 type Service struct {
-	mu          sync.RWMutex
-	repo        *Repository
-	docTypes    map[string]*DocumentType
-	submissions map[string]*DocumentSubmission
+	storageQuotaBytes int64 // 0 = unlimited
+	mu                sync.RWMutex
+	orgCache          dbutil.OrgCache
+	repo              *Repository
+	docTypes          map[string]*DocumentType
+	submissions       map[string]*DocumentSubmission
 }
 
 // NewService returns an empty in-memory Service.
@@ -90,26 +93,20 @@ func NewService() *Service {
 	}
 }
 
-// NewServiceWithPool creates a DB-backed Service and loads existing records
-// from Postgres into memory on startup.
+// NewServiceWithPool creates a DB-backed Service. Each club is loaded on demand.
 func NewServiceWithPool(pool *pgxpool.Pool) *Service {
 	s := NewService()
 	if pool == nil {
 		return s
 	}
 	s.repo = newRepository(pool)
-	if err := s.loadFromDB(context.Background(), ""); err != nil {
-		slog.Error("documents: failed to load from DB", "err", err)
-	}
+	// No eager load: every request path loads its own club on demand.
 	return s
 }
 
 // Refresh merges current Postgres rows into the cache (no-op in in-memory
 // mode) so reads and erasure observe submissions created by another instance.
 func (s *Service) Refresh(ctx context.Context, orgID string) error {
-	if s.repo == nil {
-		return nil
-	}
 	return s.loadFromDB(ctx, orgID)
 }
 
@@ -141,16 +138,7 @@ func (s *Service) reloadLocked(ctx context.Context, orgID string) error {
 		s.docTypes = make(map[string]*DocumentType, len(types))
 		s.submissions = make(map[string]*DocumentSubmission, len(subs))
 	} else {
-		for id, t := range s.docTypes {
-			if t.OrgID == orgID {
-				delete(s.docTypes, id)
-			}
-		}
-		for id, sub := range s.submissions {
-			if sub.OrgID == orgID {
-				delete(s.submissions, id)
-			}
-		}
+		s.dropOrgLocked(orgID)
 	}
 	for _, t := range types {
 		s.docTypes[t.ID] = t
@@ -158,7 +146,21 @@ func (s *Service) reloadLocked(ctx context.Context, orgID string) error {
 	for _, sub := range subs {
 		s.submissions[sub.ID] = sub
 	}
+	if orgID != "" {
+		s.orgCache.Touch(orgID, s.dropOrgLocked)
+	}
 	return nil
+}
+
+// SetOrgCacheLimits bounds the per-club cache (0 = unlimited); see dbutil.OrgCache.
+func (s *Service) SetOrgCacheLimits(ttl time.Duration, maxOrgs int) {
+	s.orgCache.ConfigureLocked(&s.mu, ttl, maxOrgs)
+}
+
+// dropOrgLocked removes one club's cached rows. Caller holds s.mu (write).
+func (s *Service) dropOrgLocked(orgID string) {
+	dbutil.DropByOrg(s.docTypes, orgID, func(t *DocumentType) string { return t.OrgID })
+	dbutil.DropByOrg(s.submissions, orgID, func(sub *DocumentSubmission) string { return sub.OrgID })
 }
 
 // ─── Document Types ───────────────────────────────────────────────────────────
@@ -285,7 +287,7 @@ func (s *Service) DeleteDocumentType(orgID, typeID, deletedBy string) error {
 		return ErrTypeNotFound
 	}
 	if s.repo != nil {
-		if err := s.repo.SoftDeleteDocumentType(context.Background(), typeID, deletedBy); err != nil {
+		if err := s.repo.SoftDeleteDocumentType(context.Background(), orgID, typeID, deletedBy); err != nil {
 			return err
 		}
 	}
@@ -374,6 +376,13 @@ func (s *Service) CreateSubmission(orgID, docTypeID, householdID, swimmerID, cre
 
 // AttachFile records the uploaded file metadata on a submission and transitions
 // the status to "submitted".
+// SetStorageQuota caps the total size of document files one org may keep (0 = unlimited).
+func (s *Service) SetStorageQuota(bytes int64) {
+	s.mu.Lock()
+	s.storageQuotaBytes = bytes
+	s.mu.Unlock()
+}
+
 func (s *Service) AttachFile(orgID, submissionID, fileObjectKey, fileName, fileMIME string, fileSizeBytes int64, updatedBy string) (*DocumentSubmission, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -387,6 +396,17 @@ func (s *Service) AttachFile(orgID, submissionID, fileObjectKey, fileName, fileM
 	}
 	if sub.Status != "pending" && sub.Status != "rejected" {
 		return nil, ErrInvalidTransition
+	}
+	if s.storageQuotaBytes > 0 {
+		var used int64
+		for _, other := range s.submissions {
+			if other.OrgID == orgID && other.ID != submissionID && other.FileObjectKey != "" {
+				used += other.FileSizeBytes
+			}
+		}
+		if used+fileSizeBytes > s.storageQuotaBytes {
+			return nil, ErrStorageQuotaExceeded
+		}
 	}
 	cp := *sub
 	cp.Status = "submitted"

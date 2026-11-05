@@ -12,6 +12,7 @@ import {
   updateSeason,
   type SeasonRecord,
 } from '@/lib/adminData'
+import { parseBackendDate } from '@/lib/dates'
 import { uiErrorMessage } from '@/lib/frontend-telemetry'
 import { FIELD_INPUT_STYLE } from '@/lib/form-styles'
 import { PageSkeleton } from '@/components/ui/PageSkeleton'
@@ -66,7 +67,7 @@ function draftFromSeason(season: SeasonRecord): SeasonDraft {
 
 function formatSeasonDate(value: string) {
   if (!value) return '—'
-  return new Date(value + 'T00:00:00').toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })
+  return parseBackendDate(value).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })
 }
 
 function StatusPicker({ value, onChange }: { value: SeasonStatus; onChange: (s: SeasonStatus) => void }) {
@@ -508,11 +509,11 @@ export default function SeasonsPage() {
           </h2>
 
           {timelineSeasons.map((s, i) => {
-            const startDate = new Date(s.start_date + 'T00:00:00')
-            const endDate = new Date(s.end_date + 'T00:00:00')
+            const startDate = parseBackendDate(s.start_date)
+            const endDate = parseBackendDate(s.end_date)
             const startYear = startDate.getFullYear()
             const endYear = endDate.getFullYear()
-            const months = Math.round((endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24 * 30))
+            const months = (endYear - startYear) * 12 + (endDate.getMonth() - startDate.getMonth()) + 1
             const color = s.status === 'active' ? 'var(--accent)' : s.status === 'upcoming' ? 'var(--info)' : 'var(--text-muted)'
 
             return (

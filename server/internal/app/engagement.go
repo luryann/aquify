@@ -14,6 +14,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/luryann/aquify/server/internal/app/attendance"
 	"github.com/luryann/aquify/server/internal/app/audit"
 	"github.com/luryann/aquify/server/internal/app/billing"
@@ -26,7 +27,6 @@ import (
 	"github.com/luryann/aquify/server/internal/app/roster"
 	"github.com/luryann/aquify/server/internal/app/training"
 	"github.com/luryann/aquify/server/internal/app/wellness"
-	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 // engagementSystemPrincipal is the fixed, explicitly-marked identity for
@@ -174,6 +174,10 @@ func (t trainingPracticeSource) Practices(orgID string) ([]attendance.Practice, 
 		out = append(out, attendance.Practice{ID: p.ID, Date: p.Date, GroupID: p.GroupID, Type: p.Type})
 	}
 	return out, nil
+}
+
+func (t trainingPracticeSource) AttendanceForSwimmer(orgID, swimmerID string, practiceIDs []string) (map[string]string, error) {
+	return t.training.AttendanceForSwimmer(orgID, swimmerID, practiceIDs)
 }
 
 func (t trainingPracticeSource) Attendance(orgID, practiceID string) ([]attendance.Record, error) {

@@ -13,7 +13,7 @@ import (
 
 type fakeRevoker struct{ ids []string }
 
-func (f *fakeRevoker) RevokeUserSessions(_ context.Context, id string) (int, error) {
+func (f *fakeRevoker) RevokeUserSessions(_ context.Context, _, id string) (int, error) {
 	f.ids = append(f.ids, id)
 	return 1, nil
 }

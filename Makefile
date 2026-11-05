@@ -1,6 +1,6 @@
 SHELL := /bin/zsh
 
-.PHONY: dev dev-full dev-api dev-admin test test-p0 lint lint-openapi infra-up infra-down infra-reset db-up db-down db-status cutover-rehearsal cutover-smoke cutover-certify cutover-billing-check provider-validation-evidence parallel-meet-cycle-evidence stability-report-evidence launch-evidence-bundle verify-launch-evidence keycloak-dist keycloak-local-up keycloak-local-reset integrations-install integrations-up integrations-down integrations-status integrations-migrate
+.PHONY: dev dev-full dev-api dev-admin test test-p0 test-tenancy lint lint-openapi infra-up infra-down infra-reset db-up db-down db-status cutover-rehearsal cutover-smoke cutover-certify cutover-billing-check provider-validation-evidence parallel-meet-cycle-evidence stability-report-evidence launch-evidence-bundle verify-launch-evidence keycloak-dist keycloak-local-up keycloak-local-reset integrations-install integrations-up integrations-down integrations-status integrations-migrate
 
 COMPOSE_FILE ?= docker-compose.yml
 DOCKER_COMPOSE ?= docker compose
@@ -88,6 +88,15 @@ test:
 test-p0:
 	@echo "Running P0 server happy-path/regression tests"
 	@cd server && go test ./internal/app -run 'TestP0'
+
+# Multi-tenancy isolation suite (docs/multi-tenancy-implementation-tracker.md, item 0.2).
+# Set DATABASE_URL to a migrated Postgres to include the real-database checks
+# (schema FKs, migrations, two-org repository tests); without it those are skipped.
+# -p 1 keeps the isolated-schema tests from exhausting Postgres shared memory.
+TENANCY_TESTS = TestEveryNonPublicRoute|TestOrgBCannotReach|TestSQLByID|TestOrgIDRequestFields|TestSuspendedOrg|TestPlatform|TestInviteDriven|TestRegisterIsRateLimited|TestPaymentsRequire|TestConnectWebhook|TestRefundGoesToTheAccount|TestReconciliationUses|TestOrgScopedJobs|TestEveryTenantTable|TestEveryTableHasOrgID|TestCompositeOrgForeignKey|TestUnregisteredOrg|TestMessageChild|TestSignInIsBound|TestOrgIDUnify|TestOrgsRegistry|IgnoresOtherOrg|TestObjectKeys|TestStripeIdempotencyKey|TestCampaignFromAddress|TestCipherBinds|TestPublicTenant|TestRequireActiveOrg|TestSelfRegister|TestLifecycleAndSlug|TestIsActiveFollows|TestStatusCache|TestDomainsResolve|TestActiveIDs|TestAccountsAreOneToOne|TestInviteIs|TestInviteRevoke|TestConcurrentRedeem|TestProvision|TestSchedulerFanOut|TestOrgLister|TestValidateWorkerConfigAccepts|TestRowLevelSecurity|TestVolunteerRowLevel|TestEventsAndWellness|TestRequestSyncLoads|TestProfileSettings|TestPaymentUsesTheClubs|TestScoped|TestWithOrgTx|TestOffboarding|TestExportThenPurge|TestRestoreNever|TestPurgeIs|TestCancellingOffboarding|TestExportContains|TestBoundedLabel|TestOrgRequestMetrics|TestOrgRateLimiter|TestDailyEmailCap|TestStorageQuota|TestRealmKeeps|TestPublicSlug
+test-tenancy:
+	@echo "Running multi-tenancy isolation tests"
+	@cd server && go test -count=1 -p 1 ./... -run '$(TENANCY_TESTS)'
 
 lint: lint-openapi
 	@echo "Running meetfiles static analysis"

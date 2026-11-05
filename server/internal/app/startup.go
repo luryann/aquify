@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"os"
 	"strings"
 
 	appopenapi "github.com/luryann/aquify/server/internal/openapi"
@@ -62,6 +63,7 @@ func ValidateStartupDependencies(ctx context.Context, cfg Config, logger *slog.L
 	if strict {
 		collect(validateDatabaseStartupDependency(ctx, cfg))
 		collect(validateStorageStartupDependency(cfg))
+		collect(validateIntegrationsKeyStartupDependency())
 	}
 	if len(errs) > 0 {
 		return fmt.Errorf("startup dependency validation failed: %s", strings.Join(errs, "; "))
@@ -177,6 +179,16 @@ func validateDatabaseStartupDependency(ctx context.Context, cfg Config) error {
 
 	if err := validateDBSchema(ctx, pool); err != nil {
 		return fmt.Errorf("database: schema validation failed: %w", err)
+	}
+	return nil
+}
+
+// validateIntegrationsKeyStartupDependency refuses to start outside development
+// without the key that encrypts stored third-party credentials (for example the
+// USA Swimming client secret), so those secrets are never silently unusable.
+func validateIntegrationsKeyStartupDependency() error {
+	if strings.TrimSpace(os.Getenv("INTEGRATIONS_ENCRYPTION_KEY")) == "" {
+		return errors.New("integrations: INTEGRATIONS_ENCRYPTION_KEY must be set in non-development environments")
 	}
 	return nil
 }

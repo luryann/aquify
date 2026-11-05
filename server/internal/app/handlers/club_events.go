@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"bytes"
+	"context"
 	"encoding/csv"
 	"errors"
 	"fmt"
@@ -11,13 +12,13 @@ import (
 	"strings"
 	"time"
 
+	"github.com/go-chi/chi/v5"
+	"github.com/go-playground/validator/v10"
 	"github.com/luryann/aquify/server/internal/app/audit"
 	"github.com/luryann/aquify/server/internal/app/events"
 	"github.com/luryann/aquify/server/internal/app/httpx"
 	appmiddleware "github.com/luryann/aquify/server/internal/app/middleware"
 	"github.com/luryann/aquify/server/internal/app/roster"
-	"github.com/go-chi/chi/v5"
-	"github.com/go-playground/validator/v10"
 )
 
 // CalendarFeedSource supplies the meet and practice items of a household's
@@ -30,7 +31,21 @@ type ClubEventsHandlers struct {
 	directory    roster.Directory
 	auditService *audit.Service
 	feedSource   CalendarFeedSource
-	validate     *validator.Validate
+	// calendarProfile returns the club's display name and timezone for its feed.
+	calendarProfile func(orgID string) (name, timezone string)
+	validate        *validator.Validate
+	// orgActive gates the unauthenticated .ics feed on tenant status.
+	orgActive func(ctx context.Context, orgID string) (bool, error)
+}
+
+// SetOrgActive installs the tenant-status check used by the public feed.
+func (h *ClubEventsHandlers) SetOrgActive(fn func(ctx context.Context, orgID string) (bool, error)) {
+	h.orgActive = fn
+}
+
+// SetCalendarProfile names each club's calendar after the club and tags it with the club's timezone.
+func (h *ClubEventsHandlers) SetCalendarProfile(fn func(orgID string) (name, timezone string)) {
+	h.calendarProfile = fn
 }
 
 // NewClubEventsHandlers wires the club events handlers. feedSource may be nil
@@ -819,6 +834,17 @@ func (h *ClubEventsHandlers) serveFeed(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	orgID := tok.OrgID
+	if h.orgActive != nil {
+		active, err := h.orgActive(r.Context(), orgID)
+		if err != nil {
+			httpx.WriteError(w, r, http.StatusInternalServerError, "internal_error", "Calendar feed unavailable.", err)
+			return
+		}
+		if !active {
+			httpx.WriteError(w, r, http.StatusNotFound, "not_found", "Calendar feed not found.", nil)
+			return
+		}
+	}
 	allSwimmers, err := h.directory.Swimmers(orgID)
 	if err != nil {
 		httpx.WriteError(w, r, http.StatusInternalServerError, "internal_error", "Calendar feed unavailable.", err)
@@ -856,7 +882,15 @@ func (h *ClubEventsHandlers) serveFeed(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "private, max-age=300")
 	w.Header().Set("X-Robots-Tag", "noindex")
 	w.WriteHeader(http.StatusOK)
-	_, _ = w.Write([]byte(events.RenderICS("Swim club calendar", items, now)))
+	calName, tz := "Swim club calendar", ""
+	if h.calendarProfile != nil {
+		if n, z := h.calendarProfile(orgID); strings.TrimSpace(n) != "" {
+			calName, tz = n+" calendar", z
+		} else {
+			tz = z
+		}
+	}
+	_, _ = w.Write([]byte(events.RenderICS(calName, tz, items, now)))
 }
 
 func calendarSortKey(it events.CalendarItem) string {

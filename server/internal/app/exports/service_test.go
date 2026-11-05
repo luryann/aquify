@@ -9,8 +9,8 @@ import (
 	"testing"
 	"time"
 
-	appmiddleware "github.com/luryann/aquify/server/internal/app/middleware"
 	"github.com/go-pdf/fpdf"
+	appmiddleware "github.com/luryann/aquify/server/internal/app/middleware"
 )
 
 func intPtr(v int) *int { return &v }

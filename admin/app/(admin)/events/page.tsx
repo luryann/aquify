@@ -18,6 +18,7 @@ import {
   formatClubEventWhen, formatFee, type ClubEventDraft,
 } from '@/lib/club-events'
 import { parseBackendDate, localToday } from '@/lib/dates'
+import { parseDollarsToCents } from '@/lib/financeData'
 import { useConfirm } from '@/components/ui/ConfirmDialog'
 
 const label: React.CSSProperties = { display: 'block', fontSize: 'var(--fs-sm)', color: 'var(--text-muted)', marginBottom: 6 }
@@ -110,7 +111,7 @@ function EventForm({ draft, setDraft, groups, rsvpModeLocked }: {
           <div><label style={label} htmlFor="ev-fee">Fee per person ($)</label><input id="ev-fee" inputMode="decimal" className="input" value={draft.fee} onChange={(e) => u('fee', e.target.value)} placeholder="Free" style={{ width: '100%' }} /></div>
         </div>
       )}
-      {draft.rsvpEnabled && Number.parseFloat(draft.fee) > 0 && (
+      {draft.rsvpEnabled && (parseDollarsToCents(draft.fee) ?? 0) > 0 && (
         <p className="u-fs-fs-sm" style={{ color: 'var(--text-subtle)' }}>Each “Going” reply creates an invoice for the party size in the family’s billing account. Changing to “Not going” cancels it if unpaid.</p>
       )}
     </div>

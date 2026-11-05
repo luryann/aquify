@@ -1,0 +1,112 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Coaches | aquify</title>
+<meta name="description" content="Write workouts in shorthand, run them on deck, take attendance and track training load.">
+<meta name="theme-color" content="#04080b">
+<link rel="icon" href="assets/icon.svg" type="image/svg+xml">
+<link rel="preload" href="assets/fonts/inter-tight-latin-500-normal.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="assets/styles.css">
+</head>
+<body>
+<header class="nav">
+  <a class="brand" href="index.html" aria-label="aquify home">aquify<i>.</i></a>
+  <button class="burger" aria-label="Menu" aria-expanded="false"><span></span><span></span></button>
+  <nav class="links" aria-label="Main">
+    <div class="dd"><button class="dd-btn" aria-expanded="false" style="color:var(--chalk)">Features</button><div class="dd-menu"><a href="coaches.html" aria-current="page"><b>Coaches</b><span>Workouts, roll call and the pool-deck view</span></a><a href="meets.html"><b>Meets</b><span>Commitments, entries, results and records</span></a><a href="billing.html"><b>Billing</b><span>Dues, discounts, autopay and invoices</span></a><a href="registration.html"><b>Registration</b><span>Sign-ups, waivers, groups and rosters</span></a><a href="communication.html"><b>Communication</b><span>Announcements, email and messages</span></a><a href="volunteers.html"><b>Volunteers and events</b><span>Shifts, hours, RSVPs and fees</span></a><a href="performance.html"><b>Performance</b><span>Best times, cuts, records and goals</span></a><a href="families.html"><b>Families</b><span>Parent and swimmer portals</span></a><a href="website.html"><b>Team website</b><span>A public page and a phone app</span></a></div></div>
+    <a href="season.html">A season</a><a href="switch.html">Switching</a><a href="safety.html">Safety</a><a href="faq.html">FAQ</a>
+    <a class="btn" href="waitlist.html">Join the waitlist</a>
+  </nav>
+</header>
+<main>
+
+<section class="page-hero"><canvas id="water" aria-hidden="true"></canvas><div class="fallback"></div><div class="in"><h1 class="d1" style="max-width:10ch">Write the workout once.</h1><p class="lede">Plan it, assign it, run it on deck, and see who showed up.</p></div></section>
+
+<section class="stage rise" data-len="300vh" aria-label="The training schedule listing every group’s practice">
+  <div class="pin">
+    <div class="shot" data-r="0.02,0.55"><div class="win"><picture><source media="(max-width:760px)" srcset="assets/img/m-dash.jpg"><img src="assets/img/training.jpg" alt="The training schedule listing every group’s practice" decoding="async"></picture></div></div>
+    <div class="calls"><div class="call" data-r="0.55,0.68">Every group’s practice, one list<span>Filter to a single group.</span></div><div class="call" data-r="0.66,0.79">Sets already attached<span>Open the workout from the schedule.</span></div><div class="call" data-r="0.77,0.9">Attendance a tap away<span>Take it from the same row.</span></div></div>
+  </div>
+</section>
+<section class="stage say" data-len="300vh"><div class="pin"><p>Write the set. Assign it to a group. Open it on deck. Mark who showed up.</p></div></section>
+
+<section class="stage" data-shorthand data-len="420vh" aria-label="Shorthand becomes a structured workout">
+  <div class="pin"><div class="split">
+    <div class="txt">
+      <h2 class="d2">Type it like you’d write it on the whiteboard.</h2>
+      <p class="lede">aquify reads the sets, rest, zones and equipment, then adds up the yardage for you.</p>
+    </div>
+    <div class="sh">
+      <div class="pane"><h4>What the coach types</h4><div class="typed" aria-hidden="true"></div></div>
+      <div class="pane out"><h4>What the swimmers get</h4>
+        <div class="sec"><b>Warmup</b><span>800 yd</span></div>
+        <div class="sec"><b>Main set</b><span>1,500 yd</span></div>
+        <div class="sec"><b>Cooldown</b><span>200 yd</span></div>
+        <div class="tot"><b data-total>0</b><span>yards, <span data-lengths>0</span> lengths</span></div>
+        <div class="zones" aria-hidden="true"><i style="flex:1200;background:#f2f4f1"></i><i style="flex:500;background:#3dbbcb"></i><i style="flex:800;background:#2a3a46"></i></div>
+      </div>
+    </div>
+  </div></div>
+</section>
+
+<section class="stage" data-len="450vh" data-steps="3">
+  <div class="pin"><div class="split">
+    <div class="txt"><h2 class="d2">Keep the sets that work.</h2><div class="steps"><div class="step">Save any workout as a template<small>Mark each set from easy recovery to all-out sprint, and see the mix at a glance.</small></div><div class="step">Assign it to a practice<small>Each practice gets its own copy, so changing Tuesday never changes the template.</small></div><div class="step">Edit the sets in place<small>Change a send-off or add a round and the yardage adds itself up again.</small></div></div></div>
+    <div class="layers"><div class="win" ><img src="assets/img/library.jpg" alt="Workout library with saved templates and intensity bars" loading="lazy" decoding="async"></div><div class="win" ><img src="assets/img/training.jpg" alt="Practice schedule with workouts attached" loading="lazy" decoding="async"></div><div class="win" ><img src="assets/img/workout-sets.jpg" alt="Set editor showing yardage by section" loading="lazy" decoding="async"></div></div>
+  </div></div>
+</section>
+<section class="stage" data-len="340vh" data-steps="2" aria-label="Pool deck tools on a phone">
+  <div class="pin"><div class="split">
+    <div class="txt">
+      <h2 class="d2">Made for the pool deck.</h2>
+      <div class="steps">
+        <div class="step">The workout, big enough to read from the water<small>Open any practice in deck view. Sets, send-offs and zones are set large for a phone held at arm’s length.</small></div>
+        <div class="step">Roll call that survives bad wifi<small>Tap swimmers as they arrive. Marks save on the phone and sync when the connection returns.</small></div>
+      </div>
+    </div>
+    <div class="layers phonebox">
+      <div class="win"><div class="phone"><div class="screen" style="--sb:#0a1117;--sbb:#0a1117;--ind:rgba(255,255,255,.4)"><img src="assets/img/m-deck.jpg" alt="Workout in deck view on a phone" loading="lazy" decoding="async"></div></div></div>
+      <div class="win"><div class="phone"><div class="screen" style="--sb:#0a1117;--sbb:#0a1117;--ind:rgba(255,255,255,.4)"><img src="assets/img/m-attendance.jpg" alt="Roll call on a phone" loading="lazy" decoding="async"></div></div></div>
+    </div>
+  </div></div>
+</section>
+
+<section class="stage" data-len="260vh" aria-label="Training analytics: weekly yardage per group and attendance rate">
+  <div class="pin" style="display:grid;place-items:center">
+    <div class="zoomwin" style="--ox:22%;--oy:30%" data-r="0.08,0.85"><div class="win" ><img src="assets/img/analytics.jpg" alt="Training analytics: weekly yardage per group and attendance rate" loading="lazy" decoding="async"></div></div>
+    <div class="cap" data-r="0.5,0.72"><h2 class="d3">Weekly yardage, attendance and intensity, for every group.</h2></div>
+  </div>
+</section>
+<section class="sect tight"><div class="wrap row flip">
+  <div data-par="0.04"><div class="win" ><img src="assets/img/wellness.jpg" alt="Wellness heatmap showing which swimmers checked in each day" loading="lazy" decoding="async"></div></div>
+  <div class="txt"><h2 class="d2">Know who needs a word.</h2><p class="copy">Swimmers, or their parents, answer a short check-in about sleep, soreness, energy, stress and mood. You see a grid of the last two weeks and who has been feeling off.</p><ul class="facts"><li>Takes about twenty seconds to fill in.</li><li>Coaches and admins see the whole club. Families see only their own swimmer.</li></ul></div>
+</div></section>
+<section class="sect tight"><div class="wrap"><ul class="index"><li><b>Season plan</b><span>Split the season into base, build and taper, and set a weekly yardage goal for each group.</span></li><li><b>Attendance</b><span>See what share of practices each group shows up for. Excused absences don’t count against them.</span></li><li><b>Practice by group</b><span>Parents and swimmers see the team-wide practices and their own group’s, nothing else.</span></li><li><b>Goals</b><span>Set a time goal with a swimmer and watch the gap close as they race.</span></li><li><b>Relay builder</b><span>Suggests the fastest four swimmers for a relay from their best times.</span></li></ul></div></section>
+
+<section class="cta"><div class="in">
+  <h2 class="d1" style="max-width:9ch">Ready when your club is.</h2>
+  <p class="lede">We’re opening aquify to clubs in order. Leave your email and we’ll tell you when it’s your turn.</p>
+  <a class="btn" href="waitlist.html" style="height:60px;padding:0 34px;font-size:18px">Join the waitlist</a>
+</div></section>
+
+</main>
+<footer class="foot">
+  <div class="foot-grid">
+    <div class="foot-lead">
+      <p class="lede">Swim club software for coaches and admins.</p>
+      <a class="btn" href="waitlist.html">Join the waitlist</a>
+    </div>
+    <nav aria-label="Footer">
+      <div><b>Run the team</b><a href="coaches.html">Coaches</a><a href="meets.html">Meets</a><a href="registration.html">Registration</a><a href="communication.html">Communication</a></div>
+      <div><b>More features</b><a href="billing.html">Billing</a><a href="volunteers.html">Volunteers and events</a><a href="performance.html">Performance</a><a href="families.html">Families</a><a href="website.html">Team website</a></div>
+      <div><b>Learn more</b><a href="season.html">A season</a><a href="switch.html">Switching</a><a href="safety.html">Safety</a><a href="faq.html">FAQ</a><a href="people.html">Who it’s for</a></div>
+    </nav>
+  </div>
+  <div class="foot-mark" aria-hidden="true">aquify.</div>
+  <small>Every screen on this site shows sample data for a made-up club. No real swimmers, families or payments.</small>
+</footer>
+<script src="assets/main.js" defer></script>
+</body>
+</html>

@@ -6,11 +6,11 @@ import (
 	"strings"
 	"time"
 
+	"github.com/go-chi/chi/v5"
 	"github.com/luryann/aquify/server/internal/app/attendance"
 	"github.com/luryann/aquify/server/internal/app/httpx"
 	"github.com/luryann/aquify/server/internal/app/roster"
 	"github.com/luryann/aquify/server/internal/app/wellness"
-	"github.com/go-chi/chi/v5"
 )
 
 // AttendanceSummaryHandlers serves per-swimmer practice attendance rates.

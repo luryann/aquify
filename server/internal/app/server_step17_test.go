@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -393,4 +394,32 @@ func buildTestWorkerServer(t *testing.T) *workers.Server {
 	srv.Start()
 	t.Cleanup(func() { srv.Stop() })
 	return srv
+}
+
+// A club admin's queue and metrics views are derived from that club's own tasks only.
+func TestJobsEndpoints_QueuesAndMetricsAreOrgScoped(t *testing.T) {
+	srv := buildTestWorkerServer(t)
+	other, err := workers.NewTask(workers.TypeBillingReconcile, map[string]string{"org_id": "org-other"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := srv.Enqueue(context.Background(), other, workers.WithQueue(workers.QueueReconcile)); err != nil {
+		t.Fatalf("Enqueue: %v", err)
+	}
+	router := newStep17Router(t, srv)
+	token := issueStep17Token(t, router, "admin")
+	for _, path := range []string{"/api/v1/jobs/queues", "/api/v1/jobs/metrics"} {
+		req := httptest.NewRequest(http.MethodGet, path, nil)
+		req.Header.Set("Authorization", "Bearer "+token)
+		req.Header.Set("X-Org-Id", "org-step17")
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+		if w.Code != http.StatusOK {
+			t.Fatalf("%s status = %d: %s", path, w.Code, w.Body.String())
+		}
+		body := w.Body.String()
+		if strings.Contains(body, "org-other") || strings.Contains(body, workers.TypeBillingReconcile) {
+			t.Errorf("%s leaked another club's job data: %s", path, body)
+		}
+	}
 }

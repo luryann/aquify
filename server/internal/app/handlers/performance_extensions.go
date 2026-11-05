@@ -6,11 +6,11 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/go-chi/chi/v5"
 	"github.com/luryann/aquify/server/internal/app/comms"
 	"github.com/luryann/aquify/server/internal/app/httpx"
 	appmiddleware "github.com/luryann/aquify/server/internal/app/middleware"
 	"github.com/luryann/aquify/server/internal/app/performance"
-	"github.com/go-chi/chi/v5"
 )
 
 // Team records, top-N lists, swimmer goals, relay builder and progress

@@ -199,7 +199,8 @@ func nextDay(date string) string {
 }
 
 // RenderICS renders a VCALENDAR document.
-func RenderICS(calendarName string, items []CalendarItem, now time.Time) string {
+// timezone (IANA name, may be empty) is advertised as the calendar's default zone.
+func RenderICS(calendarName, timezone string, items []CalendarItem, now time.Time) string {
 	var lines []string
 	add := func(l string) { lines = append(lines, foldLine(l)) }
 	add("BEGIN:VCALENDAR")
@@ -208,6 +209,9 @@ func RenderICS(calendarName string, items []CalendarItem, now time.Time) string 
 	add("CALSCALE:GREGORIAN")
 	add("METHOD:PUBLISH")
 	add("X-WR-CALNAME:" + icsEscape(calendarName))
+	if timezone != "" {
+		add("X-WR-TIMEZONE:" + icsEscape(timezone))
+	}
 	add("X-PUBLISHED-TTL:PT1H")
 	add("REFRESH-INTERVAL;VALUE=DURATION:PT1H")
 	stamp := now.UTC().Format("20060102T150405Z")

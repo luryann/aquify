@@ -15,7 +15,7 @@ func (s *Service) SwimmerAccountsEnabled(orgID string) (bool, error) {
 	orgID = strings.TrimSpace(orgID)
 	if s.repo != nil {
 		var enabled bool
-		err := s.repo.pool.QueryRow(context.Background(),
+		err := s.repo.at(orgID).QueryRow(context.Background(),
 			`SELECT swimmer_accounts_enabled FROM org_settings WHERE org_id = $1::uuid`, orgID).Scan(&enabled)
 		if err != nil {
 			if errors.Is(err, pgx.ErrNoRows) {

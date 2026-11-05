@@ -47,7 +47,7 @@ func buildHouseholdExportSources(d householdExportDeps) []householdExportSource 
 		out = append(out, householdExportSource{
 			name: "meets", keys: []string{"meet_commitments", "meet_event_selections", "meet_entries"},
 			collect: func(orgID, householdID string, swimmerIDs map[string]bool) (map[string]any, error) {
-				if err := d.meets.Refresh(context.Background()); err != nil {
+				if err := d.meets.RefreshOrg(context.Background(), orgID); err != nil {
 					return nil, err
 				}
 				sys := exportSystemPrincipal(orgID)
@@ -189,7 +189,7 @@ func buildHouseholdExportSources(d householdExportDeps) []householdExportSource 
 		out = append(out, householdExportSource{
 			name: "communications", keys: []string{"messages", "message_edits", "message_attachments", "message_reads", "communication_preferences"},
 			collect: func(orgID, householdID string, _ map[string]bool) (map[string]any, error) {
-				if err := d.comms.Refresh(context.Background()); err != nil {
+				if err := d.comms.RefreshOrg(context.Background(), orgID); err != nil {
 					return nil, err
 				}
 				x := d.comms.ExportHouseholdData(orgID, householdID)

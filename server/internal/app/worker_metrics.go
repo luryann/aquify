@@ -38,6 +38,9 @@ func instrumentHandler(metrics *telemetry.Metrics, taskType string, h workers.Ha
 		defer func() {
 			metrics.JobExecutionsTotal.WithLabelValues(taskType, status).Inc()
 			metrics.JobDurationSeconds.WithLabelValues(taskType).Observe(time.Since(start).Seconds())
+			if org := workers.TaskOrgID(task.Payload); org != "" {
+				metrics.OrgJobExecutionsTotal.WithLabelValues(metrics.OrgLabel(org), status).Inc()
+			}
 		}()
 		err := h(ctx, task)
 		if err == nil {

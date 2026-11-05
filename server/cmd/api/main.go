@@ -148,6 +148,7 @@ func main() {
 	}
 	exitOnError("startup config error", app.ValidateAppEnvConfig(cfg))
 	exitOnError("startup config error", app.ValidateDevAuthConfig(cfg))
+	exitOnError("startup config error", app.ValidateAllowedOrigins(cfg))
 	exitOnError("startup config error", app.ValidateOIDCLogoutConfig(cfg, logger))
 	exitOnError("startup config error", app.ValidateKeycloakAdminConfig(cfg))
 	exitOnError("startup config error", app.ValidateWorkerConfig(cfg))
@@ -299,7 +300,9 @@ func runWorker(cfg app.Config, logger *slog.Logger, backend *workers.RedisBacken
 		Metrics: metrics,
 		Workers: backend,
 	})
-	app.RegisterDurableScheduledJobs(backend, cfg)
+	registry, closeRegistry := app.OpenOrgRegistry(cfg, logger)
+	defer closeRegistry()
+	app.RegisterDurableScheduledJobs(backend, cfg, app.OrgListerFor(cfg, registry))
 	if err := backend.Start(); err != nil {
 		logger.Error("worker start failed", "error", err)
 		os.Exit(1)

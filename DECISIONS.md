@@ -1,6 +1,6 @@
 # aquify Platform - Locked Decisions
 
-Last updated: 2026-10-27
+Last updated: 2026-11-03
 Purpose: remove ambiguity so a new engineer/AI can execute without additional context.
 
 ## 1) Authentication Provider
@@ -23,7 +23,7 @@ Purpose: remove ambiguity so a new engineer/AI can execute without additional co
 - Implementation instruction: proceed with requirements from planning docs as authoritative.
 
 ## 5) Payments / Stripe
-- Decision: `TBD`
+- Decision: `TBD` for account ownership and rotation policy; the multi-club model is decided (section 9): each club connects its own Stripe account (Connect).
 - Status: Open
 - Required before production billing launch:
   - Stripe account/workspace ID
@@ -76,3 +76,14 @@ If any conflict exists between planning docs and code, follow this precedence:
 2. `Developer Handoff Master Document.txt`
 3. `Plan.txt`
 4. `TODO.md`
+
+## 9) Multi-Tenancy (supersedes the v1 single-club tenant strategy)
+- Decision: shared database and schema; every tenant row carries `org_id` (UUID, FK to the `orgs` registry); isolation is enforced by the application (org from the session, never the client), by composite foreign keys, and by automated cross-org tests.
+- Status: Locked (ADR `docs/decisions/2026-11-03-multi-tenancy.md`)
+- Locked sub-decisions:
+  - One person belongs to exactly one club (`users.org_id`); no multi-club memberships, no org switcher. One email, one club.
+  - Single Keycloak realm; the `org_id` token claim must equal `users.org_id` or sign-in is refused.
+  - Each club takes payments on its own Stripe connected account (Stripe Connect, Standard); outside development a club that has not finished onboarding cannot take online payments.
+  - Clubs are created, paused and closed only by platform operators (`platform_admin` in the dedicated platform org, MFA required), never by self-service.
+- Database-level isolation: Postgres row-level security is enabled (FORCE) on every tenant table (the application role must not be a superuser/BYPASSRLS); repositories bind the org per statement, and the few lookups made before a club is known bind a credential through narrow policies (tracker 4.4, closed).
+- Tracker: `docs/multi-tenancy-implementation-tracker.md`

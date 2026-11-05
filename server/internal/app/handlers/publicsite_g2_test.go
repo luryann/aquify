@@ -11,9 +11,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/go-chi/chi/v5"
 	"github.com/luryann/aquify/server/internal/app/comms"
 	"github.com/luryann/aquify/server/internal/app/orgsettings"
-	"github.com/go-chi/chi/v5"
 )
 
 type slowStaff struct {

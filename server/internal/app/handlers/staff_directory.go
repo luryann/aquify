@@ -10,10 +10,6 @@ import (
 	"github.com/luryann/aquify/server/internal/keycloak"
 )
 
-// staffDirectoryLimit bounds the Keycloak page scanned for staff; clubs have
-// far fewer accounts than this, and the admin /users list uses the same cap.
-const staffDirectoryLimit = 500
-
 // StaffMember is an enabled admin/coach account in an org.
 type StaffMember struct {
 	ID        string
@@ -64,24 +60,32 @@ type StaffDirectory struct {
 func NewStaffDirectory(kc keycloak.Client) *StaffDirectory { return &StaffDirectory{kc: kc} }
 
 func (d *StaffDirectory) ListStaff(ctx context.Context, orgID string) ([]StaffMember, error) {
-	users, err := d.kc.ListUsers(ctx, orgID, "", staffDirectoryLimit, 0)
-	if err != nil {
-		return nil, err
-	}
-	staff := make([]StaffMember, 0)
-	for _, u := range users {
-		if !u.Enabled {
-			continue
-		}
-		realmRoles, err := d.kc.GetUserRealmRoles(ctx, u.ID)
+	// Role-member queries page to exhaustion and are scoped to the org, so a
+	// club with thousands of parent accounts cannot push staff out of view and
+	// no per-user role lookup is needed.
+	byID := map[string]*StaffMember{}
+	order := []string{}
+	for _, role := range []string{"admin", "coach"} {
+		members, err := d.kc.ListUsersWithRealmRole(ctx, orgID, role)
 		if err != nil {
 			return nil, err
 		}
-		roles := normalizeRealmRoles(realmRoles)
-		if !slices.Contains(roles, "admin") && !slices.Contains(roles, "coach") {
-			continue
+		for _, u := range members {
+			if !u.Enabled {
+				continue
+			}
+			m, ok := byID[u.ID]
+			if !ok {
+				m = &StaffMember{ID: u.ID, FirstName: u.FirstName, LastName: u.LastName, Email: u.Email}
+				byID[u.ID] = m
+				order = append(order, u.ID)
+			}
+			m.Roles = append(m.Roles, role)
 		}
-		staff = append(staff, StaffMember{ID: u.ID, FirstName: u.FirstName, LastName: u.LastName, Email: u.Email, Roles: roles})
+	}
+	staff := make([]StaffMember, 0, len(order))
+	for _, id := range order {
+		staff = append(staff, *byID[id])
 	}
 	slices.SortFunc(staff, func(a, b StaffMember) int {
 		return strings.Compare(strings.ToLower(a.DisplayName()), strings.ToLower(b.DisplayName()))

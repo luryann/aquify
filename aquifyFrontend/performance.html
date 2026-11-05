@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Performance | aquify</title>
+<meta name="description" content="Best times, time standards, team records, goals and progress for swim clubs.">
+<meta name="theme-color" content="#04080b">
+<link rel="icon" href="assets/icon.svg" type="image/svg+xml">
+<link rel="preload" href="assets/fonts/inter-tight-latin-500-normal.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="assets/styles.css">
+</head>
+<body>
+<header class="nav">
+  <a class="brand" href="index.html" aria-label="aquify home">aquify<i>.</i></a>
+  <button class="burger" aria-label="Menu" aria-expanded="false"><span></span><span></span></button>
+  <nav class="links" aria-label="Main">
+    <div class="dd"><button class="dd-btn" aria-expanded="false" style="color:var(--chalk)">Features</button><div class="dd-menu"><a href="coaches.html"><b>Coaches</b><span>Workouts, roll call and the pool-deck view</span></a><a href="meets.html"><b>Meets</b><span>Commitments, entries, results and records</span></a><a href="billing.html"><b>Billing</b><span>Dues, discounts, autopay and invoices</span></a><a href="registration.html"><b>Registration</b><span>Sign-ups, waivers, groups and rosters</span></a><a href="communication.html"><b>Communication</b><span>Announcements, email and messages</span></a><a href="volunteers.html"><b>Volunteers and events</b><span>Shifts, hours, RSVPs and fees</span></a><a href="performance.html" aria-current="page"><b>Performance</b><span>Best times, cuts, records and goals</span></a><a href="families.html"><b>Families</b><span>Parent and swimmer portals</span></a><a href="website.html"><b>Team website</b><span>A public page and a phone app</span></a></div></div>
+    <a href="season.html">A season</a><a href="switch.html">Switching</a><a href="safety.html">Safety</a><a href="faq.html">FAQ</a>
+    <a class="btn" href="waitlist.html">Join the waitlist</a>
+  </nav>
+</header>
+<main>
+
+<section class="page-hero"><canvas id="water" aria-hidden="true"></canvas><div class="fallback"></div><div class="in"><h1 class="d1" style="max-width:9ch">Every swim, remembered.</h1><p class="lede">Best times, cuts, records and goals, built from the meets you already swim.</p></div></section>
+
+<section class="stage rise" data-len="300vh" aria-label="Best times for every swimmer by event">
+  <div class="pin">
+    <div class="shot" data-r="0.02,0.55"><div class="win"><picture><source media="(max-width:760px)" srcset="assets/img/m-dash.jpg"><img src="assets/img/performance.jpg" alt="Best times for every swimmer by event" decoding="async"></picture></div></div>
+    <div class="calls"><div class="call" data-r="0.55,0.68">Best time for every event<span>For every swimmer, updated after every meet.</span></div><div class="call" data-r="0.66,0.79">Where it came from<span>Imported result or entered by hand.</span></div><div class="call" data-r="0.77,0.9">Search any swimmer<span>Filter by distance or stroke.</span></div></div>
+  </div>
+</section>
+<section class="stage say" data-len="300vh"><div class="pin"><p>Import the results. Best times update. Records are checked. Swimmers see how close they are to the next cut.</p></div></section>
+
+<section class="stage" data-len="600vh" data-steps="4">
+  <div class="pin"><div class="split">
+    <div class="txt"><h2 class="d2">What happens when results come in.</h2><div class="steps"><div class="step"><span class=n>1</span>Best times refresh<small>Each swimmer’s best in each event updates the moment the file is imported.</small></div><div class="step"><span class=n>2</span>Records are checked<small>aquify compares every swim with the club record for that age group, stroke and course, and tells you which ones were broken.</small></div><div class="step"><span class=n>3</span>Top times by age<small>See the fastest swims in the club for any event and age group, any time of the year.</small></div><div class="step"><span class=n>4</span>Swimmers see the next cut<small>Pick a time standard and each swimmer sees whether they have made it, and how far they have to go.</small></div></div></div>
+    <div class="layers"><div class="win" ><img src="assets/img/performance.jpg" alt="Best times" loading="lazy" decoding="async"></div><div class="win" ><img src="assets/img/records.jpg" alt="Team records" loading="lazy" decoding="async"></div><div class="win" ><img src="assets/img/top-times.jpg" alt="Top times" loading="lazy" decoding="async"></div><div class="win" ><img src="assets/img/swim-records.jpg" alt="Swimmer view of records" loading="lazy" decoding="async"></div></div>
+  </div></div>
+</section>
+
+<section class="stage" data-len="260vh" aria-label="Team records for each stroke and age group">
+  <div class="pin" style="display:grid;place-items:center">
+    <div class="zoomwin" style="--ox:18%;--oy:24%" data-r="0.08,0.85"><div class="win" ><img src="assets/img/records.jpg" alt="Team records for each stroke and age group" loading="lazy" decoding="async"></div></div>
+    <div class="cap" data-r="0.5,0.72"><h2 class="d3">Records by age group, with the whole history behind each one.</h2></div>
+  </div>
+</section>
+<section class="sect tight"><div class="wrap row flip">
+  <div data-par="0.05"><div class="win" ><img src="assets/img/portal-records.jpg" alt="Parent view of team records and top times" loading="lazy" decoding="async"></div></div>
+  <div class="txt"><h2 class="d2">Everyone sees how fast the club is.</h2><p class="copy">Parents and swimmers get the same record board and top-times list. Age groups use the swimmer’s age on the day of the swim.</p><ul class="facts"><li>Protect a record, and a faster swim waits for an admin to approve.</li><li>Add historical records from before you used aquify.</li></ul></div>
+</div></section>
+<section class="sect tight"><div class="wrap"><ul class="index"><li><b>Time standards</b><span>Add cuts for championships or club goals, or import them from a file.</span></li><li><b>Goals</b><span>Coaches, parents and swimmers can set a time goal and track it.</span></li><li><b>Progress report</b><span>See how much faster a group got between two dates.</span></li><li><b>Relay builder</b><span>Suggests the fastest four from best times, for medley and free relays.</span></li><li><b>Course aware</b><span>Short course yards, short course meters and long course stay separate.</span></li></ul></div></section>
+
+<section class="cta"><div class="in">
+  <h2 class="d1" style="max-width:9ch">Ready when your club is.</h2>
+  <p class="lede">We’re opening aquify to clubs in order. Leave your email and we’ll tell you when it’s your turn.</p>
+  <a class="btn" href="waitlist.html" style="height:60px;padding:0 34px;font-size:18px">Join the waitlist</a>
+</div></section>
+
+</main>
+<footer class="foot">
+  <div class="foot-grid">
+    <div class="foot-lead">
+      <p class="lede">Swim club software for coaches and admins.</p>
+      <a class="btn" href="waitlist.html">Join the waitlist</a>
+    </div>
+    <nav aria-label="Footer">
+      <div><b>Run the team</b><a href="coaches.html">Coaches</a><a href="meets.html">Meets</a><a href="registration.html">Registration</a><a href="communication.html">Communication</a></div>
+      <div><b>More features</b><a href="billing.html">Billing</a><a href="volunteers.html">Volunteers and events</a><a href="performance.html">Performance</a><a href="families.html">Families</a><a href="website.html">Team website</a></div>
+      <div><b>Learn more</b><a href="season.html">A season</a><a href="switch.html">Switching</a><a href="safety.html">Safety</a><a href="faq.html">FAQ</a><a href="people.html">Who it’s for</a></div>
+    </nav>
+  </div>
+  <div class="foot-mark" aria-hidden="true">aquify.</div>
+  <small>Every screen on this site shows sample data for a made-up club. No real swimmers, families or payments.</small>
+</footer>
+<script src="assets/main.js" defer></script>
+</body>
+</html>

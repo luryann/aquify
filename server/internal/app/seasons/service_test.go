@@ -81,3 +81,18 @@ func TestCreateRejectsInvalidDates(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestSeasonNameValidation(t *testing.T) {
+	svc := NewService()
+	if _, err := svc.Create("org-1", "   ", "", "", "active", "", "a"); err != ErrInvalidName {
+		t.Fatalf("expected ErrInvalidName, got %v", err)
+	}
+	s, err := svc.Create("org-1", " 2026 ", "", "", "active", "", "a")
+	if err != nil || s.Name != "2026" {
+		t.Fatalf("create: %+v %v", s, err)
+	}
+	empty := ""
+	if _, err := svc.Update("org-1", s.ID, SeasonUpdates{Name: &empty}, "a"); err != ErrInvalidName {
+		t.Fatalf("expected ErrInvalidName, got %v", err)
+	}
+}

@@ -664,3 +664,14 @@ func TestExport_UnassignedRelayLegsSortLast(t *testing.T) {
 		t.Fatalf("leg order = %v", names)
 	}
 }
+
+func TestBuildA0FileCodeLayout(t *testing.T) {
+	data, err := sdif.ExportExtendedSD3(baseInput())
+	if err != nil {
+		t.Fatalf("ExportExtendedSD3: %v", err)
+	}
+	first := strings.SplitN(string(data), "\n", 2)[0]
+	if first[2] != '1' || strings.TrimSpace(first[3:11]) != "V3" || first[11:13] != "01" {
+		t.Fatalf("bad A0 layout: %q", first[:20])
+	}
+}

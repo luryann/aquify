@@ -340,6 +340,7 @@ type Service struct {
 	evLocks sync.Map // event ID -> *sync.Mutex; serialises RSVP billing vs event edits
 	repo    *Repository
 	biller  Biller
+	tzName  func(orgID string) string
 	logger  *slog.Logger
 	now     func() time.Time
 	events  map[string]*Event
@@ -371,6 +372,24 @@ func NewServiceWithPool(pool *pgxpool.Pool) *Service {
 
 // SetBiller wires RSVP fee billing.
 func (s *Service) SetBiller(b Biller) { s.biller = b }
+
+// SetTimezoneResolver supplies the club's timezone name (IANA) so fee due
+// dates fall on the club-local calendar date of the event.
+func (s *Service) SetTimezoneResolver(fn func(orgID string) string) { s.tzName = fn }
+
+// feeDueDate is the event's local calendar date. All-day events carry
+// UTC-midnight timestamps and keep the UTC date.
+func (s *Service) feeDueDate(event *Event) string {
+	t := event.StartsAt
+	if !event.AllDay && s.tzName != nil {
+		if name := strings.TrimSpace(s.tzName(event.OrgID)); name != "" {
+			if loc, err := time.LoadLocation(name); err == nil {
+				t = t.In(loc)
+			}
+		}
+	}
+	return t.Format("2006-01-02")
+}
 
 // SetLogger overrides the logger.
 func (s *Service) SetLogger(l *slog.Logger) {
@@ -461,12 +480,6 @@ func eventEnd(e *Event) time.Time {
 		y, m, d := e.StartsAt.UTC().Date()
 		return time.Date(y, m, d, 23, 59, 59, int(time.Second-time.Nanosecond), time.UTC)
 	}
-	if e.AllDay {
-		// All-day events carry UTC-midnight timestamps with no end: they run
-		// through the end of that UTC day.
-		y, m, d := e.StartsAt.UTC().Date()
-		return time.Date(y, m, d, 23, 59, 59, int(time.Second-time.Nanosecond), time.UTC)
-	}
 	return e.StartsAt
 }
 
@@ -534,7 +547,7 @@ func (s *Service) Update(orgID, id, actorID string, in EventInput) (*Event, erro
 		if len(curRSVPs) > 0 && cur.RSVPMode != in.RSVPMode {
 			return nil, ErrRSVPModeLocked
 		}
-		if in.Capacity != nil && cur.Status != "cancelled" {
+		if in.Capacity != nil && in.Status != "cancelled" {
 			yes := 0
 			for _, r := range curRSVPs {
 				if r.Response == "yes" {
@@ -801,8 +814,23 @@ func (s *Service) Respond(orgID, eventID, actorID string, in RSVPInput, enforceW
 	var saved *RSVP
 	if s.repo != nil {
 		saved, err = s.repo.RespondTx(context.Background(), orgID, eventID, in.HouseholdID, in.SwimmerID,
-			func(existing *RSVP, othersYes int) (*RSVP, error) {
-				return s.buildRSVP(event, existing, othersYes, in, actorID)
+			func(ev *Event, existing *RSVP, othersYes int) (*RSVP, error) {
+				// Re-validate against the row locked in this transaction.
+				if ev.Status == "cancelled" {
+					return nil, ErrEventCancelled
+				}
+				if !ev.RSVPEnabled {
+					return nil, ErrRSVPDisabled
+				}
+				if enforceWindow && !ev.RSVPOpen(s.now()) {
+					return nil, ErrRSVPClosed
+				}
+				lockedIn, nerr := normalizeRSVPInput(ev, in)
+				if nerr != nil || lockedIn.HouseholdID != in.HouseholdID || lockedIn.SwimmerID != in.SwimmerID {
+					return nil, fmt.Errorf("%w: event RSVP mode changed", ErrInvalidRSVP)
+				}
+				event = ev
+				return s.buildRSVP(ev, existing, othersYes, lockedIn, actorID)
 			})
 		if err != nil {
 			return nil, err
@@ -879,7 +907,7 @@ func (s *Service) reconcileFee(event *Event, r *RSVP, actorID string, force bool
 		HouseholdID:     r.HouseholdID,
 		SwimmerID:       r.SwimmerID,
 		Description:     desc,
-		DueDate:         event.StartsAt.Format("2006-01-02"),
+		DueDate:         s.feeDueDate(event),
 		Quantity:        wantQty,
 		UnitAmountCents: event.FeeCents,
 		ActorUserID:     actorID,
@@ -912,4 +940,31 @@ func (s *Service) saveBilling(orgID string, r *RSVP) error {
 		stored.BilledQuantity = r.BilledQuantity
 	}
 	return nil
+}
+
+// EraseHouseholdData removes a household's RSVPs and calendar feed tokens for
+// an approved data-deletion request. Idempotent.
+func (s *Service) EraseHouseholdData(ctx context.Context, orgID, householdID string) (int, error) {
+	if strings.TrimSpace(orgID) == "" || strings.TrimSpace(householdID) == "" {
+		return 0, nil
+	}
+	if s.repo != nil {
+		return s.repo.EraseHousehold(ctx, orgID, householdID)
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	n := 0
+	for id, r := range s.rsvps {
+		if r.OrgID == orgID && r.HouseholdID == householdID {
+			delete(s.rsvps, id)
+			n++
+		}
+	}
+	for id, t := range s.tokens {
+		if t.OrgID == orgID && t.HouseholdID == householdID {
+			delete(s.hashIdx, t.TokenHash)
+			delete(s.tokens, id)
+		}
+	}
+	return n, nil
 }

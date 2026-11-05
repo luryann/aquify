@@ -68,7 +68,11 @@ func PurgeExpiredFilesHandler(logger *slog.Logger, exportsService *exports.Servi
 		// The returned artifacts are already gone; DeleteArtifact is a safety net.
 		var failed []string
 		if exportsService != nil {
-			for _, artifact := range exportsService.ExpireArtifacts(cutoff) {
+			expired, err := exportsService.ExpireArtifactsForOrg(p.OrgID, cutoff)
+			if err != nil {
+				return fmt.Errorf("purge expired files: %w", err)
+			}
+			for _, artifact := range expired {
 				if strings.TrimSpace(artifact.StorageKey) == "" {
 					continue
 				}
@@ -203,6 +207,10 @@ func ProcessDataExportHandler(logger *slog.Logger, complianceService *compliance
 // itself). Comms, documents, the underlying object-storage files, and the
 // household's Keycloak login account(s) are FULLY ERASED — no retention
 // exception for those domains.
+// HouseholdEraser removes one domain's household-scoped personal records
+// (volunteer signups, event RSVPs, feed tokens, ...). Must be idempotent.
+type HouseholdEraser func(ctx context.Context, orgID, householdID string) error
+
 func ProcessDataDeletionHandler(
 	logger *slog.Logger,
 	complianceService *compliance.Service,
@@ -211,6 +219,7 @@ func ProcessDataDeletionHandler(
 	documentsService *documents.Service,
 	objectStore storage.ObjectStorage,
 	kcClient keycloak.Client,
+	extraErasers ...HouseholdEraser,
 ) workers.Handler {
 	return func(ctx context.Context, task *workers.Task) error {
 		var p ProcessDataDeletionPayload
@@ -329,6 +338,15 @@ func ProcessDataDeletionHandler(
 				return fail("purge object storage", err)
 			}
 			purgedObjectKeys = append(purgedObjectKeys, keys...)
+		}
+
+		for _, eraser := range extraErasers {
+			if eraser == nil {
+				continue
+			}
+			if err := eraser(ctx, p.OrgID, p.HouseholdID); err != nil {
+				return fail("erase household records", err)
+			}
 		}
 
 		if kcClient != nil {

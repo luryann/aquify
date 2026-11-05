@@ -3,8 +3,10 @@ package members
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"github.com/luryann/aquify/server/internal/dbutil"
+	"github.com/luryann/aquify/server/internal/tenantdb"
 	"strings"
 
 	"github.com/jackc/pgx/v5"
@@ -32,7 +34,7 @@ func newRepository(pool *pgxpool.Pool) *Repository {
 // ───────────────────────────── Households ─────────────────────────────────
 
 func (r *Repository) UpsertHousehold(ctx context.Context, h Household) error {
-	_, err := r.pool.Exec(ctx, `
+	_, err := r.at(h.OrgID).Exec(ctx, `
 		INSERT INTO households (id, org_id, household_name, primary_email, primary_phone_e164, status, notes,
 		                        keycloak_user_id, created_at, updated_at)
 		VALUES ($1::uuid, $2::uuid, $3, $4, $5, $6, $7, $8, $9, $10)
@@ -55,20 +57,20 @@ func (r *Repository) UpsertHousehold(ctx context.Context, h Household) error {
 
 // SetHouseholdKeycloakUserID sets or clears the keycloak_user_id for a household.
 // Pass an empty string to clear (unlink).
-func (r *Repository) SetHouseholdKeycloakUserID(ctx context.Context, householdID, keycloakUserID string) error {
-	_, err := r.pool.Exec(ctx, `
+func (r *Repository) SetHouseholdKeycloakUserID(ctx context.Context, orgID, householdID, keycloakUserID string) error {
+	_, err := r.at(orgID).Exec(ctx, `
 		UPDATE households SET keycloak_user_id = $2, updated_at = now()
-		WHERE id = $1::uuid AND deleted_at IS NULL`,
-		householdID, dbutil.NullableString(keycloakUserID),
+		WHERE id = $1::uuid AND org_id = $3::uuid AND deleted_at IS NULL`,
+		householdID, dbutil.NullableString(keycloakUserID), orgID,
 	)
 	return err
 }
 
-func (r *Repository) DeleteHousehold(ctx context.Context, id, deletedBy string) error {
-	_, err := r.pool.Exec(ctx, `
+func (r *Repository) DeleteHousehold(ctx context.Context, orgID, id, deletedBy string) error {
+	_, err := r.at(orgID).Exec(ctx, `
 		UPDATE households SET deleted_at = now(), deleted_by = $2::uuid
-		WHERE id = $1::uuid AND deleted_at IS NULL`,
-		id, deletedBy,
+		WHERE id = $1::uuid AND org_id = $3::uuid AND deleted_at IS NULL`,
+		id, deletedBy, orgID,
 	)
 	return err
 }
@@ -76,7 +78,7 @@ func (r *Repository) DeleteHousehold(ctx context.Context, id, deletedBy string) 
 // ───────────────────────────── Contacts ────────────────────────────────────
 
 func (r *Repository) UpsertContact(ctx context.Context, c Contact) error {
-	_, err := r.pool.Exec(ctx, `
+	_, err := r.at(c.OrgID).Exec(ctx, `
 		INSERT INTO contacts (id, org_id, household_id, relationship, first_name, last_name,
 		                      email, phone_e164, is_primary, is_emergency_contact, can_pick_up,
 		                      emergency_priority, notes, created_at, updated_at)
@@ -131,13 +133,14 @@ func (r *Repository) UpsertSwimmer(ctx context.Context, sw Swimmer) error {
 	if err != nil {
 		return fmt.Errorf("members: encode medical flags for swimmer %s: %w", sw.ID, err)
 	}
-	_, err = r.pool.Exec(ctx, `
+	_, err = r.at(sw.OrgID).Exec(ctx, `
 		INSERT INTO swimmers (id, org_id, household_id, first_name, last_name, preferred_name,
 		                      date_of_birth, gender, swimmer_external_id, usa_swimming_id, registration_status,
 		                      medical_flags, notes, emergency_contact_name, emergency_contact_phone,
-		                      emergency_contact_relationship, allergies, keycloak_user_id, created_at, updated_at, portal_access_disabled)
+		                      emergency_contact_relationship, allergies, keycloak_user_id, created_at, updated_at, portal_access_disabled,
+		                      guardian_consent_at, guardian_consent_by, guardian_consent_version)
 		VALUES ($1::uuid, $2::uuid, $3::uuid, $4, $5, $6, $7::date, $8, $9, $10, $11,
-		        $12::jsonb, $13, $14, $15, $16, $17, $18, $19, $20, $21)
+		        $12::jsonb, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, NULLIF($23, '')::uuid, $24)
 		ON CONFLICT (id) DO UPDATE SET
 		  first_name                     = EXCLUDED.first_name,
 		  last_name                      = EXCLUDED.last_name,
@@ -155,6 +158,9 @@ func (r *Repository) UpsertSwimmer(ctx context.Context, sw Swimmer) error {
 		  allergies                      = EXCLUDED.allergies,
 		  keycloak_user_id               = EXCLUDED.keycloak_user_id,
 		  portal_access_disabled         = EXCLUDED.portal_access_disabled,
+		  guardian_consent_at            = EXCLUDED.guardian_consent_at,
+		  guardian_consent_by            = EXCLUDED.guardian_consent_by,
+		  guardian_consent_version       = EXCLUDED.guardian_consent_version,
 		  updated_at                     = EXCLUDED.updated_at`,
 		sw.ID, sw.OrgID, sw.HouseholdID,
 		sw.FirstName, sw.LastName, dbutil.NullableString(sw.PreferredName),
@@ -165,19 +171,47 @@ func (r *Repository) UpsertSwimmer(ctx context.Context, sw Swimmer) error {
 		dbutil.NullableString(sw.EmergencyContactRelationship), dbutil.NullableString(sw.Allergies),
 		dbutil.NullableString(sw.KeycloakUserID),
 		sw.CreatedAt, sw.UpdatedAt, sw.PortalAccessDisabled,
+		sw.GuardianConsentAt, sw.GuardianConsentBy, dbutil.NullableString(sw.GuardianConsentVersion),
 	)
 	return err
 }
 
 // SetSwimmerKeycloakUserID sets or clears the keycloak_user_id for a swimmer.
 // Pass an empty string to clear (unlink).
-func (r *Repository) SetSwimmerKeycloakUserID(ctx context.Context, swimmerID, keycloakUserID string) error {
-	_, err := r.pool.Exec(ctx, `
+func (r *Repository) SetSwimmerKeycloakUserID(ctx context.Context, orgID, swimmerID, keycloakUserID string) error {
+	_, err := r.at(orgID).Exec(ctx, `
 		UPDATE swimmers SET keycloak_user_id = $2, updated_at = now()
-		WHERE id = $1::uuid AND deleted_at IS NULL`,
-		swimmerID, dbutil.NullableString(keycloakUserID),
+		WHERE id = $1::uuid AND org_id = $3::uuid AND deleted_at IS NULL`,
+		swimmerID, dbutil.NullableString(keycloakUserID), orgID,
 	)
 	return err
+}
+
+// at binds the org to the database session so row-level security applies to the
+// cross-domain reads this repository makes.
+func (r *Repository) at(orgID string) tenantdb.Scoped { return tenantdb.Pool{P: r.pool}.For(orgID) }
+
+// OrgOfHouseholdKeycloakUser returns the org of the live household linked to a
+// Keycloak user, so a sign-in lookup loads one org instead of every org.
+func (r *Repository) OrgOfHouseholdKeycloakUser(ctx context.Context, keycloakUserID string) (string, bool, error) {
+	return r.orgOfKeycloakUser(ctx, "households", keycloakUserID)
+}
+
+// OrgOfSwimmerKeycloakUser is OrgOfHouseholdKeycloakUser for swimmers.
+func (r *Repository) OrgOfSwimmerKeycloakUser(ctx context.Context, keycloakUserID string) (string, bool, error) {
+	return r.orgOfKeycloakUser(ctx, "swimmers", keycloakUserID)
+}
+
+func (r *Repository) orgOfKeycloakUser(ctx context.Context, table, keycloakUserID string) (string, bool, error) {
+	var org string
+	err := tenantdb.Pool{P: r.pool}.ForLookup(tenantdb.LookupKeycloakUser, keycloakUserID).QueryRow(ctx, `SELECT org_id::text FROM `+table+` WHERE keycloak_user_id = $1 AND deleted_at IS NULL LIMIT 1`, keycloakUserID).Scan(&org)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return "", false, nil
+	}
+	if err != nil {
+		return "", false, fmt.Errorf("members: find %s by keycloak user: %w", table, err)
+	}
+	return org, true, nil
 }
 
 func (r *Repository) ListSwimmerDeleteDependencies(ctx context.Context, orgID, swimmerID string) ([]swimmerDeleteDependencyRecord, error) {
@@ -190,7 +224,7 @@ func (r *Repository) ListSwimmerDeleteDependencies(ctx context.Context, orgID, s
 	var documentSubmissionCount int
 	var invoiceItemCount int
 
-	if err := r.pool.QueryRow(ctx, `
+	if err := r.at(orgID).QueryRow(ctx, `
 		SELECT
 			(SELECT COUNT(*) FROM registrations WHERE org_id = $1::uuid AND swimmer_id = $2::uuid AND deleted_at IS NULL),
 			(SELECT COUNT(*) FROM commitments WHERE org_id = $1::uuid AND swimmer_id = $2::uuid),
@@ -238,8 +272,8 @@ func (r *Repository) ListSwimmerDeleteDependencies(ctx context.Context, orgID, s
 	return dependencies, nil
 }
 
-func (r *Repository) DeleteSwimmer(ctx context.Context, id, deletedBy string) error {
-	tx, err := r.pool.BeginTx(ctx, pgx.TxOptions{})
+func (r *Repository) DeleteSwimmer(ctx context.Context, orgID, id, deletedBy string) error {
+	tx, err := r.at(orgID).Begin(ctx)
 	if err != nil {
 		return fmt.Errorf("members: begin swimmer delete: %w", err)
 	}
@@ -250,8 +284,8 @@ func (r *Repository) DeleteSwimmer(ctx context.Context, id, deletedBy string) er
 	if _, err := tx.Exec(ctx, `
 		UPDATE swimmer_groups
 		SET deleted_at = now(), deleted_by = $2::uuid
-		WHERE swimmer_id = $1::uuid AND deleted_at IS NULL`,
-		id, deletedBy,
+		WHERE swimmer_id = $1::uuid AND org_id = $3::uuid AND deleted_at IS NULL`,
+		id, deletedBy, orgID,
 	); err != nil {
 		return fmt.Errorf("members: delete swimmer groups: %w", err)
 	}
@@ -259,8 +293,8 @@ func (r *Repository) DeleteSwimmer(ctx context.Context, id, deletedBy string) er
 	if _, err := tx.Exec(ctx, `
 		UPDATE swimmers
 		SET deleted_at = now(), deleted_by = $2::uuid
-		WHERE id = $1::uuid AND deleted_at IS NULL`,
-		id, deletedBy,
+		WHERE id = $1::uuid AND org_id = $3::uuid AND deleted_at IS NULL`,
+		id, deletedBy, orgID,
 	); err != nil {
 		return fmt.Errorf("members: delete swimmer: %w", err)
 	}
@@ -274,7 +308,7 @@ func (r *Repository) DeleteSwimmer(ctx context.Context, id, deletedBy string) er
 // ───────────────────────────── Swimmer Groups ──────────────────────────────
 
 func (r *Repository) UpsertSwimmerGroupLink(ctx context.Context, link SwimmerGroupLink) error {
-	_, err := r.pool.Exec(ctx, `
+	_, err := r.at(link.OrgID).Exec(ctx, `
 		INSERT INTO swimmer_groups (id, org_id, swimmer_id, group_code, is_primary, assigned_at,
 		                            created_at, updated_at)
 		VALUES ($1::uuid, $2::uuid, $3::uuid, $4, $5, $6, $7, $8)
@@ -293,7 +327,7 @@ func (r *Repository) UpsertSwimmerGroupLink(ctx context.Context, link SwimmerGro
 // ───────────────────────────── Swimmer Link Requests ───────────────────────
 
 func (r *Repository) InsertSwimmerLinkRequest(ctx context.Context, req SwimmerLinkRequest) error {
-	_, err := r.pool.Exec(ctx, `
+	_, err := r.at(req.OrgID).Exec(ctx, `
 		INSERT INTO swimmer_link_requests (id, org_id, user_id, requested_swimmer_name, note, status, created_at)
 		VALUES ($1::uuid, $2::uuid, $3::uuid, $4, $5, $6, $7)`,
 		req.ID, req.OrgID, req.UserID, req.RequestedSwimmerName, req.Note, req.Status, req.CreatedAt,
@@ -302,7 +336,7 @@ func (r *Repository) InsertSwimmerLinkRequest(ctx context.Context, req SwimmerLi
 }
 
 func (r *Repository) ListPendingSwimmerLinkRequests(ctx context.Context, orgID string) ([]SwimmerLinkRequest, error) {
-	rows, err := r.pool.Query(ctx, `
+	rows, err := r.at(orgID).Query(ctx, `
 		SELECT id::text, org_id::text, user_id::text, requested_swimmer_name, note, status, created_at
 		FROM swimmer_link_requests
 		WHERE org_id = $1::uuid AND status = 'pending'
@@ -318,7 +352,7 @@ func (r *Repository) ListPendingSwimmerLinkRequests(ctx context.Context, orgID s
 }
 
 func (r *Repository) ResolveSwimmerLinkRequest(ctx context.Context, orgID, requestID, resolvedBy, resolvedSwimmerID string) error {
-	tag, err := r.pool.Exec(ctx, `
+	tag, err := r.at(orgID).Exec(ctx, `
 		UPDATE swimmer_link_requests
 		SET status = 'resolved', resolved_at = now(), resolved_by = $3::uuid, resolved_swimmer_id = $4::uuid
 		WHERE id = $1::uuid AND org_id = $2::uuid AND status = 'pending'`,
@@ -335,39 +369,76 @@ func (r *Repository) ResolveSwimmerLinkRequest(ctx context.Context, orgID, reque
 
 // ───────────────────────────── Batch load ─────────────────────────────────
 
-// LoadAll fetches all records for the members domain in a single transaction.
-func (r *Repository) LoadAll(ctx context.Context) (
+// loadOrg fetches one club's records for the members domain in a single transaction.
+// OrgIDs lists every registered club (the registry is not tenant data) so an all-club
+// load can read each club under its own binding.
+func (r *Repository) OrgIDs(ctx context.Context) ([]string, error) {
+	return dbutil.ListOrgIDs(ctx, r.pool)
+}
+
+// LoadAll loads one club (orgID set) or, with an empty orgID, every club one at a time
+// under that club's own binding (an unbound read would see nothing under RLS).
+func (r *Repository) LoadAll(ctx context.Context, orgID string) (
 	households []Household,
 	contacts []Contact,
 	swimmers []Swimmer,
 	links []SwimmerGroupLink,
 	err error,
 ) {
-	tx, txErr := r.pool.BeginTx(ctx, pgx.TxOptions{AccessMode: pgx.ReadOnly})
+	if orgID != "" {
+		return r.loadOrg(ctx, orgID)
+	}
+	orgs, err := r.OrgIDs(ctx)
+	if err != nil {
+		return
+	}
+	for _, o := range orgs {
+		h, c, sw, l, lerr := r.loadOrg(ctx, o)
+		if lerr != nil {
+			err = lerr
+			return
+		}
+		households = append(households, h...)
+		contacts = append(contacts, c...)
+		swimmers = append(swimmers, sw...)
+		links = append(links, l...)
+	}
+	return
+}
+
+func (r *Repository) loadOrg(ctx context.Context, orgID string) (
+	households []Household,
+	contacts []Contact,
+	swimmers []Swimmer,
+	links []SwimmerGroupLink,
+	err error,
+) {
+	tx, txErr := r.at(orgID).Begin(ctx)
 	if txErr != nil {
 		return nil, nil, nil, nil, fmt.Errorf("members: begin load tx: %w", txErr)
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 
-	if households, err = loadHouseholdsInTx(ctx, tx); err != nil {
+	if households, err = loadHouseholdsInTx(ctx, tx, orgID); err != nil {
 		return
 	}
-	if contacts, err = loadContactsInTx(ctx, tx); err != nil {
+	if contacts, err = loadContactsInTx(ctx, tx, orgID); err != nil {
 		return
 	}
-	if swimmers, err = loadSwimmersInTx(ctx, tx); err != nil {
+	if swimmers, err = loadSwimmersInTx(ctx, tx, orgID); err != nil {
 		return
 	}
-	links, err = loadSwimmerGroupLinksInTx(ctx, tx)
+	links, err = loadSwimmerGroupLinksInTx(ctx, tx, orgID)
 	return
 }
 
-func loadHouseholdsInTx(ctx context.Context, tx pgx.Tx) ([]Household, error) {
+func loadHouseholdsInTx(ctx context.Context, tx pgx.Tx, orgID string) ([]Household, error) {
 	rows, err := tx.Query(ctx, `
 		SELECT id::text, org_id::text, household_name,
 		       COALESCE(primary_email, ''), COALESCE(primary_phone_e164, ''),
 		       status, COALESCE(notes, ''), COALESCE(keycloak_user_id, ''), created_at, updated_at
-		FROM households WHERE deleted_at IS NULL`)
+		FROM households WHERE deleted_at IS NULL
+		AND ($1::text = '' OR org_id = NULLIF($1::text, '')::uuid)`, orgID)
 	if err != nil {
 		return nil, fmt.Errorf("members: load households: %w", err)
 	}
@@ -380,14 +451,15 @@ func loadHouseholdsInTx(ctx context.Context, tx pgx.Tx) ([]Household, error) {
 	})
 }
 
-func loadContactsInTx(ctx context.Context, tx pgx.Tx) ([]Contact, error) {
+func loadContactsInTx(ctx context.Context, tx pgx.Tx, orgID string) ([]Contact, error) {
 	rows, err := tx.Query(ctx, `
 		SELECT id::text, org_id::text, household_id::text,
 		       relationship, first_name, last_name,
 		       COALESCE(email, ''), COALESCE(phone_e164, ''),
 		       is_primary, is_emergency_contact, can_pick_up,
 		       emergency_priority, COALESCE(notes, ''), created_at, updated_at
-		FROM contacts WHERE deleted_at IS NULL`)
+		FROM contacts WHERE deleted_at IS NULL
+		AND ($1::text = '' OR org_id = NULLIF($1::text, '')::uuid)`, orgID)
 	if err != nil {
 		return nil, fmt.Errorf("members: load contacts: %w", err)
 	}
@@ -405,7 +477,7 @@ func loadContactsInTx(ctx context.Context, tx pgx.Tx) ([]Contact, error) {
 	})
 }
 
-func loadSwimmersInTx(ctx context.Context, tx pgx.Tx) ([]Swimmer, error) {
+func loadSwimmersInTx(ctx context.Context, tx pgx.Tx, orgID string) ([]Swimmer, error) {
 	rows, err := tx.Query(ctx, `
 		SELECT id::text, org_id::text, household_id::text,
 		       first_name, last_name, COALESCE(preferred_name, ''),
@@ -414,8 +486,10 @@ func loadSwimmersInTx(ctx context.Context, tx pgx.Tx) ([]Swimmer, error) {
 		       medical_flags::text, COALESCE(notes, ''),
 		       COALESCE(emergency_contact_name, ''), COALESCE(emergency_contact_phone, ''),
 		       COALESCE(emergency_contact_relationship, ''), COALESCE(allergies, ''),
-		       COALESCE(keycloak_user_id, ''), created_at, updated_at, portal_access_disabled
-		FROM swimmers WHERE deleted_at IS NULL`)
+		       COALESCE(keycloak_user_id, ''), created_at, updated_at, portal_access_disabled,
+		       guardian_consent_at, COALESCE(guardian_consent_by::text, ''), COALESCE(guardian_consent_version, '')
+		FROM swimmers WHERE deleted_at IS NULL
+		AND ($1::text = '' OR org_id = NULLIF($1::text, '')::uuid)`, orgID)
 	if err != nil {
 		return nil, fmt.Errorf("members: load swimmers: %w", err)
 	}
@@ -432,6 +506,7 @@ func loadSwimmersInTx(ctx context.Context, tx pgx.Tx) ([]Swimmer, error) {
 			&sw.EmergencyContactRelationship, &sw.Allergies,
 			&sw.KeycloakUserID,
 			&sw.CreatedAt, &sw.UpdatedAt, &sw.PortalAccessDisabled,
+			&sw.GuardianConsentAt, &sw.GuardianConsentBy, &sw.GuardianConsentVersion,
 		); err != nil {
 			return sw, err
 		}
@@ -444,11 +519,12 @@ func loadSwimmersInTx(ctx context.Context, tx pgx.Tx) ([]Swimmer, error) {
 	})
 }
 
-func loadSwimmerGroupLinksInTx(ctx context.Context, tx pgx.Tx) ([]SwimmerGroupLink, error) {
+func loadSwimmerGroupLinksInTx(ctx context.Context, tx pgx.Tx, orgID string) ([]SwimmerGroupLink, error) {
 	rows, err := tx.Query(ctx, `
 		SELECT id::text, org_id::text, swimmer_id::text,
 		       group_code, is_primary, assigned_at, created_at, updated_at
-		FROM swimmer_groups WHERE deleted_at IS NULL`)
+		FROM swimmer_groups WHERE deleted_at IS NULL
+		AND ($1::text = '' OR org_id = NULLIF($1::text, '')::uuid)`, orgID)
 	if err != nil {
 		return nil, fmt.Errorf("members: load swimmer group links: %w", err)
 	}

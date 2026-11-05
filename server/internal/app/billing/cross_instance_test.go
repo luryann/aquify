@@ -4,8 +4,8 @@ import (
 	"context"
 	"testing"
 
-	appmiddleware "github.com/luryann/aquify/server/internal/app/middleware"
 	"github.com/google/uuid"
+	appmiddleware "github.com/luryann/aquify/server/internal/app/middleware"
 )
 
 // An invoice created and issued by one Service must be visible, listable and

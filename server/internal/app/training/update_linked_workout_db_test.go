@@ -4,8 +4,8 @@ import (
 	"context"
 	"testing"
 
-	"github.com/luryann/aquify/server/internal/testutil"
 	"github.com/google/uuid"
+	"github.com/luryann/aquify/server/internal/testutil"
 )
 
 func TestUpdateLinkedPracticeSurfacesWorkoutLookupFailure(t *testing.T) {

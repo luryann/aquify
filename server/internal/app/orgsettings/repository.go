@@ -5,9 +5,10 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/luryann/aquify/server/internal/dbutil"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/luryann/aquify/server/internal/dbutil"
+	"github.com/luryann/aquify/server/internal/tenantdb"
 )
 
 // Repository handles DB persistence for org settings.
@@ -19,13 +20,16 @@ func newRepository(pool *pgxpool.Pool) *Repository {
 	return &Repository{pool: pool}
 }
 
+// at binds orgID to every statement so row-level security on org_settings applies.
+func (r *Repository) at(orgID string) tenantdb.Scoped { return tenantdb.Pool{P: r.pool}.For(orgID) }
+
 // Upsert inserts or updates the settings row for an org.
 // swimmerAccounts, when non-nil, is written in the same statement; nil leaves
 // the stored value unchanged (TRUE for a new row).
 func (r *Repository) Upsert(ctx context.Context, s *OrgSettings, swimmerAccounts *bool) error {
-	_, err := r.pool.Exec(ctx, `
-		INSERT INTO org_settings (org_id, team_code, team_name, lsc_code, email_sender_name, email_sender_address, created_at, updated_at, updated_by, public_slug, public_site_enabled, public_show_coaches, public_about, public_contact_email, public_contact_phone, swimmer_accounts_enabled)
-		VALUES ($1::uuid, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, COALESCE($16::boolean, TRUE))
+	_, err := r.at(s.OrgID).Exec(ctx, `
+		INSERT INTO org_settings (org_id, team_code, team_name, lsc_code, email_sender_name, email_sender_address, created_at, updated_at, updated_by, public_slug, public_site_enabled, public_show_coaches, public_about, public_contact_email, public_contact_phone, swimmer_accounts_enabled, timezone, currency, legal_name)
+		VALUES ($1::uuid, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, COALESCE($16::boolean, TRUE), $17, $18, $19)
 		ON CONFLICT (org_id) DO UPDATE SET
 			team_code            = EXCLUDED.team_code,
 			team_name            = EXCLUDED.team_name,
@@ -40,21 +44,25 @@ func (r *Repository) Upsert(ctx context.Context, s *OrgSettings, swimmerAccounts
 			public_about         = EXCLUDED.public_about,
 			public_contact_email = EXCLUDED.public_contact_email,
 			public_contact_phone = EXCLUDED.public_contact_phone,
-			swimmer_accounts_enabled = COALESCE($16::boolean, org_settings.swimmer_accounts_enabled)`,
+			swimmer_accounts_enabled = COALESCE($16::boolean, org_settings.swimmer_accounts_enabled),
+			timezone             = EXCLUDED.timezone,
+			currency             = EXCLUDED.currency,
+			legal_name           = EXCLUDED.legal_name`,
 		s.OrgID, s.TeamCode, s.TeamName, s.LSCCode, s.EmailSenderName, s.EmailSenderAddress, s.CreatedAt, s.UpdatedAt, dbutil.NullableString(s.UpdatedBy),
 		s.PublicSlug, s.PublicSiteEnabled, s.PublicShowCoaches, s.PublicAbout, s.PublicContactEmail, s.PublicContactPhone, swimmerAccounts,
+		s.Timezone, s.Currency, s.LegalName,
 	)
 	return err
 }
 
 // Get returns the settings row for an org, or (nil, nil) when none exists yet.
 func (r *Repository) Get(ctx context.Context, orgID string) (*OrgSettings, error) {
-	row := r.pool.QueryRow(ctx, `
+	row := r.at(orgID).QueryRow(ctx, `
 		SELECT org_id::text, team_code, team_name, lsc_code, email_sender_name, email_sender_address, created_at, updated_at, COALESCE(updated_by::text, ''),
-		       public_slug, public_site_enabled, public_show_coaches, public_about, public_contact_email, public_contact_phone
+		       public_slug, public_site_enabled, public_show_coaches, public_about, public_contact_email, public_contact_phone, timezone, currency, legal_name
 		FROM org_settings WHERE org_id = $1::uuid`, orgID)
 	s := &OrgSettings{}
-	if err := row.Scan(&s.OrgID, &s.TeamCode, &s.TeamName, &s.LSCCode, &s.EmailSenderName, &s.EmailSenderAddress, &s.CreatedAt, &s.UpdatedAt, &s.UpdatedBy, &s.PublicSlug, &s.PublicSiteEnabled, &s.PublicShowCoaches, &s.PublicAbout, &s.PublicContactEmail, &s.PublicContactPhone); err != nil {
+	if err := row.Scan(&s.OrgID, &s.TeamCode, &s.TeamName, &s.LSCCode, &s.EmailSenderName, &s.EmailSenderAddress, &s.CreatedAt, &s.UpdatedAt, &s.UpdatedBy, &s.PublicSlug, &s.PublicSiteEnabled, &s.PublicShowCoaches, &s.PublicAbout, &s.PublicContactEmail, &s.PublicContactPhone, &s.Timezone, &s.Currency, &s.LegalName); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, nil
 		}
@@ -63,34 +71,20 @@ func (r *Repository) Get(ctx context.Context, orgID string) (*OrgSettings, error
 	return s, nil
 }
 
-// FindBySlug returns the settings row with the given public slug, or (nil, nil).
+// FindBySlug returns the settings row with the given public slug, or (nil, nil). No club
+// is known yet, so the slug itself is bound (policy slug_lookup is SELECT-only and
+// exposes just the row whose slug is presented; the slug is public by design).
 func (r *Repository) FindBySlug(ctx context.Context, slug string) (*OrgSettings, error) {
-	row := r.pool.QueryRow(ctx, `
+	row := tenantdb.Pool{P: r.pool}.ForLookup(tenantdb.LookupPublicSlug, slug).QueryRow(ctx, `
 		SELECT org_id::text, team_code, team_name, lsc_code, email_sender_name, email_sender_address, created_at, updated_at, COALESCE(updated_by::text, ''),
-		       public_slug, public_site_enabled, public_show_coaches, public_about, public_contact_email, public_contact_phone
+		       public_slug, public_site_enabled, public_show_coaches, public_about, public_contact_email, public_contact_phone, timezone, currency, legal_name
 		FROM org_settings WHERE public_slug = $1`, slug)
 	s := &OrgSettings{}
-	if err := row.Scan(&s.OrgID, &s.TeamCode, &s.TeamName, &s.LSCCode, &s.EmailSenderName, &s.EmailSenderAddress, &s.CreatedAt, &s.UpdatedAt, &s.UpdatedBy, &s.PublicSlug, &s.PublicSiteEnabled, &s.PublicShowCoaches, &s.PublicAbout, &s.PublicContactEmail, &s.PublicContactPhone); err != nil {
+	if err := row.Scan(&s.OrgID, &s.TeamCode, &s.TeamName, &s.LSCCode, &s.EmailSenderName, &s.EmailSenderAddress, &s.CreatedAt, &s.UpdatedAt, &s.UpdatedBy, &s.PublicSlug, &s.PublicSiteEnabled, &s.PublicShowCoaches, &s.PublicAbout, &s.PublicContactEmail, &s.PublicContactPhone, &s.Timezone, &s.Currency, &s.LegalName); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, nil
 		}
 		return nil, fmt.Errorf("orgsettings: find by slug: %w", err)
 	}
 	return s, nil
-}
-
-// LoadAll returns every org settings row.
-func (r *Repository) LoadAll(ctx context.Context) ([]*OrgSettings, error) {
-	rows, err := r.pool.Query(ctx, `
-		SELECT org_id::text, team_code, team_name, lsc_code, email_sender_name, email_sender_address, created_at, updated_at, COALESCE(updated_by::text, ''),
-		       public_slug, public_site_enabled, public_show_coaches, public_about, public_contact_email, public_contact_phone
-		FROM org_settings`)
-	if err != nil {
-		return nil, fmt.Errorf("orgsettings: load all: %w", err)
-	}
-	return dbutil.CollectRows(rows, "orgsettings: scan", func(rows pgx.Rows) (*OrgSettings, error) {
-		s := &OrgSettings{}
-		err := rows.Scan(&s.OrgID, &s.TeamCode, &s.TeamName, &s.LSCCode, &s.EmailSenderName, &s.EmailSenderAddress, &s.CreatedAt, &s.UpdatedAt, &s.UpdatedBy, &s.PublicSlug, &s.PublicSiteEnabled, &s.PublicShowCoaches, &s.PublicAbout, &s.PublicContactEmail, &s.PublicContactPhone)
-		return s, err
-	})
 }

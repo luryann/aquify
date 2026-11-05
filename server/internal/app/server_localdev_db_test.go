@@ -5,11 +5,11 @@ import (
 	"fmt"
 	"testing"
 
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/luryann/aquify/server/internal/app/authn"
 	"github.com/luryann/aquify/server/internal/app/meets"
 	"github.com/luryann/aquify/server/internal/app/members"
 	"github.com/luryann/aquify/server/internal/testutil"
-	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 func cleanupLocalDevFixtures(t *testing.T, pool *pgxpool.Pool) {

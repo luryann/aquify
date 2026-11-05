@@ -1,6 +1,7 @@
 package dbutil
 
 import (
+	"context"
 	"fmt"
 
 	"github.com/jackc/pgx/v5"
@@ -32,4 +33,19 @@ func CollectRowsNonNil[T any](rows pgx.Rows, scanContext string, scan func(pgx.R
 		out = []T{}
 	}
 	return out, nil
+}
+
+// ListOrgIDs returns every registered club id. The orgs registry is not tenant data, so
+// this needs no binding; all-club loads use it to read each club under its own binding.
+func ListOrgIDs(ctx context.Context, q interface {
+	Query(context.Context, string, ...any) (pgx.Rows, error)
+}) ([]string, error) {
+	rows, err := q.Query(ctx, `SELECT id::text FROM orgs ORDER BY id`)
+	if err != nil {
+		return nil, fmt.Errorf("list orgs: %w", err)
+	}
+	return CollectRows(rows, "scan org", func(rows pgx.Rows) (string, error) {
+		var id string
+		return id, rows.Scan(&id)
+	})
 }

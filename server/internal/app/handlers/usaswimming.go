@@ -7,15 +7,16 @@ import (
 	"net/http"
 	"regexp"
 	"strings"
+	"sync"
 	"time"
 
+	"github.com/go-chi/chi/v5"
 	"github.com/luryann/aquify/server/internal/app/audit"
 	"github.com/luryann/aquify/server/internal/app/httpx"
 	"github.com/luryann/aquify/server/internal/app/members"
 	appmiddleware "github.com/luryann/aquify/server/internal/app/middleware"
 	"github.com/luryann/aquify/server/internal/app/performance"
 	"github.com/luryann/aquify/server/internal/app/usaswimming"
-	"github.com/go-chi/chi/v5"
 )
 
 // USASwimmingHandlers exposes the org-level USA Swimming (SWIMS) integration:
@@ -26,6 +27,8 @@ type USASwimmingHandlers struct {
 	perf    usaSyncRecorder
 	members *members.Service
 	audit   *audit.Service
+	// syncing holds orgs with a sync in flight (double-click guard).
+	syncing sync.Map
 }
 
 // usaSyncRecorder is the slice of the performance service the sync uses.
@@ -213,12 +216,25 @@ func (h *USASwimmingHandlers) sync(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if _, busy := h.syncing.LoadOrStore(orgID, struct{}{}); busy {
+		httpx.WriteError(w, r, http.StatusConflict, "sync_in_progress", "A USA Swimming sync is already running for this club.", nil)
+		return
+	}
+	defer h.syncing.Delete(orgID)
+	syncCtx, syncCancel := context.WithTimeout(r.Context(), syncOverallTimeout)
+	defer syncCancel()
+
 	out := make([]usaSyncSwimmer, 0, len(targets))
 	var total usaSyncSwimmer
 	var breaks int
+	partial := false
 	for _, sw := range targets {
+		if syncCtx.Err() != nil {
+			partial = true
+			break
+		}
 		res := usaSyncSwimmer{SwimmerID: sw.ID, Name: strings.TrimSpace(sw.FirstName + " " + sw.LastName), Status: "synced"}
-		ctx, cancel := context.WithTimeout(r.Context(), 20*time.Second)
+		ctx, cancel := context.WithTimeout(syncCtx, 20*time.Second)
 		times, err := client.OfficialTimes(ctx, normalizeUSS(sw.USASwimmingID))
 		cancel()
 		switch {
@@ -256,13 +272,16 @@ func (h *USASwimmingHandlers) sync(w http.ResponseWriter, r *http.Request) {
 		out = append(out, res)
 	}
 	summary := fmt.Sprintf("%d swimmers, %d imported, %d already recorded", len(out), total.Imported, total.Duplicates)
+	if partial {
+		summary += fmt.Sprintf(" (partial: stopped after %d of %d swimmers)", len(out), len(targets))
+	}
 	h.svc.RecordSync(orgID, summary)
 	recordAudit(h.audit, principal, orgID, "integrations.usa_swimming.sync", "integration", "usa-swimming", nil, nil, map[string]string{
 		"swimmers": fmt.Sprint(len(out)), "imported": fmt.Sprint(total.Imported), "duplicates": fmt.Sprint(total.Duplicates), "skipped": fmt.Sprint(total.Skipped),
 	})
 	httpx.WriteJSON(w, http.StatusOK, map[string]any{
 		"swimmers": out, "swimmer_count": len(out), "imported": total.Imported, "duplicates": total.Duplicates,
-		"skipped": total.Skipped, "new_team_records": breaks, "summary": summary,
+		"skipped": total.Skipped, "new_team_records": breaks, "summary": summary, "partial": partial,
 	})
 }
 
@@ -275,6 +294,9 @@ func validIndividualStroke(s string) bool {
 }
 
 func validCourse(c string) bool { return c == "SCY" || c == "SCM" || c == "LCM" }
+
+// syncOverallTimeout bounds one whole times sync request.
+const syncOverallTimeout = 5 * time.Minute
 
 // Vendor-call timeouts: lists and lookups vs. bulk roster/verification calls.
 const (

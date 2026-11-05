@@ -88,7 +88,15 @@ export function Sidebar({ role, roles, userName, onSignOut, orgId, token }: Side
     return groupNavItems(items)
   }, [roles])
 
-  const isActive = (path: string) => pathname === path || pathname.startsWith(path + '/')
+  // Most specific match wins so nested routes (/billing/runs) don't also light up their parent (/billing).
+  const activePath = useMemo(() => {
+    const matches = Object.values(grouped)
+      .flat()
+      .filter((i) => pathname === i.path || pathname.startsWith(i.path + '/'))
+      .sort((a, b) => b.path.length - a.path.length)
+    return matches[0]?.path
+  }, [grouped, pathname])
+  const isActive = (path: string) => path === activePath
 
   const handleResizeMouseDown = useCallback((e: React.MouseEvent) => {
     e.preventDefault()
@@ -213,6 +221,7 @@ export function Sidebar({ role, roles, userName, onSignOut, orgId, token }: Side
                   title={collapsed ? item.label : undefined}
                   className="sidebar-link"
                   data-active={active}
+                  aria-current={active ? 'page' : undefined}
                   data-collapsed={collapsed}
                 >
                   <Icon

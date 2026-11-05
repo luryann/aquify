@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/go-chi/chi/v5"
 	"github.com/luryann/aquify/meetfiles"
 	"github.com/luryann/aquify/server/internal/app/audit"
 	"github.com/luryann/aquify/server/internal/app/httpx"
@@ -16,7 +17,6 @@ import (
 	"github.com/luryann/aquify/server/internal/app/members"
 	appmiddleware "github.com/luryann/aquify/server/internal/app/middleware"
 	"github.com/luryann/aquify/server/internal/app/performance"
-	"github.com/go-chi/chi/v5"
 )
 
 const maxResultsFileBytes = 25 << 20
@@ -156,7 +156,16 @@ func importParsedResults(rec resultsRecorder, orgID string, principal *appmiddle
 			continue
 		}
 		dq := strings.EqualFold(strings.TrimSpace(res.FinalsTime.Raw), "DQ")
-		if !res.FinalsTime.Valid && !dq {
+		// Prelim-only swimmers (eliminated before finals) have no finals time;
+		// fall back to the prelim swim. Only one swim is ever recorded.
+		swimTime, swimCourse := res.FinalsTime, res.Event.Course
+		if !swimTime.Valid && !dq && res.PrelimTime.Valid {
+			swimTime = res.PrelimTime
+			if res.PrelimCourse != meetfiles.CourseUnknown && res.PrelimCourse != "" {
+				swimCourse = res.PrelimCourse
+			}
+		}
+		if !swimTime.Valid && !dq {
 			prog.Skipped++ // NT / NS / SCR / DNF: no swim to record
 			prog.Processed++
 			continue
@@ -172,7 +181,7 @@ func importParsedResults(rec resultsRecorder, orgID string, principal *appmiddle
 			prog.Processed++
 			continue
 		}
-		course := resultCourse(res.Event.Course, parsed.Course, meetCourse)
+		course := resultCourse(swimCourse, parsed.Course, meetCourse)
 		if course == "" {
 			prog.Skipped++
 			prog.Processed++
@@ -184,8 +193,22 @@ func importParsedResults(rec resultsRecorder, orgID string, principal *appmiddle
 			continue
 		}
 		input := resultUpsertInput(res, swimmer, meetID, course, stroke, dq)
+		if !dq {
+			input.FinTimeMs = secondsToMs(swimTime.Seconds)
+		}
+		if !dq && input.FinTimeMs == nil {
+			prog.Skipped++ // zero / implausible time: not a real swim
+			prog.Processed++
+			continue
+		}
+		input.SkipIfMeetResultExists = true
 		_, breaks, err := rec.UpsertResultWithRecords(orgID, principal.UserID, principal, input)
 		if err != nil {
+			if errors.Is(err, performance.ErrDuplicateMeetResult) {
+				prog.Duplicates++
+				prog.Processed++
+				continue
+			}
 			if errors.Is(err, performance.ErrRecordDetection) {
 				// The result itself is saved (a retry would skip it), so count it and
 				// keep going; the failure is reported for a records rebuild.
@@ -232,8 +255,16 @@ func (h *PerformanceHandlers) auditResultsImport(principal *appmiddleware.Princi
 // readResultsUpload reads the multipart "file" field (25 MB cap), writing the
 // error response itself when it fails.
 func readResultsUpload(w http.ResponseWriter, r *http.Request) (string, []byte, bool) {
+	// Bound the whole request so an oversized upload cannot spool to temp disk
+	// in multipart parsing before the file-size check below runs.
+	r.Body = http.MaxBytesReader(w, r.Body, maxResultsFileBytes+(1<<20))
 	file, header, err := r.FormFile("file")
 	if err != nil {
+		var tooLarge *http.MaxBytesError
+		if errors.As(err, &tooLarge) {
+			httpx.WriteError(w, r, http.StatusRequestEntityTooLarge, "file_too_large", "Results file exceeds the 25 MB upload cap.", nil)
+			return "", nil, false
+		}
 		httpx.WriteError(w, r, http.StatusBadRequest, "missing_file", "Multipart field 'file' is required.", nil)
 		return "", nil, false
 	}
@@ -251,6 +282,9 @@ func readResultsUpload(w http.ResponseWriter, r *http.Request) (string, []byte, 
 }
 
 func secondsToMs(seconds float64) *int {
+	if math.IsNaN(seconds) || seconds <= 0 || seconds > 3600 {
+		return nil
+	}
 	ms := int(math.Round(seconds * 1000))
 	return &ms
 }
@@ -330,6 +364,21 @@ func nameKey(first, last string) string {
 	return strings.ToLower(strings.TrimSpace(first)) + "|" + strings.ToLower(strings.TrimSpace(last))
 }
 
+// stripMiddleInitial returns the first name without a trailing single-letter
+// middle initial ("John A" or "John A."). ok is false when there is none.
+func stripMiddleInitial(first string) (string, bool) {
+	f := strings.Fields(first)
+	if len(f) < 2 {
+		return "", false
+	}
+	for _, t := range f[1:] {
+		if len(strings.TrimSuffix(t, ".")) != 1 {
+			return "", false
+		}
+	}
+	return f[0], true
+}
+
 func newResultSwimmerMatcher(swimmers []members.Swimmer) *resultSwimmerMatcher {
 	m := &resultSwimmerMatcher{byUSS: map[string][]*members.Swimmer{}, byName: map[string][]*members.Swimmer{}}
 	for i := range swimmers {
@@ -347,14 +396,39 @@ func newResultSwimmerMatcher(swimmers []members.Swimmer) *resultSwimmerMatcher {
 
 // match returns the club swimmer for a parsed result row, or nil with a reason.
 func (m *resultSwimmerMatcher) match(p meetfiles.ParsedSwimmer) (*members.Swimmer, string) {
-	if uss := normalizeUSS(p.USSNumber); uss != "" {
-		if hits := m.byUSS[uss]; len(hits) == 1 {
+	fileUSS := normalizeUSS(p.USSNumber)
+	if fileUSS != "" {
+		if hits := m.byUSS[fileUSS]; len(hits) == 1 {
 			return hits[0], ""
 		}
 	}
 	candidates := m.byName[nameKey(p.FirstName, p.LastName)]
 	if len(candidates) == 0 {
+		// SDIF names carry a middle initial in the first-name field ("John A").
+		if first, ok := stripMiddleInitial(p.FirstName); ok {
+			candidates = m.byName[nameKey(first, p.LastName)]
+		}
+	}
+	if fileUSS != "" {
+		// The file names a USA Swimming ID that is not a club swimmer's: drop
+		// name candidates holding a different ID (likely another team's swimmer).
+		var kept []*members.Swimmer
+		for _, c := range candidates {
+			if cu := normalizeUSS(c.USASwimmingID); cu == "" || cu == fileUSS {
+				kept = append(kept, c)
+			}
+		}
+		if len(candidates) > 0 && len(kept) == 0 {
+			return nil, "USA Swimming ID conflicts with club swimmer"
+		}
+		candidates = kept
+	}
+	if len(candidates) == 0 {
 		return nil, "no club swimmer with this name or USA Swimming ID"
+	}
+	// Name alone is never enough: a results file lists every team's swimmers.
+	if p.DOB == nil {
+		return nil, "no USA Swimming ID or date of birth in file"
 	}
 	if p.DOB != nil {
 		dob := p.DOB.Format("2006-01-02")

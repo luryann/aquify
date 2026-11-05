@@ -1,6 +1,7 @@
 package orgsettings
 
 import (
+	"errors"
 	"sync"
 	"testing"
 )
@@ -74,5 +75,38 @@ func TestUpdateAppliesSwimmerAccountsFlagAtomically(t *testing.T) {
 	}
 	if on, _ := s.SwimmerAccountsEnabled("org-1"); on {
 		t.Fatal("flag should be off after combined update")
+	}
+}
+
+func TestPublicSlugCannotShadowAnotherOrgsRegistrySlug(t *testing.T) {
+	svc := NewService()
+	svc.SetSlugReserved(func(slug, orgID string) bool { return slug == "taken-club" && orgID != "org-owner" })
+	slug := "taken-club"
+	if _, err := svc.Update("org-other", Updates{PublicSlug: &slug}, ""); !errors.Is(err, ErrSlugTaken) {
+		t.Fatalf("a slug the registry gives to another org must be refused: %v", err)
+	}
+	if _, err := svc.Update("org-owner", Updates{PublicSlug: &slug}, ""); err != nil {
+		t.Fatalf("the owning org may use its own slug: %v", err)
+	}
+}
+
+func TestProfileSettingsAreValidated(t *testing.T) {
+	svc := NewService()
+	str := func(s string) *string { return &s }
+	if _, err := svc.Update("org-a", Updates{Timezone: str("Mars/Olympus")}, ""); !errors.Is(err, ErrInvalidTimezone) {
+		t.Fatalf("unknown timezone: %v", err)
+	}
+	if _, err := svc.Update("org-a", Updates{Currency: str("dollars")}, ""); !errors.Is(err, ErrInvalidCurrency) {
+		t.Fatalf("bad currency: %v", err)
+	}
+	if _, err := svc.Update("org-a", Updates{LegalName: str(string(make([]rune, 121)))}, ""); !errors.Is(err, ErrInvalidLegalName) {
+		t.Fatalf("long legal name: %v", err)
+	}
+	got, err := svc.Update("org-a", Updates{Timezone: str(" America/Los_Angeles "), Currency: str(" CAD "), LegalName: str(" Aqua Aquatics Inc. ")}, "")
+	if err != nil || got.Timezone != "America/Los_Angeles" || got.Currency != "cad" || got.LegalName != "Aqua Aquatics Inc." {
+		t.Fatalf("normalised profile: %+v %v", got, err)
+	}
+	if cleared, err := svc.Update("org-a", Updates{Timezone: str(""), Currency: str("")}, ""); err != nil || cleared.Timezone != "" || cleared.Currency != "" {
+		t.Fatalf("empty clears back to the platform default: %+v %v", cleared, err)
 	}
 }

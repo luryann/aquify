@@ -91,11 +91,8 @@ export function describeCutQualification(card: SwimmerCutQualificationCard): Cut
 }
 
 function formatMarginMs(value: number): string {
-  const totalSeconds = value / 1000
-  if (totalSeconds < 60) {
-    return `${totalSeconds.toFixed(2)}s`
-  }
-  const minutes = Math.floor(totalSeconds / 60)
-  const seconds = (totalSeconds % 60).toFixed(2).padStart(5, '0')
-  return `${minutes}:${seconds}`
+  const cs = Math.round(value / 10)
+  const minutes = Math.floor(cs / 6000)
+  const seconds = ((cs % 6000) / 100).toFixed(2)
+  return minutes === 0 ? `${seconds}s` : `${minutes}:${seconds.padStart(5, '0')}`
 }

@@ -732,7 +732,7 @@ func TestListMFAFactorsOmitsOneTimeSecrets(t *testing.T) {
 		t.Fatalf("enroll backup: %v", err)
 	}
 
-	factors := service.ListMFAFactors(LocalDevAdminUserID)
+	factors := service.ListMFAFactors(LocalDevOrgID, LocalDevAdminUserID)
 	if len(factors) != 2 {
 		t.Fatalf("expected 2 factors, got %d", len(factors))
 	}

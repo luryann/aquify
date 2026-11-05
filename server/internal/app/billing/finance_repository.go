@@ -14,11 +14,11 @@ import (
 
 // ─── Transactions & locking ──────────────────────────────────────────────────
 
-func (r *Repository) inTx(ctx context.Context, fn func(tx pgx.Tx) error) error {
+func (r *Repository) inTx(ctx context.Context, orgID string, fn func(tx pgx.Tx) error) error {
 	if r.tx != nil {
 		return fn(r.tx)
 	}
-	tx, err := r.pool.Begin(ctx)
+	tx, err := r.at(orgID).Begin(ctx)
 	if err != nil {
 		return fmt.Errorf("billing: begin tx: %w", err)
 	}
@@ -77,8 +77,8 @@ func nullableDate(value string) any {
 
 // loadRows runs a read query and passes each row to scan. Errors are wrapped
 // with what names the thing being loaded (for example "fee schedules").
-func loadRows(ctx context.Context, q dbExec, what, query string, scan func(pgx.Rows) error) error {
-	rows, err := q.Query(ctx, query)
+func loadRows(ctx context.Context, q dbExec, orgID, what, query string, scan func(pgx.Rows) error) error {
+	rows, err := q.Query(ctx, query, orgID)
 	if err != nil {
 		return fmt.Errorf("billing: load %s: %w", what, err)
 	}
@@ -91,15 +91,16 @@ func loadRows(ctx context.Context, q dbExec, what, query string, scan func(pgx.R
 	return rows.Err()
 }
 
-func (r *Repository) loadFinanceState(ctx context.Context) (*financeState, error) {
+// loadFinanceState loads the finance tables; a non-empty orgID loads only that org's rows.
+func (r *Repository) loadFinanceState(ctx context.Context, orgID string) (*financeState, error) {
 	f := newFinanceState()
-	q := r.db()
+	q := r.dbFor(orgID)
 
-	if err := loadRows(ctx, q, "fee schedules", `
+	if err := loadRows(ctx, q, orgID, "fee schedules", `
 		SELECT id::text, org_id::text, name, kind, group_code, season, frequency, amount_cents,
 		       start_date::text, COALESCE(end_date::text, ''), proration, auto_bill, active, description,
 		       created_at, updated_at, created_by, updated_by
-		FROM billing_fee_schedules`, func(rows pgx.Rows) error {
+		FROM billing_fee_schedules WHERE ($1::text = '' OR org_id = NULLIF($1::text, '')::uuid)`, func(rows pgx.Rows) error {
 		sc := &FeeSchedule{}
 		if err := rows.Scan(&sc.ID, &sc.OrgID, &sc.Name, &sc.Kind, &sc.GroupCode, &sc.Season, &sc.Frequency,
 			&sc.AmountCents, &sc.StartDate, &sc.EndDate, &sc.Proration, &sc.AutoBill, &sc.Active, &sc.Description,
@@ -112,10 +113,10 @@ func (r *Repository) loadFinanceState(ctx context.Context) (*financeState, error
 		return nil, err
 	}
 
-	if err := loadRows(ctx, q, "discount rules", `
+	if err := loadRows(ctx, q, orgID, "discount rules", `
 		SELECT id::text, org_id::text, name, applies_to, min_position, max_position, discount_type,
 		       percent_bps, amount_cents, active, created_at, updated_at, created_by, updated_by
-		FROM billing_discount_rules`, func(rows pgx.Rows) error {
+		FROM billing_discount_rules WHERE ($1::text = '' OR org_id = NULLIF($1::text, '')::uuid)`, func(rows pgx.Rows) error {
 		rule := &DiscountRule{}
 		if err := rows.Scan(&rule.ID, &rule.OrgID, &rule.Name, &rule.AppliesTo, &rule.MinPosition, &rule.MaxPosition,
 			&rule.DiscountType, &rule.PercentBps, &rule.AmountCents, &rule.Active,
@@ -128,11 +129,11 @@ func (r *Repository) loadFinanceState(ctx context.Context) (*financeState, error
 		return nil, err
 	}
 
-	if err := loadRows(ctx, q, "adjustments", `
+	if err := loadRows(ctx, q, orgID, "adjustments", `
 		SELECT id::text, org_id::text, household_id, swimmer_id, amount_cents, reason, status,
 		       COALESCE(applied_invoice_id::text, ''), COALESCE(applied_run_id::text, ''),
 		       created_at, updated_at, created_by, updated_by
-		FROM billing_adjustments`, func(rows pgx.Rows) error {
+		FROM billing_adjustments WHERE ($1::text = '' OR org_id = NULLIF($1::text, '')::uuid)`, func(rows pgx.Rows) error {
 		a := &Adjustment{}
 		if err := rows.Scan(&a.ID, &a.OrgID, &a.HouseholdID, &a.SwimmerID, &a.AmountCents, &a.Reason, &a.Status,
 			&a.AppliedInvoiceID, &a.AppliedRunID, &a.CreatedAt, &a.UpdatedAt, &a.CreatedBy, &a.UpdatedBy); err != nil {
@@ -144,11 +145,11 @@ func (r *Repository) loadFinanceState(ctx context.Context) (*financeState, error
 		return nil, err
 	}
 
-	if err := loadRows(ctx, q, "runs", `
+	if err := loadRows(ctx, q, orgID, "runs", `
 		SELECT id::text, org_id::text, as_of::text, invoice_status, COALESCE(due_date::text, ''), schedule_ids,
 		       trigger, fingerprint, household_count, invoice_count, charge_count, skipped_count,
 		       gross_cents, discount_cents, adjustment_cents, credit_applied_cents, net_cents, created_at, created_by
-		FROM billing_runs`, func(rows pgx.Rows) error {
+		FROM billing_runs WHERE ($1::text = '' OR org_id = NULLIF($1::text, '')::uuid)`, func(rows pgx.Rows) error {
 		run := &BillingRun{}
 		if err := rows.Scan(&run.ID, &run.OrgID, &run.AsOf, &run.InvoiceStatus, &run.DueDate, &run.ScheduleIDs,
 			&run.Trigger, &run.Fingerprint, &run.HouseholdCount, &run.InvoiceCount, &run.ChargeCount, &run.SkippedCount,
@@ -162,11 +163,11 @@ func (r *Repository) loadFinanceState(ctx context.Context) (*financeState, error
 		return nil, err
 	}
 
-	if err := loadRows(ctx, q, "charges", `
+	if err := loadRows(ctx, q, orgID, "charges", `
 		SELECT id::text, org_id::text, run_id::text, invoice_id::text, household_id, swimmer_id, schedule_id::text,
 		       period_key, period_start::text, period_end::text, gross_cents, discount_cents, net_cents,
 		       sibling_position, released_at, created_at
-		FROM billing_charges ORDER BY created_at, id`, func(rows pgx.Rows) error {
+		FROM billing_charges WHERE ($1::text = '' OR org_id = NULLIF($1::text, '')::uuid) ORDER BY created_at, id`, func(rows pgx.Rows) error {
 		c := &BillingCharge{}
 		if err := rows.Scan(&c.ID, &c.OrgID, &c.RunID, &c.InvoiceID, &c.HouseholdID, &c.SwimmerID, &c.ScheduleID,
 			&c.PeriodKey, &c.PeriodStart, &c.PeriodEnd, &c.GrossCents, &c.DiscountCents, &c.NetCents,
@@ -179,11 +180,11 @@ func (r *Repository) loadFinanceState(ctx context.Context) (*financeState, error
 		return nil, err
 	}
 
-	if err := loadRows(ctx, q, "credit entries", `
+	if err := loadRows(ctx, q, orgID, "credit entries", `
 		SELECT id::text, org_id::text, household_id, amount_cents, kind, COALESCE(invoice_id::text, ''),
 		       COALESCE(payment_id::text, ''), COALESCE(refund_id::text, ''), reason, stripe_ref, balance_after_cents,
 		       created_at, created_by
-		FROM household_credit_entries ORDER BY created_at, id`, func(rows pgx.Rows) error {
+		FROM household_credit_entries WHERE ($1::text = '' OR org_id = NULLIF($1::text, '')::uuid) ORDER BY created_at, id`, func(rows pgx.Rows) error {
 		e := &CreditEntry{}
 		if err := rows.Scan(&e.ID, &e.OrgID, &e.HouseholdID, &e.AmountCents, &e.Kind, &e.InvoiceID, &e.PaymentID,
 			&e.RefundID, &e.Reason, &e.StripeRef, &e.BalanceAfterCents, &e.CreatedAt, &e.CreatedBy); err != nil {
@@ -195,7 +196,7 @@ func (r *Repository) loadFinanceState(ctx context.Context) (*financeState, error
 		return nil, err
 	}
 
-	if err := loadRows(ctx, q, "credit balances", `SELECT org_id::text, household_id, balance_cents FROM household_credit_balances`, func(rows pgx.Rows) error {
+	if err := loadRows(ctx, q, orgID, "credit balances", `SELECT org_id::text, household_id, balance_cents FROM household_credit_balances WHERE ($1::text = '' OR org_id = NULLIF($1::text, '')::uuid)`, func(rows pgx.Rows) error {
 		var orgID, householdID string
 		var balance int
 		if err := rows.Scan(&orgID, &householdID, &balance); err != nil {
@@ -207,12 +208,12 @@ func (r *Repository) loadFinanceState(ctx context.Context) (*financeState, error
 		return nil, err
 	}
 
-	if err := loadRows(ctx, q, "settings", `
+	if err := loadRows(ctx, q, orgID, "settings", `
 		SELECT org_id::text, late_fee_enabled, late_fee_grace_days, late_fee_type, late_fee_flat_cents,
 		       late_fee_percent_bps, late_fee_max_cents, auto_run_enabled, auto_run_day,
 		       auto_run_invoice_status, auto_run_due_days, meet_fee_per_event_cents, meet_fee_flat_cents,
 		       meet_fee_invoice_status, meet_fee_due_days, updated_at, updated_by
-		FROM billing_settings`, func(rows pgx.Rows) error {
+		FROM billing_settings WHERE ($1::text = '' OR org_id = NULLIF($1::text, '')::uuid)`, func(rows pgx.Rows) error {
 		st := &BillingSettings{}
 		if err := rows.Scan(&st.OrgID, &st.LateFeeEnabled, &st.LateFeeGraceDays, &st.LateFeeType, &st.LateFeeFlatCents,
 			&st.LateFeePercentBps, &st.LateFeeMaxCents, &st.AutoRunEnabled, &st.AutoRunDay,
@@ -226,9 +227,9 @@ func (r *Repository) loadFinanceState(ctx context.Context) (*financeState, error
 		return nil, err
 	}
 
-	if err := loadRows(ctx, q, "late fees", `
+	if err := loadRows(ctx, q, orgID, "late fees", `
 		SELECT id::text, org_id::text, invoice_id::text, item_id::text, amount_cents, applied_at
-		FROM billing_late_fee_applications`, func(rows pgx.Rows) error {
+		FROM billing_late_fee_applications WHERE ($1::text = '' OR org_id = NULLIF($1::text, '')::uuid)`, func(rows pgx.Rows) error {
 		app := &LateFeeApplication{}
 		if err := rows.Scan(&app.ID, &app.OrgID, &app.InvoiceID, &app.ItemID, &app.AmountCents, &app.AppliedAt); err != nil {
 			return err
@@ -242,7 +243,7 @@ func (r *Repository) loadFinanceState(ctx context.Context) (*financeState, error
 }
 
 func (r *Repository) upsertFeeSchedule(ctx context.Context, sc *FeeSchedule) error {
-	_, err := r.db().Exec(ctx, `
+	_, err := r.dbFor(sc.OrgID).Exec(ctx, `
 		INSERT INTO billing_fee_schedules (id, org_id, name, kind, group_code, season, frequency, amount_cents,
 		       start_date, end_date, proration, auto_bill, active, description, created_at, updated_at, created_by, updated_by)
 		VALUES ($1::uuid, $2::uuid, $3, $4, $5, $6, $7, $8, $9::date, $10::date, $11, $12, $13, $14, $15, $16, $17, $18)
@@ -259,7 +260,7 @@ func (r *Repository) upsertFeeSchedule(ctx context.Context, sc *FeeSchedule) err
 }
 
 func (r *Repository) upsertDiscountRule(ctx context.Context, rule *DiscountRule) error {
-	_, err := r.db().Exec(ctx, `
+	_, err := r.dbFor(rule.OrgID).Exec(ctx, `
 		INSERT INTO billing_discount_rules (id, org_id, name, applies_to, min_position, max_position, discount_type,
 		       percent_bps, amount_cents, active, created_at, updated_at, created_by, updated_by)
 		VALUES ($1::uuid, $2::uuid, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
@@ -293,8 +294,8 @@ func claimAdjustment(ctx context.Context, q dbExec, a *Adjustment) (bool, error)
 	tag, err := q.Exec(ctx, `
 		UPDATE billing_adjustments
 		SET status = 'applied', applied_invoice_id = $2::uuid, applied_run_id = $3::uuid, updated_at = $4, updated_by = $5
-		WHERE id = $1::uuid AND status = 'pending'`,
-		a.ID, a.AppliedInvoiceID, a.AppliedRunID, a.UpdatedAt, a.UpdatedBy)
+		WHERE id = $1::uuid AND org_id = $6::uuid AND status = 'pending'`,
+		a.ID, a.AppliedInvoiceID, a.AppliedRunID, a.UpdatedAt, a.UpdatedBy, a.OrgID)
 	if err != nil {
 		return false, err
 	}
@@ -302,7 +303,7 @@ func claimAdjustment(ctx context.Context, q dbExec, a *Adjustment) (bool, error)
 }
 
 func (r *Repository) upsertSettings(ctx context.Context, st *BillingSettings) error {
-	_, err := r.db().Exec(ctx, `
+	_, err := r.dbFor(st.OrgID).Exec(ctx, `
 		INSERT INTO billing_settings (org_id, late_fee_enabled, late_fee_grace_days, late_fee_type, late_fee_flat_cents,
 		       late_fee_percent_bps, late_fee_max_cents, auto_run_enabled, auto_run_day, auto_run_invoice_status,
 		       auto_run_due_days, meet_fee_per_event_cents, meet_fee_flat_cents, meet_fee_invoice_status,
@@ -381,7 +382,9 @@ func reopenAdjustments(ctx context.Context, q dbExec, invoiceID string, at time.
 
 // adjustCreditBalance atomically moves the household balance by delta and
 // returns the new balance. The table's CHECK keeps the balance non-negative,
-// so a concurrent over-spend fails with ErrInsufficientCredit.
+// so a concurrent over-spend fails with ErrInsufficientCredit. Debits are
+// guarded in the WHERE clause so a lost race returns no row instead of raising
+// a CHECK violation that would abort the surrounding transaction.
 func adjustCreditBalance(ctx context.Context, q dbExec, orgID, householdID string, delta int, at time.Time) (int, error) {
 	var balance int
 	if delta < 0 {
@@ -389,7 +392,7 @@ func adjustCreditBalance(ctx context.Context, q dbExec, orgID, householdID strin
 		// CONFLICT is considered, so debits are a plain conditional UPDATE.
 		err := q.QueryRow(ctx, `
 			UPDATE household_credit_balances SET balance_cents = balance_cents + $3, updated_at = $4
-			WHERE org_id = $1::uuid AND household_id = $2
+			WHERE org_id = $1::uuid AND household_id = $2 AND balance_cents + $3 >= 0
 			RETURNING balance_cents`, orgID, householdID, delta, at).Scan(&balance)
 		if errors.Is(err, pgx.ErrNoRows) || isCheckViolation(err) {
 			return 0, ErrInsufficientCredit

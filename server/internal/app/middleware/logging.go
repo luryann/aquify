@@ -1,9 +1,11 @@
 package middleware
 
 import (
+	"context"
 	"log/slog"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -23,6 +25,10 @@ func StructuredLogger(logger *slog.Logger) func(http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			startedAt := time.Now()
 			writer := chimiddleware.NewWrapResponseWriter(w, r.ProtoMajor)
+			// Auth runs on a derived request, so it reports the principal back
+			// through this holder for the access log.
+			holder := &loggedPrincipal{}
+			r = r.WithContext(context.WithValue(r.Context(), loggedPrincipalKey{}, holder))
 
 			next.ServeHTTP(writer, r)
 
@@ -39,11 +45,10 @@ func StructuredLogger(logger *slog.Logger) func(http.Handler) http.Handler {
 			}
 
 			// Enrich with authenticated principal fields when available.
-			if p, ok := PrincipalFromContext(r.Context()); ok {
-				attrs = append(attrs,
-					"user_id", p.UserID,
-					"org_id", p.OrgID,
-				)
+			if userID, orgID := holder.get(); userID != "" || orgID != "" {
+				attrs = append(attrs, "user_id", userID, "org_id", orgID)
+			} else if p, ok := PrincipalFromContext(r.Context()); ok {
+				attrs = append(attrs, "user_id", p.UserID, "org_id", p.OrgID)
 			}
 
 			// Attach the active trace ID so log lines can be correlated with
@@ -70,4 +75,30 @@ func loggedPath(r *http.Request) string {
 		}
 	}
 	return r.URL.Path
+}
+
+type loggedPrincipalKey struct{}
+
+// loggedPrincipal is filled by Auth so the outer access logger can attribute
+// the request to a user and club.
+type loggedPrincipal struct {
+	mu            sync.Mutex
+	userID, orgID string
+}
+
+func (h *loggedPrincipal) get() (string, string) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return h.userID, h.orgID
+}
+
+func recordLoggedPrincipal(ctx context.Context, p *Principal) {
+	if p == nil {
+		return
+	}
+	if h, ok := ctx.Value(loggedPrincipalKey{}).(*loggedPrincipal); ok {
+		h.mu.Lock()
+		h.userID, h.orgID = p.UserID, p.OrgID
+		h.mu.Unlock()
+	}
 }

@@ -8,7 +8,7 @@ import { EmptyState } from '@/components/ui/EmptyState'
 import { useSession } from '@/lib/session'
 import { useApiClient } from '@/lib/api'
 import { fetchHouseholds, fetchInvoicesForHousehold, createInvoice, type InvoiceRecord, type HouseholdRecord } from '@/lib/adminData'
-import { formatDateOnly, parseBackendDate } from '@/lib/dates'
+import { formatDateOnly, localToday } from '@/lib/dates'
 import { uiErrorMessage } from '@/lib/frontend-telemetry'
 import { Modal } from '@/components/ui/Modal'
 import { formatCents } from '@/lib/financeData'
@@ -43,8 +43,8 @@ const STATUS_CFG: Record<InvoiceStatus, { label: string; color: string; bg: stri
 
 function isOverdue(invoice: InvoiceRow) {
   if (!invoice.dueDate) return false
-  if (['paid', 'refunded_full', 'voided', 'written_off'].includes(invoice.status)) return false
-  return parseBackendDate(invoice.dueDate) < new Date()
+  if (!['issued', 'partially_paid'].includes(invoice.status)) return false
+  return invoice.dueDate.slice(0, 10) < localToday()
 }
 
 const COLUMNS: Column<InvoiceRow>[] = [

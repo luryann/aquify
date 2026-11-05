@@ -6,12 +6,12 @@ import (
 	"strings"
 	"time"
 
+	"github.com/go-chi/chi/v5"
 	"github.com/luryann/aquify/server/internal/app/httpx"
 	"github.com/luryann/aquify/server/internal/app/members"
 	appmiddleware "github.com/luryann/aquify/server/internal/app/middleware"
 	"github.com/luryann/aquify/server/internal/app/seasons"
 	"github.com/luryann/aquify/server/internal/app/training"
-	"github.com/go-chi/chi/v5"
 )
 
 // Structured workouts, season periodization and training analytics.

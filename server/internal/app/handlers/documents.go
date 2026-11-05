@@ -2,6 +2,9 @@ package handlers
 
 import (
 	"bytes"
+	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -13,13 +16,13 @@ import (
 	"time"
 	"unicode"
 
+	"github.com/go-chi/chi/v5"
+	"github.com/go-playground/validator/v10"
 	"github.com/luryann/aquify/server/internal/app/audit"
 	"github.com/luryann/aquify/server/internal/app/documents"
 	"github.com/luryann/aquify/server/internal/app/httpx"
 	appmiddleware "github.com/luryann/aquify/server/internal/app/middleware"
 	"github.com/luryann/aquify/server/internal/storage"
-	"github.com/go-chi/chi/v5"
-	"github.com/go-playground/validator/v10"
 )
 
 // DocumentHandlers handles document types and document submission endpoints.
@@ -448,14 +451,51 @@ func documentObjectKey(orgID, submissionID, fileName string) string {
 	return fmt.Sprintf("documents/%s/%s/%s-%s", orgID, submissionID, stamp, fileName)
 }
 
+// sealUploadedObject copies a just-validated upload to a server-chosen key next
+// to it and deletes the original. The presigned PUT URL stays valid for its TTL
+// and is not size-constrained, so without this the uploader could keep
+// overwriting the object after attach (bypassing the size cap, the quota
+// accounting and any admin verification). The returned key is never handed to a
+// client, so the bytes behind it are exactly the ones measured here.
+func sealUploadedObject(ctx context.Context, store storage.ObjectStorage, srcKey, prefix, fileName, mime string, maxBytes int64) (string, int64, error) {
+	data, _, err := store.GetObject(ctx, srcKey)
+	if err != nil {
+		return "", 0, err
+	}
+	if int64(len(data)) > maxBytes {
+		_ = store.Delete(srcKey)
+		return "", int64(len(data)), errUploadTooLarge
+	}
+	var nonce [16]byte
+	if _, err := rand.Read(nonce[:]); err != nil {
+		return "", 0, err
+	}
+	sealedKey := prefix + "sealed/" + hex.EncodeToString(nonce[:]) + "-" + fileName
+	if err := store.PutObject(ctx, sealedKey, mime, data); err != nil {
+		return "", 0, err
+	}
+	if err := store.Delete(srcKey); err != nil {
+		slog.Error("uploads: failed to delete unsealed upload", "object_key", srcKey, "err", err)
+	}
+	return sealedKey, int64(len(data)), nil
+}
+
+var errUploadTooLarge = errors.New("uploaded object exceeds the size limit")
+
 func validateDocumentObjectKey(orgID, submissionID, objectKey string) error {
 	prefix := fmt.Sprintf("documents/%s/%s/", strings.TrimSpace(orgID), strings.TrimSpace(submissionID))
+	return validateObjectKeyUnderPrefix(prefix, objectKey)
+}
+
+// validateObjectKeyUnderPrefix proves objectKey names a file strictly inside the
+// org-scoped prefix. A prefix match alone is not containment: ".." segments (or
+// backslash / control-character tricks) could resolve to another tenant's object
+// (tenancy tracker item 4.6), so every upload-attach path shares this check.
+func validateObjectKeyUnderPrefix(prefix, objectKey string) error {
 	objectKey = strings.TrimSpace(objectKey)
 	if !strings.HasPrefix(objectKey, prefix) {
-		return fmt.Errorf("object key %q does not belong to this submission", objectKey)
+		return fmt.Errorf("object key %q does not belong to this resource", objectKey)
 	}
-	// A prefix match alone is not containment: ".." segments (or backslash /
-	// control-character tricks) could resolve to another submission's object.
 	if strings.ContainsAny(objectKey, "\\\x00") {
 		return fmt.Errorf("object key %q contains forbidden characters", objectKey)
 	}
@@ -597,14 +637,43 @@ func (h *DocumentHandlers) attachFile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	sealedKey, sealedSize, err := sealUploadedObject(r.Context(), h.store, body.FileObjectKey,
+		fmt.Sprintf("documents/%s/%s/", strings.TrimSpace(orgID), strings.TrimSpace(submissionID)), fileName, declaredMIME, maxDocumentUploadBytes)
+	if errors.Is(err, errUploadTooLarge) {
+		httpx.WriteError(w, r, http.StatusUnprocessableEntity, "file_too_large", "Uploaded file exceeds the maximum allowed size.", nil)
+		return
+	} else if err != nil {
+		writeStorageError(w, r, err, "Failed to store uploaded file.")
+		return
+	}
+	body.FileObjectKey = sealedKey
+	actualSize = sealedSize
+
+	oldObjectKey := ""
+	if prev, gerr := h.service.GetSubmission(orgID, submissionID); gerr == nil && prev != nil {
+		oldObjectKey = prev.FileObjectKey
+	}
 	sub, err := h.service.AttachFile(orgID, submissionID, body.FileObjectKey, fileName, declaredMIME, actualSize, principal.UserID)
 	if err != nil {
+		_ = h.store.Delete(sealedKey)
 		if errors.Is(err, documents.ErrInvalidTransition) {
 			httpx.WriteError(w, r, http.StatusConflict, "invalid_transition", "Cannot attach file to a submission in its current state.", nil)
 			return
 		}
+		if errors.Is(err, documents.ErrStorageQuotaExceeded) {
+			httpx.WriteError(w, r, http.StatusRequestEntityTooLarge, "storage_quota_exceeded", "Your club’s document storage is full. Delete files you no longer need or ask the platform to raise the limit.", nil)
+			return
+		}
 		httpx.WriteError(w, r, http.StatusInternalServerError, "internal_error", "Failed to attach file.", err)
 		return
+	}
+
+	// A re-attach after rejection replaces the key; drop the superseded object
+	// so it is not orphaned (invisible to quota and erasure).
+	if oldObjectKey != "" && oldObjectKey != body.FileObjectKey {
+		if delErr := h.store.Delete(oldObjectKey); delErr != nil {
+			slog.Error("documents: failed to delete superseded upload", "object_key", oldObjectKey, "err", delErr)
+		}
 	}
 
 	recordAudit(h.auditService, principal, orgID, "document.submit", "document_submission", sub.ID, nil, sub, nil)

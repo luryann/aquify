@@ -8,12 +8,12 @@ import (
 	"strings"
 	"time"
 
+	"github.com/go-chi/chi/v5"
+	"github.com/go-playground/validator/v10"
 	"github.com/luryann/aquify/server/internal/app/httpx"
 	appmiddleware "github.com/luryann/aquify/server/internal/app/middleware"
 	"github.com/luryann/aquify/server/internal/app/roster"
 	"github.com/luryann/aquify/server/internal/app/wellness"
-	"github.com/go-chi/chi/v5"
-	"github.com/go-playground/validator/v10"
 )
 
 // WellnessHandlers serves daily readiness check-ins and coach views.
@@ -110,7 +110,7 @@ type wellnessCheckInBody struct {
 	Energy       int     `json:"energy" validate:"required,gte=1,lte=5"`
 	Stress       int     `json:"stress" validate:"required,gte=1,lte=5"`
 	Mood         int     `json:"mood" validate:"required,gte=1,lte=5"`
-	Note         string  `json:"note" validate:"max=2000"`
+	Note         string  `json:"note" validate:"max=500"`
 }
 
 func (h *WellnessHandlers) upsertCheckIn(w http.ResponseWriter, r *http.Request) {

@@ -9,11 +9,22 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/luryann/aquify/server/internal/tenantdb"
 )
 
 // Repository handles DB persistence for the meets domain.
 type Repository struct {
 	pool *pgxpool.Pool
+}
+
+// at binds orgID to every statement so row-level security on the meets tables applies.
+// An empty org sees nothing.
+func (r *Repository) at(orgID string) tenantdb.Scoped { return tenantdb.Pool{P: r.pool}.For(orgID) }
+
+// OrgIDs lists every registered club (the registry is not tenant data) so an all-club
+// load can read each club under its own binding.
+func (r *Repository) OrgIDs(ctx context.Context) ([]string, error) {
+	return dbutil.ListOrgIDs(ctx, r.pool)
 }
 
 func newRepository(pool *pgxpool.Pool) *Repository {
@@ -27,7 +38,7 @@ type execer interface {
 // ─── Meets ────────────────────────────────────────────────────────────────────
 
 func (r *Repository) UpsertMeet(ctx context.Context, m Meet) error {
-	return upsertMeet(ctx, r.pool, m)
+	return upsertMeet(ctx, r.at(m.OrgID), m)
 }
 
 func upsertMeet(ctx context.Context, db execer, m Meet) error {
@@ -76,8 +87,8 @@ func upsertMeet(ctx context.Context, db execer, m Meet) error {
 	return err
 }
 
-func (r *Repository) LoadMeets(ctx context.Context) ([]Meet, error) {
-	rows, err := r.pool.Query(ctx, `
+func (r *Repository) LoadMeets(ctx context.Context, orgID string) ([]Meet, error) {
+	rows, err := r.at(orgID).Query(ctx, `
 		SELECT id::text, org_id::text, name, meet_type, course,
 		       COALESCE(start_date::text, ''), COALESCE(end_date::text, ''),
 		       COALESCE(entry_deadline::text, ''), COALESCE(commitment_deadline::text, ''),
@@ -86,7 +97,8 @@ func (r *Repository) LoadMeets(ctx context.Context) ([]Meet, error) {
 		       status, commitment_open_at, commitment_closed_at, entry_finalized_at,
 		       created_at, updated_at,
 		       COALESCE(created_by::text, ''), COALESCE(updated_by::text, '')
-		FROM meets WHERE deleted_at IS NULL`)
+		FROM meets WHERE deleted_at IS NULL
+		AND ($1::text = '' OR org_id = NULLIF($1::text, '')::uuid)`, orgID)
 	if err != nil {
 		return nil, fmt.Errorf("meets: load meets: %w", err)
 	}
@@ -109,7 +121,7 @@ func (r *Repository) LoadMeets(ctx context.Context) ([]Meet, error) {
 // ─── Meet Sessions ────────────────────────────────────────────────────────────
 
 func (r *Repository) UpsertMeetSession(ctx context.Context, s MeetSession) error {
-	return upsertMeetSession(ctx, r.pool, s)
+	return upsertMeetSession(ctx, r.at(s.OrgID), s)
 }
 
 func upsertMeetSession(ctx context.Context, db execer, s MeetSession) error {
@@ -139,14 +151,15 @@ func upsertMeetSession(ctx context.Context, db execer, s MeetSession) error {
 	return err
 }
 
-func (r *Repository) LoadMeetSessions(ctx context.Context) ([]MeetSession, error) {
-	rows, err := r.pool.Query(ctx, `
+func (r *Repository) LoadMeetSessions(ctx context.Context, orgID string) ([]MeetSession, error) {
+	rows, err := r.at(orgID).Query(ctx, `
 		SELECT id::text, org_id::text, meet_id::text, session_number,
 		       name, COALESCE(session_date::text, ''), COALESCE(warm_up_time::text, ''), COALESCE(start_time::text, ''),
 		       COALESCE(notes, ''), created_at, updated_at,
 		       COALESCE(created_by::text, ''), COALESCE(updated_by::text, '')
 		FROM meet_sessions
-		WHERE deleted_at IS NULL`)
+		WHERE deleted_at IS NULL
+		AND ($1::text = '' OR org_id = NULLIF($1::text, '')::uuid)`, orgID)
 	if err != nil {
 		return nil, fmt.Errorf("meets: load meet_sessions: %w", err)
 	}
@@ -165,7 +178,7 @@ func (r *Repository) LoadMeetSessions(ctx context.Context) ([]MeetSession, error
 // ─── Meet Events ──────────────────────────────────────────────────────────────
 
 func (r *Repository) UpsertMeetEvent(ctx context.Context, e MeetEvent) error {
-	return upsertMeetEvent(ctx, r.pool, e)
+	return upsertMeetEvent(ctx, r.at(e.OrgID), e)
 }
 
 func upsertMeetEvent(ctx context.Context, db execer, e MeetEvent) error {
@@ -202,15 +215,16 @@ func upsertMeetEvent(ctx context.Context, db execer, e MeetEvent) error {
 	return err
 }
 
-func (r *Repository) LoadMeetEvents(ctx context.Context) ([]MeetEvent, error) {
-	rows, err := r.pool.Query(ctx, `
+func (r *Repository) LoadMeetEvents(ctx context.Context, orgID string) ([]MeetEvent, error) {
+	rows, err := r.at(orgID).Query(ctx, `
 		SELECT id::text, org_id::text, meet_id::text,
 		       COALESCE(session_id::text, ''), event_number, distance, stroke,
 		       COALESCE(gender, ''), COALESCE(course, ''), min_age, max_age,
 		       entry_fee_cents, is_relay, created_at, updated_at,
 		       COALESCE(created_by::text, ''), COALESCE(updated_by::text, '')
 		FROM meet_events
-		WHERE deleted_at IS NULL`)
+		WHERE deleted_at IS NULL
+		AND ($1::text = '' OR org_id = NULLIF($1::text, '')::uuid)`, orgID)
 	if err != nil {
 		return nil, fmt.Errorf("meets: load meet_events: %w", err)
 	}
@@ -227,7 +241,7 @@ func (r *Repository) LoadMeetEvents(ctx context.Context) ([]MeetEvent, error) {
 }
 
 func (r *Repository) CreateMeetBundle(ctx context.Context, meet Meet, sessions []MeetSession, events []MeetEvent) error {
-	tx, err := r.pool.BeginTx(ctx, pgx.TxOptions{})
+	tx, err := r.at(meet.OrgID).Begin(ctx)
 	if err != nil {
 		return fmt.Errorf("begin meet bundle transaction: %w", err)
 	}
@@ -257,27 +271,32 @@ func (r *Repository) CreateMeetBundle(ctx context.Context, meet Meet, sessions [
 // ─── Commitments ──────────────────────────────────────────────────────────────
 
 func (r *Repository) UpsertCommitment(ctx context.Context, c Commitment) error {
-	_, err := r.pool.Exec(ctx, `
-		INSERT INTO commitments (id, org_id, meet_id, household_id, swimmer_id, status, notes, committed_at, created_at, updated_at)
-		VALUES ($1::uuid, $2::uuid, $3::uuid, $4::uuid, $5::uuid, $6, $7, $8, $9, $10)
+	_, err := r.at(c.OrgID).Exec(ctx, `
+		INSERT INTO commitments (id, org_id, meet_id, household_id, swimmer_id, status, notes, committed_at,
+		                         coach_reviewed_at, locked_at, created_at, updated_at, created_by, updated_by)
+		VALUES ($1::uuid, $2::uuid, $3::uuid, $4::uuid, $5::uuid, $6, $7, $8, $9, $10, $11, $12, $13::uuid, $14::uuid)
 		ON CONFLICT (id) DO UPDATE SET
-		  status       = EXCLUDED.status,
-		  notes        = EXCLUDED.notes,
-		  committed_at = EXCLUDED.committed_at,
-		  updated_at   = EXCLUDED.updated_at`,
+		  status            = EXCLUDED.status,
+		  notes             = EXCLUDED.notes,
+		  committed_at      = EXCLUDED.committed_at,
+		  coach_reviewed_at = EXCLUDED.coach_reviewed_at,
+		  locked_at         = EXCLUDED.locked_at,
+		  updated_at        = EXCLUDED.updated_at,
+		  updated_by        = EXCLUDED.updated_by`,
 		c.ID, c.OrgID, c.MeetID, c.HouseholdID, c.SwimmerID,
-		c.Status, c.Notes, c.CommittedAt,
+		c.Status, c.Notes, c.CommittedAt, c.CoachReviewedAt, c.LockedAt,
 		c.CreatedAt, c.UpdatedAt,
+		dbutil.NullableString(c.CreatedBy), dbutil.NullableString(c.UpdatedBy),
 	)
 	return err
 }
 
-func (r *Repository) LoadCommitments(ctx context.Context) ([]Commitment, error) {
-	rows, err := r.pool.Query(ctx, `
+func (r *Repository) LoadCommitments(ctx context.Context, orgID string) ([]Commitment, error) {
+	rows, err := r.at(orgID).Query(ctx, `
 		SELECT id::text, org_id::text, meet_id::text, household_id::text, swimmer_id::text,
-		       status, COALESCE(notes, ''), committed_at,
-		       created_at, updated_at
-		FROM commitments`)
+		       status, COALESCE(notes, ''), committed_at, coach_reviewed_at, locked_at,
+		       created_at, updated_at, COALESCE(created_by::text, ''), COALESCE(updated_by::text, '')
+		FROM commitments WHERE ($1::text = '' OR org_id = NULLIF($1::text, '')::uuid)`, orgID)
 	if err != nil {
 		return nil, fmt.Errorf("meets: load commitments: %w", err)
 	}
@@ -285,8 +304,8 @@ func (r *Repository) LoadCommitments(ctx context.Context) ([]Commitment, error) 
 		var c Commitment
 		err := rows.Scan(
 			&c.ID, &c.OrgID, &c.MeetID, &c.HouseholdID, &c.SwimmerID,
-			&c.Status, &c.Notes, &c.CommittedAt,
-			&c.CreatedAt, &c.UpdatedAt,
+			&c.Status, &c.Notes, &c.CommittedAt, &c.CoachReviewedAt, &c.LockedAt,
+			&c.CreatedAt, &c.UpdatedAt, &c.CreatedBy, &c.UpdatedBy,
 		)
 		return c, err
 	})
@@ -299,7 +318,7 @@ func (r *Repository) UpsertEventSelection(ctx context.Context, sel EventSelectio
 	if sel.SeedTimeMs != nil {
 		seedTime = *sel.SeedTimeMs
 	}
-	_, err := r.pool.Exec(ctx, `
+	_, err := r.at(sel.OrgID).Exec(ctx, `
 		INSERT INTO commitment_event_selections (id, org_id, commitment_id, meet_event_id, seed_time_ms, created_at, created_by)
 		VALUES ($1::uuid, $2::uuid, $3::uuid, $4::uuid, $5, $6, $7::uuid)
 		ON CONFLICT (id) DO UPDATE SET
@@ -309,15 +328,15 @@ func (r *Repository) UpsertEventSelection(ctx context.Context, sel EventSelectio
 	return err
 }
 
-func (r *Repository) DeleteEventSelection(ctx context.Context, id string) error {
-	_, err := r.pool.Exec(ctx, `DELETE FROM commitment_event_selections WHERE id = $1::uuid`, id)
+func (r *Repository) DeleteEventSelection(ctx context.Context, orgID, id string) error {
+	_, err := r.at(orgID).Exec(ctx, `DELETE FROM commitment_event_selections WHERE id = $1::uuid AND org_id = $2::uuid`, id, orgID)
 	return err
 }
 
-func (r *Repository) LoadEventSelections(ctx context.Context) ([]EventSelection, error) {
-	rows, err := r.pool.Query(ctx, `
+func (r *Repository) LoadEventSelections(ctx context.Context, orgID string) ([]EventSelection, error) {
+	rows, err := r.at(orgID).Query(ctx, `
 		SELECT id::text, org_id::text, commitment_id::text, meet_event_id::text, seed_time_ms, created_at, COALESCE(created_by::text, '')
-		FROM commitment_event_selections`)
+		FROM commitment_event_selections WHERE ($1::text = '' OR org_id = NULLIF($1::text, '')::uuid)`, orgID)
 	if err != nil {
 		return nil, fmt.Errorf("meets: load event selections: %w", err)
 	}
@@ -335,7 +354,9 @@ func (r *Repository) LoadEventSelections(ctx context.Context) ([]EventSelection,
 // ─── Entries ──────────────────────────────────────────────────────────────────
 
 func (r *Repository) UpsertEntry(ctx context.Context, e Entry) error {
-	return upsertEntry(ctx, r.pool, e)
+	// Bound to the entry's org: the sub-selects below read users, which row-level security
+	// hides from an unbound session (the actor columns would silently become NULL).
+	return upsertEntry(ctx, tenantdb.Pool{P: r.pool}.For(e.OrgID), e)
 }
 
 func upsertEntry(ctx context.Context, db execer, e Entry) error {
@@ -385,8 +406,8 @@ func upsertEntry(ctx context.Context, db execer, e Entry) error {
 	return err
 }
 
-func (r *Repository) LoadEntries(ctx context.Context) ([]Entry, error) {
-	rows, err := r.pool.Query(ctx, `
+func (r *Repository) LoadEntries(ctx context.Context, orgID string) ([]Entry, error) {
+	rows, err := r.at(orgID).Query(ctx, `
 		SELECT id::text, org_id::text, meet_id::text, swimmer_id::text, meet_event_id::text,
 		       status, seed_time_ms, COALESCE(notes, ''),
 		       COALESCE(commitment_id::text, ''), is_relay,
@@ -394,7 +415,7 @@ func (r *Repository) LoadEntries(ctx context.Context) ([]Entry, error) {
 		       COALESCE(created_by::text, ''), COALESCE(updated_by::text, ''),
 		       COALESCE(scratch_reason, ''),
 		       created_at, updated_at
-		FROM entries`)
+		FROM entries WHERE ($1::text = '' OR org_id = NULLIF($1::text, '')::uuid)`, orgID)
 	if err != nil {
 		return nil, fmt.Errorf("meets: load entries: %w", err)
 	}
@@ -418,7 +439,9 @@ func (r *Repository) LoadEntries(ctx context.Context) ([]Entry, error) {
 
 // ─── Batch load ───────────────────────────────────────────────────────────────
 
-func (r *Repository) LoadAll(ctx context.Context) (
+// LoadAll loads one club (orgID set) or, with an empty orgID, every club one at a time
+// under that club's own binding (an unbound read would see nothing under RLS).
+func (r *Repository) LoadAll(ctx context.Context, orgID string) (
 	meets []Meet,
 	sessions []MeetSession,
 	events []MeetEvent,
@@ -429,36 +452,73 @@ func (r *Repository) LoadAll(ctx context.Context) (
 	selections []EventSelection,
 	err error,
 ) {
-	if meets, err = r.LoadMeets(ctx); err != nil {
+	if orgID != "" {
+		return r.loadOrg(ctx, orgID)
+	}
+	orgs, err := r.OrgIDs(ctx)
+	if err != nil {
 		return
 	}
-	if sessions, err = r.LoadMeetSessions(ctx); err != nil {
-		return
+	for _, o := range orgs {
+		m, se, ev, co, en, sw, hh, sel, lerr := r.loadOrg(ctx, o)
+		if lerr != nil {
+			err = lerr
+			return
+		}
+		meets = append(meets, m...)
+		sessions = append(sessions, se...)
+		events = append(events, ev...)
+		commitments = append(commitments, co...)
+		entries = append(entries, en...)
+		swimmers = append(swimmers, sw...)
+		households = append(households, hh...)
+		selections = append(selections, sel...)
 	}
-	if events, err = r.LoadMeetEvents(ctx); err != nil {
-		return
-	}
-	if commitments, err = r.LoadCommitments(ctx); err != nil {
-		return
-	}
-	if entries, err = r.LoadEntries(ctx); err != nil {
-		return
-	}
-	if swimmers, err = r.LoadSwimmerRefs(ctx); err != nil {
-		return
-	}
-	if households, err = r.LoadHouseholdRefs(ctx); err != nil {
-		return
-	}
-	selections, err = r.LoadEventSelections(ctx)
 	return
 }
 
-func (r *Repository) LoadSwimmerRefs(ctx context.Context) ([]swimmerRef, error) {
-	rows, err := r.pool.Query(ctx, `
+func (r *Repository) loadOrg(ctx context.Context, orgID string) (
+	meets []Meet,
+	sessions []MeetSession,
+	events []MeetEvent,
+	commitments []Commitment,
+	entries []Entry,
+	swimmers []swimmerRef,
+	households []householdRef,
+	selections []EventSelection,
+	err error,
+) {
+	if meets, err = r.LoadMeets(ctx, orgID); err != nil {
+		return
+	}
+	if sessions, err = r.LoadMeetSessions(ctx, orgID); err != nil {
+		return
+	}
+	if events, err = r.LoadMeetEvents(ctx, orgID); err != nil {
+		return
+	}
+	if commitments, err = r.LoadCommitments(ctx, orgID); err != nil {
+		return
+	}
+	if entries, err = r.LoadEntries(ctx, orgID); err != nil {
+		return
+	}
+	if swimmers, err = r.LoadSwimmerRefs(ctx, orgID); err != nil {
+		return
+	}
+	if households, err = r.LoadHouseholdRefs(ctx, orgID); err != nil {
+		return
+	}
+	selections, err = r.LoadEventSelections(ctx, orgID)
+	return
+}
+
+func (r *Repository) LoadSwimmerRefs(ctx context.Context, orgID string) ([]swimmerRef, error) {
+	rows, err := r.at(orgID).Query(ctx, `
 		SELECT id::text, org_id::text, household_id::text
 		FROM swimmers
-		WHERE deleted_at IS NULL`)
+		WHERE deleted_at IS NULL
+		AND ($1::text = '' OR org_id = NULLIF($1::text, '')::uuid)`, orgID)
 	if err != nil {
 		return nil, fmt.Errorf("meets: load swimmer refs: %w", err)
 	}
@@ -469,11 +529,12 @@ func (r *Repository) LoadSwimmerRefs(ctx context.Context) ([]swimmerRef, error) 
 	})
 }
 
-func (r *Repository) LoadHouseholdRefs(ctx context.Context) ([]householdRef, error) {
-	rows, err := r.pool.Query(ctx, `
+func (r *Repository) LoadHouseholdRefs(ctx context.Context, orgID string) ([]householdRef, error) {
+	rows, err := r.at(orgID).Query(ctx, `
 		SELECT id::text, org_id::text
 		FROM households
-		WHERE deleted_at IS NULL`)
+		WHERE deleted_at IS NULL
+		AND ($1::text = '' OR org_id = NULLIF($1::text, '')::uuid)`, orgID)
 	if err != nil {
 		return nil, fmt.Errorf("meets: load household refs: %w", err)
 	}

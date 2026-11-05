@@ -11,12 +11,11 @@ import (
 	"testing"
 	"time"
 
+	"github.com/go-chi/chi/v5"
 	"github.com/luryann/aquify/server/internal/app/comms"
 	"github.com/luryann/aquify/server/internal/app/events"
 	"github.com/luryann/aquify/server/internal/app/meets"
 	"github.com/luryann/aquify/server/internal/app/orgsettings"
-	"github.com/luryann/aquify/server/internal/app/performance"
-	"github.com/go-chi/chi/v5"
 )
 
 // PublicSiteAllowedKeys is the complete allowlist of JSON keys the anonymous
@@ -24,12 +23,11 @@ import (
 // field to the public payload means adding it here deliberately; any other key
 // fails TestPublicSitePayloadOnlyContainsAllowlistedKeys.
 var publicSiteAllowedKeys = map[string][]string{
-	"":                {"club", "announcements", "meets", "events", "records", "coaches"},
+	"":                {"club", "announcements", "meets", "events", "coaches"},
 	"club":            {"name", "slug", "about", "contact_email", "contact_phone", "join_url"},
 	"announcements[]": {"id", "title", "body", "published_at"},
 	"meets[]":         {"id", "name", "start_date", "end_date", "location", "host_org", "course"},
 	"events[]":        {"id", "title", "category", "description", "location", "starts_at", "ends_at", "all_day"},
-	"records[]":       {"label", "course", "gender", "age_group", "distance", "stroke", "time_ms", "swimmer_name", "swim_date", "meet_name"},
 	"coaches[]":       {"name", "role"},
 }
 
@@ -104,13 +102,6 @@ func TestPublicSitePayloadOnlyContainsAllowlistedKeys(t *testing.T) {
 			return []*events.Event{{ID: "e1", OrgID: org, Title: "Party", Category: "social", Description: "d", Location: "Deck", StartsAt: end, EndsAt: &end,
 				Audience: "all", Public: true, Status: "scheduled", FeeCents: 500, Capacity: new(int), GroupCodes: []string{"SECRET"}, CreatedBy: "admin-user"}}
 		},
-		Records: func(string) []performance.TeamRecord {
-			return []performance.TeamRecord{{
-				RecordKey: performance.RecordKey{Course: "SCY", Gender: "F", AgeGroup: "OPEN", Distance: 100, Stroke: "free"}, Label: "100 free", PendingCount: 3,
-				Record: &performance.RecordEntry{ID: "r1", OrgID: org, TimeMs: 50000, SwimmerID: "swimmer-secret", SwimmerName: "Amy Ames", SwimDate: "2026-01-01",
-					MeetName: "Meet", Notes: "private note", CreatedBy: "admin-user", VerifiedBy: "admin-user", Locked: true},
-			}}
-		},
 		Staff: func(context.Context, string) []PublicSiteStaff {
 			return []PublicSiteStaff{{Name: "Cara Coach", Role: "Coach"}}
 		},
@@ -131,12 +122,15 @@ func TestPublicSitePayloadOnlyContainsAllowlistedKeys(t *testing.T) {
 		t.Fatalf("public payload leaks: %v", violations)
 	}
 	// Every section must actually be populated, or the allowlist check proves nothing.
-	for _, section := range []string{"announcements", "meets", "events", "records", "coaches"} {
+	for _, section := range []string{"announcements", "meets", "events", "coaches"} {
 		if list, _ := doc[section].([]any); len(list) != 1 {
 			t.Fatalf("section %s not populated: %s", section, rec.Body.String())
 		}
 	}
-	for _, banned := range []string{"SECRETCODE", "internal@example.com", "g-secret", "swimmer-secret", "private note", "admin-user"} {
+	if _, ok := doc["records"]; ok {
+		t.Fatal("records (swimmer names) must never appear in the public payload")
+	}
+	for _, banned := range []string{"Amy Ames", "SECRETCODE", "internal@example.com", "g-secret", "private note", "admin-user"} {
 		if strings.Contains(rec.Body.String(), banned) {
 			t.Fatalf("payload leaked %q", banned)
 		}
@@ -144,7 +138,7 @@ func TestPublicSitePayloadOnlyContainsAllowlistedKeys(t *testing.T) {
 }
 
 func TestAllowlistViolationsFlagsANewPrivateField(t *testing.T) {
-	_, violations, err := allowlistViolations([]byte(`{"club":{"name":"x","internal_notes":"y"},"records":[{"label":"l","created_by":"u"}],"surprise":{}}`))
+	_, violations, err := allowlistViolations([]byte(`{"club":{"name":"x","internal_notes":"y"},"events":[{"title":"l","created_by":"u"}],"surprise":{}}`))
 	if err != nil {
 		t.Fatal(err)
 	}
