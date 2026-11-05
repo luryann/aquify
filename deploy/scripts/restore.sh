@@ -161,9 +161,11 @@ if [[ "${SKIP_OBJECTS}" == "true" ]]; then
 else
   log "Restoring objects into ${MINIO_BUCKET}..."
   compose up -d minio || die "could not start minio"
-  alias_env="MC_HOST_aquifydst=${MINIO_ENDPOINT/\/\//\/\/${MINIO_ACCESS_KEY}:${MINIO_SECRET_KEY}@}"
-  env "${alias_env}" mc mb --ignore-existing "aquifydst/${MINIO_BUCKET}" >> "${DEPLOY_LOG}" 2>&1 || die "cannot reach MinIO / create the bucket"
-  env "${alias_env}" mc mirror --overwrite --preserve "${SNAP}/minio" "aquifydst/${MINIO_BUCKET}" >> "${DEPLOY_LOG}" 2>&1 \
+  # Exported inside a subshell so the secret is only in mc's environment, never in an argv.
+  ( export MC_HOST_aquifydst="${MINIO_ENDPOINT/\/\//\/\/${MINIO_ACCESS_KEY}:${MINIO_SECRET_KEY}@}"
+    mc mb --ignore-existing "aquifydst/${MINIO_BUCKET}" >> "${DEPLOY_LOG}" 2>&1 ) || die "cannot reach MinIO / create the bucket"
+  ( export MC_HOST_aquifydst="${MINIO_ENDPOINT/\/\//\/\/${MINIO_ACCESS_KEY}:${MINIO_SECRET_KEY}@}"
+    mc mirror --overwrite --preserve "${SNAP}/minio" "aquifydst/${MINIO_BUCKET}" >> "${DEPLOY_LOG}" 2>&1 ) \
     || die "object restore failed"
 fi
 

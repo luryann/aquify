@@ -292,10 +292,21 @@ func TestIngressRoutesAndKeycloakExposure(t *testing.T) {
 			t.Errorf("Caddyfile does not proxy to %s", upstream)
 		}
 	}
-	// Keycloak's admin console / master realm / metrics must not be public.
-	for _, blocked := range []string{"/admin", "/realms/master", "/metrics"} {
-		if !strings.Contains(cf, blocked) {
-			t.Errorf("Caddyfile does not block Keycloak path %s", blocked)
+	// Keycloak is exposed by allow-list: only the aquify realm and theme assets are
+	// proxied; the admin console, master realm, metrics and health are not named at all.
+	m := regexp.MustCompile(`(?m)^\s*@public path (.+)$`).FindStringSubmatch(cf)
+	if m == nil {
+		t.Fatal("Caddyfile has no @public path allow-list for Keycloak")
+	}
+	if got := strings.Join(strings.Fields(m[1]), " "); got != "/realms/aquify /realms/aquify/* /resources/* /js/*" {
+		t.Errorf("Keycloak allow-list = %q", got)
+	}
+	if !strings.Contains(cf, `respond "not found" 404`) {
+		t.Error("Caddyfile has no default 404 for non-allow-listed Keycloak paths")
+	}
+	for _, p := range []string{"/admin", "/realms/master", "/metrics", "/health"} {
+		if strings.Contains(m[1], p) {
+			t.Errorf("Keycloak allow-list must not contain %s", p)
 		}
 	}
 	kc := services(t)["keycloak"]["environment"].(map[string]any)

@@ -132,9 +132,9 @@ backup_minio() {
   fi
   if [[ "${DRY_RUN}" == "true" ]]; then log "[dry-run] mc mirror ${MINIO_BUCKET}"; return 0; fi
   # Credentials go through mc's environment alias form, not a persisted config.
-  local alias_env="MC_HOST_aquifysrc=${MINIO_ENDPOINT/\/\//\/\/${MINIO_ACCESS_KEY}:${MINIO_SECRET_KEY}@}"
+  # Exported inside a subshell so the secret is only in mc's environment, never in an argv.
   mkdir -p "${SNAPSHOT_DIR}/minio"
-  if ! env "${alias_env}" mc mirror --preserve "aquifysrc/${MINIO_BUCKET}" "${SNAPSHOT_DIR}/minio" >> "${DEPLOY_LOG}" 2>&1; then
+  if ! ( export MC_HOST_aquifysrc="${MINIO_ENDPOINT/\/\//\/\/${MINIO_ACCESS_KEY}:${MINIO_SECRET_KEY}@}"; mc mirror --preserve "aquifysrc/${MINIO_BUCKET}" "${SNAPSHOT_DIR}/minio" >> "${DEPLOY_LOG}" 2>&1 ); then
     record_failure "mc mirror failed"
   fi
 }

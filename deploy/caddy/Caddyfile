@@ -34,14 +34,16 @@ api.{$AQUIFY_DOMAIN} {
 }
 
 auth.{$AQUIFY_DOMAIN} {
-	# The admin console, master realm and operational endpoints stay off the internet.
-	# Administer Keycloak through an SSH tunnel to 127.0.0.1:8081.
-	@private path /admin /admin/* /realms/master /realms/master/* /metrics /metrics* /health /health/*
-	handle @private {
-		respond "not found" 404
+	# Allow-list: only the aquify realm's login/OIDC endpoints and the theme assets are
+	# proxied. Everything else (admin console and REST API, master realm, metrics, health)
+	# is a 404, so no path-normalisation difference between Caddy and Keycloak can open a
+	# hole. Administer Keycloak through an SSH tunnel to 127.0.0.1:8081.
+	@public path /realms/aquify /realms/aquify/* /resources/* /js/*
+	handle @public {
+		reverse_proxy keycloak:8081
 	}
 	handle {
-		reverse_proxy keycloak:8081
+		respond "not found" 404
 	}
 }
 
