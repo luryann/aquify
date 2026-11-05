@@ -54,10 +54,10 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/joho/godotenv"
 	"github.com/luryann/aquify/server/internal/app"
 	"github.com/luryann/aquify/server/internal/telemetry"
 	"github.com/luryann/aquify/server/internal/workers"
-	"github.com/joho/godotenv"
 )
 
 var loadDotEnvFile = loadDotEnv
@@ -114,6 +114,13 @@ func main() {
 	}
 
 	loadLocalEnvFiles(os.Getenv("APP_ENV"))
+
+	// `migrate` runs before config validation on purpose: it needs only a
+	// database URL, and a fresh install cannot pass full validation (which checks
+	// the schema) until it has run.
+	if len(os.Args) > 1 && strings.EqualFold(strings.TrimSpace(os.Args[1]), "migrate") {
+		os.Exit(runMigrate(context.Background(), os.Args[2:], os.Getenv, os.Stdout, os.Stderr))
+	}
 
 	cfg := app.LoadConfig()
 	logger := slog.New(slog.NewJSONHandler(

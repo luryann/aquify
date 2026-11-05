@@ -212,3 +212,38 @@ func TestRunCampaignSendFinalStatusRule(t *testing.T) {
 		})
 	}
 }
+
+// A crash between the "pending" marker and the provider response leaves the
+// outcome unknown. Delivery is at-least-once: the retry sends again (possible
+// duplicate) and reuses the pending row; sent recipients are not re-mailed.
+func TestRunCampaignSendResendsPendingButNotSent(t *testing.T) {
+	s := NewService()
+	c, err := s.CreateCampaign(CreateCampaignInput{OrgID: "org-a", Name: "n", Subject: "s", BodyHTML: "x", FromName: "f", FromEmail: "f@example.com", Audience: "all"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	if _, err := s.ClaimCampaign(ctx, "org-a", c.ID, "u"); err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().UTC()
+	s.deliveries["d-pending"] = &EmailDelivery{ID: "d-pending", OrgID: "org-a", CampaignID: c.ID, RecipientEmail: "p@example.com", Status: "pending", CreatedAt: now, UpdatedAt: now}
+	s.deliveries["d-sent"] = &EmailDelivery{ID: "d-sent", OrgID: "org-a", CampaignID: c.ID, RecipientEmail: "s@example.com", Status: "sent", CreatedAt: now, UpdatedAt: now}
+
+	got, err := s.RunCampaignSend(ctx, "org-a", c.ID, SendCampaignInput{Recipients: []Recipient{{Email: "p@example.com"}, {Email: "s@example.com"}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.SentCount != 2 || got.FailedCount != 0 {
+		t.Fatalf("sent %d failed %d, want 2/0", got.SentCount, got.FailedCount)
+	}
+	if d := s.deliveries["d-pending"]; d.Status != "sent" || d.ProviderMessageID == "" {
+		t.Fatalf("pending row not resent: %+v", d)
+	}
+	if n := len(s.deliveries); n != 2 {
+		t.Fatalf("deliveries = %d, want 2 (pending row reused)", n)
+	}
+	if d := s.deliveries["d-sent"]; d.ProviderMessageID != "" {
+		t.Fatalf("already-sent recipient was re-mailed: %+v", d)
+	}
+}

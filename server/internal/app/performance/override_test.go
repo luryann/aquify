@@ -15,8 +15,14 @@ func overrideFixture() (*Service, *appmiddleware.Principal) {
 
 func ovSwim(t *testing.T, svc *Service, p *appmiddleware.Principal, org, sw string, ms int) *Result {
 	t.Helper()
+	// In-memory fixtures use the readable meet id "m"; the meet_id column is a
+	// UUID, so database-backed fixtures (UUID org ids) record the swim meet-less.
+	meet := "m"
+	if _, err := uuid.Parse(org); err == nil {
+		meet = ""
+	}
 	r, err := svc.UpsertResult(org, "admin-1", p, UpsertResultInput{
-		SwimmerID: sw, MeetID: "m", Distance: 50, Stroke: "free", Course: "SCY", Gender: "F",
+		SwimmerID: sw, MeetID: meet, Distance: 50, Stroke: "free", Course: "SCY", Gender: "F",
 		FinTimeMs: intPtr(ms), IsOfficial: true,
 	})
 	if err != nil {
@@ -84,7 +90,14 @@ func TestOverridePersistsAcrossReload(t *testing.T) {
 	pool := testutil.IsolatedSchemaPool(t)
 	svc := NewServiceWithPool(pool)
 	admin := &appmiddleware.Principal{UserID: uuid.NewString(), Roles: []string{"admin"}}
-	org, sw := uuid.NewString(), uuid.NewString()
+	org, sw, household := uuid.NewString(), uuid.NewString(), uuid.NewString()
+	// results.swimmer_id is a foreign key, so the swimmer must exist.
+	if _, err := pool.Exec(context.Background(), `INSERT INTO households (id, org_id, household_name) VALUES ($1, $2, 'Override test')`, household, org); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(context.Background(), `INSERT INTO swimmers (id, org_id, household_id, first_name, last_name, date_of_birth, gender) VALUES ($1, $2, $3, 'Test', 'Swimmer', '2013-01-01', 'female')`, sw, org, household); err != nil {
+		t.Fatal(err)
+	}
 	ovSwim(t, svc, admin, org, sw, 25_000)
 	slow := 27_000
 	if _, _, err := svc.OverrideBestTime(org, admin.UserID, admin, OverrideBestTimeInput{

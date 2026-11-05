@@ -21,6 +21,11 @@ func TestOpenValidatedDBPoolReturnsNilWhenSchemaValidationFails(t *testing.T) {
 
 	originalOpenDBPool := openDBPool
 	originalValidateDBSchema := validateDBSchema
+	// These tests fake the pool; the role check needs a real connection and has
+	// its own test (TestValidateDatabaseRoleRejectsRolesThatBypassRLS).
+	originalValidateDBRole := validateDBRole
+	validateDBRole = func(context.Context, *pgxpool.Pool) error { return nil }
+	t.Cleanup(func() { validateDBRole = originalValidateDBRole })
 	originalCloseDBPool := closeDBPool
 	t.Cleanup(func() {
 		openDBPool = originalOpenDBPool
@@ -65,6 +70,11 @@ func TestNewRouterWithServicesFallsBackToInMemoryWhenSchemaValidationFails(t *te
 
 	originalOpenDBPool := openDBPool
 	originalValidateDBSchema := validateDBSchema
+	// These tests fake the pool; the role check needs a real connection and has
+	// its own test (TestValidateDatabaseRoleRejectsRolesThatBypassRLS).
+	originalValidateDBRole := validateDBRole
+	validateDBRole = func(context.Context, *pgxpool.Pool) error { return nil }
+	t.Cleanup(func() { validateDBRole = originalValidateDBRole })
 	originalCloseDBPool := closeDBPool
 	t.Cleanup(func() {
 		openDBPool = originalOpenDBPool

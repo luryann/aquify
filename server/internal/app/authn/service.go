@@ -116,6 +116,7 @@ type Service struct {
 	httpClient       *http.Client
 	logger           *slog.Logger
 	pool             *pgxpool.Pool
+	sealer           SecretSealer
 
 	// householdLookup is an optional function injected from the members service
 	// that resolves a Keycloak user ID to a household ID. It is called during
@@ -156,6 +157,59 @@ func (s *Service) SetHouseholdLookup(fn func(keycloakUserID string) string) {
 // swimmer record linked to it, or an empty string if none is linked.
 func (s *Service) SetSwimmerLookup(fn func(keycloakUserID string) string) {
 	s.swimmerLookup = fn
+}
+
+// SecretSealer seals per-org secrets for storage. usaswimming.Cipher implements it
+// (AES-256-GCM, key from INTEGRATIONS_ENCRYPTION_KEY, org id as associated data).
+type SecretSealer interface {
+	EncryptFor(orgID, plain string) (string, error)
+	DecryptFor(orgID, enc string) (string, error)
+}
+
+// sealedSecretPrefix marks an encrypted value; TOTP secrets are base32, which can
+// never contain ":", so a stored value without the prefix is a legacy plaintext one.
+const sealedSecretPrefix = "v2:"
+
+// SetSecretSealer makes TOTP secrets encrypted at rest. Call it before SetPool, which
+// loads (and re-seals legacy plaintext) factors. Without a sealer secrets are stored
+// as before; non-development startup requires the encryption key, so production
+// always has one.
+func (s *Service) SetSecretSealer(sealer SecretSealer) { s.sealer = sealer }
+
+// sealTOTP returns the value to store for a TOTP secret.
+func (s *Service) sealTOTP(orgID, plain string) (string, error) {
+	if s.sealer == nil || plain == "" || strings.HasPrefix(plain, sealedSecretPrefix) {
+		return plain, nil
+	}
+	return s.sealer.EncryptFor(orgID, plain)
+}
+
+// openTOTP returns the usable secret for a stored value (legacy plaintext passes through).
+func (s *Service) openTOTP(orgID, stored string) (string, error) {
+	if !strings.HasPrefix(stored, sealedSecretPrefix) {
+		return stored, nil
+	}
+	if s.sealer == nil {
+		return "", errors.New("totp secret is encrypted but no encryption key is configured")
+	}
+	return s.sealer.DecryptFor(orgID, stored)
+}
+
+// resealLegacyTOTP rewrites plaintext TOTP secrets found at load time in sealed form.
+func (s *Service) resealLegacyTOTP(ctx context.Context, orgID string, plainByFactor map[string]string) {
+	if s.sealer == nil {
+		return
+	}
+	for id, plain := range plainByFactor {
+		sealed, err := s.sealTOTP(orgID, plain)
+		if err != nil {
+			s.logger.Warn("authn: could not seal legacy TOTP secret", "factor_id", id, "error", err)
+			continue
+		}
+		if _, err := s.at(orgID).Exec(ctx, `UPDATE mfa_factors SET totp_secret = $1 WHERE id = $2 AND org_id = $3::uuid`, sealed, id, orgID); err != nil {
+			s.logger.Warn("authn: could not re-seal legacy TOTP secret", "factor_id", id, "error", err)
+		}
+	}
 }
 
 // SetPool wires a DB pool into the service and enables persisted auth/session
@@ -204,6 +258,7 @@ func (s *Service) loadMFAFactorsFromDB() {
 			s.logger.Warn("authn: failed to load MFA factors from DB", "org_id", orgID, "error", err)
 			continue
 		}
+		legacy := map[string]string{}
 		for rows.Next() {
 			var r mfaFactorRecord
 			var backupCodesJSON []byte
@@ -215,12 +270,22 @@ func (s *Service) loadMFAFactorsFromDB() {
 				s.logger.Warn("authn: scan MFA factor row", "error", err)
 				continue
 			}
+			plain, err := s.openTOTP(orgID, r.TOTPSecret)
+			if err != nil {
+				s.logger.Warn("authn: MFA factor skipped, TOTP secret unreadable", "factor_id", r.Factor.ID, "error", err)
+				continue
+			}
+			if plain != "" && plain == r.TOTPSecret {
+				legacy[r.Factor.ID] = plain // stored in the clear: re-seal below
+			}
+			r.TOTPSecret = plain
 			if len(backupCodesJSON) > 0 {
 				_ = json.Unmarshal(backupCodesJSON, &r.BackupCodes)
 			}
 			s.mfaFactorsByUser[r.Factor.UserID] = append(s.mfaFactorsByUser[r.Factor.UserID], r)
 		}
 		rows.Close()
+		s.resealLegacyTOTP(ctx, orgID, legacy)
 	}
 }
 
@@ -392,7 +457,11 @@ func (s *Service) saveMFAFactorToDB(r mfaFactorRecord) error {
 	backupCodesJSON := marshalBackupCodes(r.BackupCodes)
 	var totpSecret *string
 	if r.TOTPSecret != "" {
-		totpSecret = &r.TOTPSecret
+		sealed, err := s.sealTOTP(r.Factor.OrgID, r.TOTPSecret)
+		if err != nil {
+			return fmt.Errorf("seal TOTP secret: %w", err)
+		}
+		totpSecret = &sealed
 	}
 	ctx := context.Background()
 	_, err := s.at(r.Factor.OrgID).Exec(ctx, `
@@ -464,6 +533,11 @@ func (s *Service) reloadMFAFactorsForUser(ctx context.Context, orgID, userID str
 		); err != nil {
 			return fmt.Errorf("scan MFA factor: %w", err)
 		}
+		plain, err := s.openTOTP(orgID, r.TOTPSecret)
+		if err != nil {
+			return fmt.Errorf("reload MFA factors: factor %s: %w", r.Factor.ID, err)
+		}
+		r.TOTPSecret = plain
 		if len(backupCodesJSON) > 0 {
 			_ = json.Unmarshal(backupCodesJSON, &r.BackupCodes)
 		}

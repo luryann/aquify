@@ -1566,8 +1566,10 @@ func (s *Service) SendCampaign(ctx context.Context, orgID, campaignID string, in
 
 // RunCampaignSend mails a claimed ("sending") campaign to the provided
 // recipients, enforcing the suppression list and skipping recipients that
-// already have a non-failed delivery row (so a re-claimed or retried send does
-// not double-mail). Deliveries are persisted after every batch.
+// already have a sent/suppressed delivery row. Delivery is at-least-once: a
+// row still "pending" (crash between the marker and the provider response, so
+// the outcome is unknown) is sent again on retry, which can duplicate an email
+// but never silently drops one. Deliveries are persisted after every batch.
 func (s *Service) RunCampaignSend(ctx context.Context, orgID, campaignID string, inp SendCampaignInput) (*EmailCampaign, error) {
 	s.mu.Lock()
 	if err := s.reloadLocked(ctx, orgID); err != nil {
@@ -1585,11 +1587,21 @@ func (s *Service) RunCampaignSend(ctx context.Context, orgID, campaignID string,
 	}
 	c := *cached // working copy; the cache entry may be replaced by reloads
 	client := s.postmarkClient
-	// A retry after a crash or mid-send failure must not re-mail recipients
-	// that already have a terminal delivery row for this campaign.
+	// A retry after a crash or mid-send failure skips recipients that have a
+	// terminal delivery row. Failed and "pending" (outcome unknown) rows are
+	// sent again: duplicate over drop, by product decision. The pending row
+	// is reused so the recipient keeps one delivery record.
 	prior := map[string]string{}
+	retry := map[string]EmailDelivery{}
 	for _, existing := range s.deliveries {
-		if existing.CampaignID == campaignID && existing.OrgID == orgID && existing.Status != "failed" {
+		if existing.CampaignID != campaignID || existing.OrgID != orgID {
+			continue
+		}
+		switch existing.Status {
+		case "failed":
+		case "pending":
+			retry[existing.RecipientEmail] = *existing
+		default:
 			prior[existing.RecipientEmail] = existing.Status
 		}
 	}
@@ -1598,7 +1610,8 @@ func (s *Service) RunCampaignSend(ctx context.Context, orgID, campaignID string,
 	if cap > 0 {
 		cutoff := time.Now().UTC().Add(-24 * time.Hour)
 		for _, d := range s.deliveries {
-			if d.OrgID == orgID && d.Status != "failed" && d.Status != "suppressed" && !d.CreatedAt.Before(cutoff) {
+			if d.OrgID == orgID && d.Status != "failed" && d.Status != "suppressed" && !d.CreatedAt.Before(cutoff) &&
+				!(d.CampaignID == campaignID && d.Status == "pending") { // resent below; counted via fresh
 				alreadyToday++
 			}
 		}
@@ -1672,6 +1685,9 @@ func (s *Service) RunCampaignSend(ctx context.Context, orgID, campaignID string,
 			CreatedAt:       time.Now().UTC(),
 			UpdatedAt:       time.Now().UTC(),
 		}
+		if old, ok := retry[email]; ok {
+			d.ID, d.CreatedAt = old.ID, old.CreatedAt
+		}
 
 		s.mu.RLock()
 		suppressed := s.isSuppressed(orgID, email)
@@ -1741,9 +1757,9 @@ func (s *Service) RunCampaignSend(ctx context.Context, orgID, campaignID string,
 			reqs[i] = p.req
 		}
 		// Persist a "pending" marker per recipient BEFORE handing the batch to
-		// Postmark. If we crash or fail to persist after the send, the retry's
-		// prior-delivery filter sees the row and skips it (at-most-once)
-		// instead of mailing the recipient twice.
+		// Postmark. If we crash before the outcome is recorded, the retry finds
+		// the pending row and sends again (at-least-once: a possible duplicate,
+		// never a silent drop).
 		for _, p := range chunk {
 			p.d.Status = "pending"
 			p.d.UpdatedAt = time.Now().UTC()

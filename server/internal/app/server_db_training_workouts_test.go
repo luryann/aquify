@@ -60,13 +60,13 @@ func TestDBRepoTrainingWorkouts_RoundTrip(t *testing.T) {
 		t.Fatalf("assign: %v", err)
 	}
 	p, err := b.Get(orgID, practice.ID)
-	if err != nil || p.WorkoutID != inst.ID || p.YardageTarget != 1900 || p.Strokes.Free != 1500 {
+	if err != nil || p.WorkoutID != inst.ID || p.YardageTarget != training.ToYards(1900, "SCM") || p.Strokes.Free != training.ToYards(1500, "SCM") {
 		t.Fatalf("practice via b = %+v err=%v", p, err)
 	}
 	if _, err := b.UpdateWorkout(orgID, inst.ID, training.WorkoutInput{Title: "Short", Course: "SCM", Sections: parsed.Sections[:1]}, "coach"); err != nil {
 		t.Fatalf("update instance: %v", err)
 	}
-	if p, _ := a.Get(orgID, practice.ID); p.YardageTarget != 400 {
+	if p, _ := a.Get(orgID, practice.ID); p.YardageTarget != training.ToYards(400, "SCM") {
 		t.Fatalf("re-derived yardage = %d", p.YardageTarget)
 	}
 	schedule, err := a.WorkoutsForPractices(orgID, []*training.Practice{p})

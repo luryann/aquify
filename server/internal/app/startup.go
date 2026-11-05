@@ -8,6 +8,7 @@ import (
 	"os"
 	"strings"
 
+	"github.com/jackc/pgx/v5"
 	appopenapi "github.com/luryann/aquify/server/internal/openapi"
 	"github.com/luryann/aquify/server/internal/storage"
 )
@@ -43,6 +44,10 @@ func isExplicitDevelopmentEnv(appEnv string) bool {
 		return false
 	}
 }
+
+// IsDevelopmentEnv reports whether appEnv is an explicit development, local or
+// test environment (the only ones where dev shortcuts are allowed).
+func IsDevelopmentEnv(appEnv string) bool { return isExplicitDevelopmentEnv(appEnv) }
 
 func requiresStrictRuntimeDependencies(appEnv string) bool {
 	return !isExplicitDevelopmentEnv(appEnv)
@@ -177,8 +182,36 @@ func validateDatabaseStartupDependency(ctx context.Context, cfg Config) error {
 	}
 	defer closeDBPool(pool)
 
+	if err := validateDBRole(ctx, pool); err != nil {
+		return err
+	}
 	if err := validateDBSchema(ctx, pool); err != nil {
 		return fmt.Errorf("database: schema validation failed: %w", err)
+	}
+	return nil
+}
+
+// rowQuerier is the slice of a pgx pool validateDatabaseRole needs.
+type rowQuerier interface {
+	QueryRow(ctx context.Context, sql string, args ...any) pgx.Row
+}
+
+// validateDatabaseRole refuses a connection role that can bypass row-level
+// security. RLS is the database-level tenant isolation; a superuser or
+// BYPASSRLS role silently turns it off for every table, so outside development
+// that must stop startup rather than run unprotected
+// (docs/runbooks/multi-tenancy-operations.md section 1).
+func validateDatabaseRole(ctx context.Context, q rowQuerier) error {
+	var (
+		role          string
+		super, bypass bool
+	)
+	err := q.QueryRow(ctx, `SELECT current_user, r.rolsuper, r.rolbypassrls FROM pg_roles r WHERE r.rolname = current_user`).Scan(&role, &super, &bypass)
+	if err != nil {
+		return fmt.Errorf("database: could not inspect the connection role: %w", err)
+	}
+	if super || bypass {
+		return fmt.Errorf("database: DATABASE_URL connects as role %q (superuser=%t, bypassrls=%t); row-level security would not apply. Use the restricted application role (deploy/postgres/init/roles.sql.in)", role, super, bypass)
 	}
 	return nil
 }

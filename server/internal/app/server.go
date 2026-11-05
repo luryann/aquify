@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"net/url"
+	"os"
 	"reflect"
 	"strings"
 	"sync"
@@ -236,10 +238,52 @@ func ValidateProviderConfig(cfg Config) error {
 	if cfg.Auth.OIDC.ClientID != "" && strings.TrimSpace(cfg.Auth.OIDC.ExpectedIssuer) == "" {
 		errs = append(errs, "oidc: OIDC_EXPECTED_ISSUER must be set in non-development environments so ID token issuer is validated")
 	}
+	errs = append(errs, oidcProviderProblems(cfg)...)
+	for name, v := range map[string]string{"STRIPE_WEBHOOK_SECRET": cfg.Stripe.WebhookSecret, "STRIPE_CONNECT_WEBHOOK_SECRET": cfg.Stripe.ConnectWebhookSecret} {
+		if v = strings.TrimSpace(v); v != "" && !strings.HasPrefix(v, "whsec_") {
+			errs = append(errs, fmt.Sprintf("stripe: %s must be a Stripe signing secret (whsec_...)", name))
+		}
+	}
 	if len(errs) == 0 {
 		return nil
 	}
 	return fmt.Errorf("provider startup validation failed: %s", strings.Join(errs, "; "))
+}
+
+// oidcProviderProblems reports an incomplete or insecure OIDC login configuration.
+// Real sign-in needs every endpoint, the client credentials and a state-signing
+// key; browsers are sent to these URLs, so they must be https. A deployment with
+// dev stub tokens off and no OIDC at all could never let anyone sign in, so it is
+// refused rather than started.
+func oidcProviderProblems(cfg Config) []string {
+	o := cfg.Auth.OIDC
+	if cfg.Auth.EnableDevStubTokens && !oidcBrowserLoginConfigured(o) {
+		return nil
+	}
+	var problems []string
+	if missing := missingEnv(
+		envVar{"OIDC_AUTHORIZE_URL", o.AuthorizeURL}, envVar{"OIDC_TOKEN_URL", o.TokenURL},
+		envVar{"OIDC_JWKS_URL", o.JWKSURL}, envVar{"OIDC_REDIRECT_URL", o.RedirectURL},
+		envVar{"OIDC_CLIENT_ID", o.ClientID}, envVar{"OIDC_CLIENT_SECRET", o.ClientSecret},
+		envVar{"OIDC_EXPECTED_ISSUER", o.ExpectedIssuer}, envVar{"OIDC_STATE_SIGNING_KEY", o.StateSigningKey},
+	); len(missing) > 0 {
+		problems = append(problems, "oidc: incomplete configuration, missing "+strings.Join(missing, ", "))
+	}
+	for _, u := range []envVar{
+		{"OIDC_AUTHORIZE_URL", o.AuthorizeURL}, {"OIDC_TOKEN_URL", o.TokenURL}, {"OIDC_JWKS_URL", o.JWKSURL},
+		{"OIDC_END_SESSION_URL", o.EndSessionURL}, {"OIDC_REDIRECT_URL", o.RedirectURL},
+		{"OIDC_POST_LOGOUT_REDIRECT_URL", o.PostLogoutRedirectURL}, {"OIDC_EXPECTED_ISSUER", o.ExpectedIssuer},
+	} {
+		if v := strings.TrimSpace(u.value); v != "" {
+			if parsed, err := url.Parse(v); err != nil || parsed.Scheme != "https" || parsed.Host == "" {
+				problems = append(problems, fmt.Sprintf("oidc: %s must be an https URL outside development", u.name))
+			}
+		}
+	}
+	if k := strings.TrimSpace(o.StateSigningKey); k != "" && len(k) < 32 {
+		problems = append(problems, "oidc: OIDC_STATE_SIGNING_KEY must be at least 32 characters")
+	}
+	return problems
 }
 
 // ValidateWorkerConfig enforces Redis-backed durable queues outside explicit
@@ -339,26 +383,61 @@ func (c unavailablePostmarkClient) SendBatch(_ context.Context, reqs []postmark.
 var (
 	openDBPool       = db.Open
 	validateDBSchema = db.ValidateExpectedSchema
-	closeDBPool      = func(pool *pgxpool.Pool) { pool.Close() }
+	// validateDBRole is a variable so tests that fake the pool can stub it.
+	validateDBRole = func(ctx context.Context, pool *pgxpool.Pool) error { return validateDatabaseRole(ctx, pool) }
+	closeDBPool    = func(pool *pgxpool.Pool) { pool.Close() }
 )
 
+// exitOnStartupFailure ends the process; a variable so tests can observe it.
+var exitOnStartupFailure = func(logger *slog.Logger, msg string, err error) {
+	logger.Error(msg, "error", err)
+	os.Exit(1)
+}
+
+// openValidatedDBPool opens the pool the services run on. In explicit
+// development/local/test environments a failure degrades to in-memory services
+// (nil pool) so local work continues. Everywhere else it is fatal: the startup
+// preflight already proved the database reachable, but the pool is opened again
+// afterwards, and a failure in that window must never leave a production process
+// serving from memory that disappears on restart.
 func openValidatedDBPool(ctx context.Context, cfg Config, logger *slog.Logger) *pgxpool.Pool {
+	strict := requiresStrictRuntimeDependencies(effectiveAppEnv(cfg))
 	if cfg.DatabaseURL == "" {
+		// An empty URL outside development is rejected earlier, by
+		// ValidateStartupDependencies in main, before any router is built.
 		return nil
 	}
 
 	dbPool, err := openDBPool(ctx, cfg.DatabaseURL)
 	if err != nil {
+		if strict {
+			exitOnStartupFailure(logger, "database connection failed; refusing to run without persistence", err)
+			return nil
+		}
 		logger.Error("db pool init failed; services will run in-memory only", "error", err)
 		return nil
 	}
 	if dbPool == nil {
+		if strict {
+			exitOnStartupFailure(logger, "database pool is unavailable; refusing to run without persistence", errors.New("nil pool"))
+		}
 		return nil
 	}
 	if err := validateDBSchema(ctx, dbPool); err != nil {
-		logger.Error("database schema validation failed; DB-backed services disabled", "error", err)
 		closeDBPool(dbPool)
+		if strict {
+			exitOnStartupFailure(logger, "database schema validation failed; run `aquify-api migrate up`", err)
+			return nil
+		}
+		logger.Error("database schema validation failed; DB-backed services disabled", "error", err)
 		return nil
+	}
+	if strict {
+		if err := validateDBRole(ctx, dbPool); err != nil {
+			closeDBPool(dbPool)
+			exitOnStartupFailure(logger, "database role check failed", err)
+			return nil
+		}
 	}
 	return dbPool
 }
@@ -452,6 +531,10 @@ func NewRouterWithServices(cfg Config, logger *slog.Logger, deps RouterDeps) htt
 		})
 	}
 	// Persist MFA factors to DB when a pool is available so they survive restarts.
+	// TOTP secrets are sealed with the integrations key before they are written.
+	if sealer := integrationsCipher(appEnv); sealer != nil {
+		authService.SetSecretSealer(sealer)
+	}
 	authService.SetPool(dbPool)
 	authHandlers := handlers.NewAuthHandlersWithAudit(authService, auditService, allowDevSessionIssue)
 	authHandlers.SetSessionCookies(appmiddleware.SessionCookies{

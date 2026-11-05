@@ -5,14 +5,13 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"path/filepath"
-	"strings"
 	"sync"
 	"testing"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 	appmiddleware "github.com/luryann/aquify/server/internal/app/middleware"
+	"github.com/luryann/aquify/server/internal/testutil"
 )
 
 // These tests use a private schema and the real migrations. They never reset
@@ -23,43 +22,10 @@ func stripeTestPool(t *testing.T) *pgxpool.Pool {
 	if url == "" {
 		t.Skip("BILLING_TEST_DATABASE_URL is not configured")
 	}
-	ctx := context.Background()
-	base, err := pgxpool.New(ctx, url)
-	if err != nil {
-		t.Fatal(err)
-	}
-	schema := "stripe_test_" + strings.ReplaceAll(uuid.NewString(), "-", "")
-	if _, err := base.Exec(ctx, "CREATE SCHEMA "+schema); err != nil {
-		base.Close()
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _, _ = base.Exec(ctx, "DROP SCHEMA "+schema+" CASCADE"); base.Close() })
-	cfg, err := pgxpool.ParseConfig(url)
-	if err != nil {
-		t.Fatal(err)
-	}
-	cfg.ConnConfig.RuntimeParams["search_path"] = schema + ",public"
-	pool, err := pgxpool.NewWithConfig(ctx, cfg)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(pool.Close)
-	paths, err := filepath.Glob("../../../../db/migrations/*.sql")
-	if err != nil || len(paths) == 0 {
-		t.Fatalf("migrations: %v", err)
-	}
-	for _, path := range paths {
-		data, err := os.ReadFile(path)
-		if err != nil {
-			t.Fatal(err)
-		}
-		sql := strings.SplitN(string(data), "-- +goose Up", 2)[1]
-		sql = strings.SplitN(sql, "-- +goose Down", 2)[0]
-		if _, err := pool.Exec(ctx, sql); err != nil {
-			t.Fatalf("migration %s: %v", path, err)
-		}
-	}
-	return pool
+	// Reuse the shared isolated-schema harness so the fixture tracks the schema
+	// (every tenant table's org FK) instead of re-implementing migration replay.
+	t.Setenv("DATABASE_URL", url)
+	return testutil.IsolatedSchemaPool(t)
 }
 
 func TestStripeTransactionsRollbackAndRefreshAcrossInstances(t *testing.T) {

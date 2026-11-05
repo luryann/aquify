@@ -14,13 +14,21 @@ import (
 // Elsewhere a missing key fails closed (saving an API key returns 503) and the
 // stub is never available.
 func resolveUSASwimming(pool *pgxpool.Pool, appEnv string) *usaswimming.Service {
-	secret := strings.TrimSpace(os.Getenv("INTEGRATIONS_ENCRYPTION_KEY"))
 	var stub usaswimming.Client
 	if isExplicitDevelopmentEnv(appEnv) {
-		if secret == "" {
-			secret = "aquify-dev-integrations-key"
-		}
 		stub = usaswimming.NewStubClient()
 	}
-	return usaswimming.NewServiceWithPool(pool, usaswimming.NewCipher(secret), stub)
+	return usaswimming.NewServiceWithPool(pool, integrationsCipher(appEnv), stub)
+}
+
+// integrationsCipher is the at-rest cipher for stored secrets (integration API keys,
+// MFA TOTP secrets), keyed by INTEGRATIONS_ENCRYPTION_KEY. Development/local/test fall
+// back to a fixed dev key; elsewhere a missing key yields nil (fail closed; startup
+// validation refuses to run without the key).
+func integrationsCipher(appEnv string) *usaswimming.Cipher {
+	secret := strings.TrimSpace(os.Getenv("INTEGRATIONS_ENCRYPTION_KEY"))
+	if secret == "" && isExplicitDevelopmentEnv(appEnv) {
+		secret = "aquify-dev-integrations-key"
+	}
+	return usaswimming.NewCipher(secret)
 }

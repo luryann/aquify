@@ -172,6 +172,11 @@ func TestValidateStartupDependenciesFailsWhenDatabaseConnectionFails(t *testing.
 func TestValidateStartupDependenciesFailsWhenStorageInitializationFails(t *testing.T) {
 	originalOpenDBPool := openDBPool
 	originalValidateDBSchema := validateDBSchema
+	// These tests fake the pool; the role check needs a real connection and has
+	// its own test (TestValidateDatabaseRoleRejectsRolesThatBypassRLS).
+	originalValidateDBRole := validateDBRole
+	validateDBRole = func(context.Context, *pgxpool.Pool) error { return nil }
+	t.Cleanup(func() { validateDBRole = originalValidateDBRole })
 	originalCloseDBPool := closeDBPool
 	originalNewObjectStorageClient := newObjectStorageClient
 	t.Cleanup(func() {
@@ -430,5 +435,59 @@ func TestValidateIntegrationsKeyStartupDependency(t *testing.T) {
 	t.Setenv("INTEGRATIONS_ENCRYPTION_KEY", "0123456789abcdef0123456789abcdef")
 	if err := validateIntegrationsKeyStartupDependency(); err != nil {
 		t.Fatalf("with key = %v", err)
+	}
+}
+
+func validProductionProviderConfig() Config {
+	cfg := Config{AppEnv: "production"}
+	cfg.Stripe.SecretKey = "sk_live_" + strings.Repeat("a", 24)
+	cfg.Stripe.WebhookSecret = "whsec_" + strings.Repeat("b", 16)
+	cfg.Postmark.ServerToken = strings.Repeat("c", 16)
+	cfg.Postmark.FromEmail = "noreply@club.test"
+	cfg.Postmark.WebhookAuthHeaderName = "X-Postmark-Webhook"
+	cfg.Postmark.WebhookAuthHeaderValue = strings.Repeat("d", 16)
+	cfg.Auth.OIDC = OIDCConfig{
+		AuthorizeURL: "https://auth.club.test/auth", TokenURL: "https://auth.club.test/token",
+		JWKSURL: "https://auth.club.test/certs", EndSessionURL: "https://auth.club.test/logout",
+		RedirectURL: "https://app.club.test/auth/callback", PostLogoutRedirectURL: "https://app.club.test/login",
+		ClientID: "aquify-id", ClientSecret: strings.Repeat("e", 16), ExpectedIssuer: "https://auth.club.test/realms/aquify",
+		StateSigningKey: strings.Repeat("f", 32),
+	}
+	return cfg
+}
+
+func TestValidateProviderConfigOIDC(t *testing.T) {
+	if err := ValidateProviderConfig(validProductionProviderConfig()); err != nil {
+		t.Fatalf("complete production config rejected: %v", err)
+	}
+	cases := map[string]struct {
+		mutate func(*Config)
+		want   string
+	}{
+		"no oidc at all":        {func(c *Config) { c.Auth.OIDC = OIDCConfig{} }, "missing OIDC_AUTHORIZE_URL"},
+		"missing token url":     {func(c *Config) { c.Auth.OIDC.TokenURL = "" }, "missing OIDC_TOKEN_URL"},
+		"missing jwks":          {func(c *Config) { c.Auth.OIDC.JWKSURL = "" }, "OIDC_JWKS_URL"},
+		"missing client secret": {func(c *Config) { c.Auth.OIDC.ClientSecret = "" }, "OIDC_CLIENT_SECRET"},
+		"http authorize url":    {func(c *Config) { c.Auth.OIDC.AuthorizeURL = "http://auth.club.test/auth" }, "OIDC_AUTHORIZE_URL must be an https URL"},
+		"http issuer":           {func(c *Config) { c.Auth.OIDC.ExpectedIssuer = "http://auth.club.test/realms/aquify" }, "OIDC_EXPECTED_ISSUER must be an https URL"},
+		"short signing key":     {func(c *Config) { c.Auth.OIDC.StateSigningKey = "short" }, "at least 32"},
+		"bad webhook secret":    {func(c *Config) { c.Stripe.WebhookSecret = "not-a-signing-secret" }, "whsec_"},
+		"bad connect secret":    {func(c *Config) { c.Stripe.ConnectWebhookSecret = "nope" }, "STRIPE_CONNECT_WEBHOOK_SECRET"},
+	}
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			cfg := validProductionProviderConfig()
+			tc.mutate(&cfg)
+			err := ValidateProviderConfig(cfg)
+			if err == nil || !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("want error containing %q, got %v", tc.want, err)
+			}
+		})
+	}
+	// Development keeps its stub-token shortcut with no OIDC configured.
+	dev := Config{AppEnv: "development"}
+	dev.Auth.EnableDevStubTokens = true
+	if err := ValidateProviderConfig(dev); err != nil {
+		t.Fatalf("development must not require OIDC: %v", err)
 	}
 }
