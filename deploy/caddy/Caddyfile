@@ -1,0 +1,54 @@
+# Ingress for Aquify production. {$AQUIFY_DOMAIN} and {$ACME_EMAIL} come from the
+# compose environment. Certificates are issued and renewed automatically (ports 80 and
+# 443 must be reachable from the internet for the ACME challenge).
+#
+# Hostnames (all must resolve to this server):
+#   app.<domain>    admin / parent / swimmer web app (also proxies /api/v1 to the API)
+#   api.<domain>    the API directly: Stripe and Postmark webhooks, public club pages
+#   auth.<domain>   Keycloak login pages (admin console and metrics are NOT exposed)
+#   files.<domain>  MinIO S3 API, used only through presigned URLs
+#
+# Behind Cloudflare's orange cloud, also add:  servers { trusted_proxies cloudflare }
+# (requires the caddy-cloudflare-ip module) so the real visitor IP is preserved.
+
+{
+	email {$ACME_EMAIL}
+}
+
+app.{$AQUIFY_DOMAIN} {
+	encode zstd gzip
+	reverse_proxy aquify-admin:3000
+}
+
+api.{$AQUIFY_DOMAIN} {
+	encode zstd gzip
+	# Only the versioned API is public; health/ready is intentionally included for
+	# external uptime checks, /metrics lives on a separate internal listener.
+	@api path /api/v1/*
+	handle @api {
+		reverse_proxy aquify-api:8080
+	}
+	handle {
+		respond "not found" 404
+	}
+}
+
+auth.{$AQUIFY_DOMAIN} {
+	# The admin console, master realm and operational endpoints stay off the internet.
+	# Administer Keycloak through an SSH tunnel to 127.0.0.1:8081.
+	@private path /admin /admin/* /realms/master /realms/master/* /metrics /metrics* /health /health/*
+	handle @private {
+		respond "not found" 404
+	}
+	handle {
+		reverse_proxy keycloak:8081
+	}
+}
+
+files.{$AQUIFY_DOMAIN} {
+	# Large uploads and downloads; the Host header is preserved (default) because the
+	# S3 signature covers it.
+	reverse_proxy minio:9000 {
+		flush_interval -1
+	}
+}

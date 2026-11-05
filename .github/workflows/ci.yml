@@ -77,6 +77,18 @@ jobs:
         working-directory: server
         run: go run github.com/pressly/goose/v3/cmd/goose@v3.24.1 -dir ../db/migrations postgres "$DATABASE_URL" up
 
+      # The API image embeds db/migrations; copy them so the drift test
+      # (TestEmbeddedCopyMatchesSourceMigrations) runs instead of skipping.
+      - name: Embed migrations
+        run: make embed-migrations
+
+      - name: Deployment script sandbox tests
+        run: |
+          bash deploy/scripts/test-promote-rollback.sh
+          bash deploy/scripts/test-preflight.sh
+          bash deploy/scripts/test-backup-restore.sh
+          bash deploy/postgres/test-bootstrap.sh
+
       - name: Run meetfiles tests
         working-directory: internal/meetfiles
         run: go test ./...

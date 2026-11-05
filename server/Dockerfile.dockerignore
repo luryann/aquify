@@ -3,6 +3,7 @@
 *
 !server/
 !internal/meetfiles/
+!db/migrations/
 server/**/*_test.go
 internal/meetfiles/**/*_test.go
 internal/meetfiles/testdata/

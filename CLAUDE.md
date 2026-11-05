@@ -58,6 +58,8 @@ Interpret creatively and make unexpected choices that feel genuinely designed fo
 | Native integrations status table | `make integrations-status` |
 | Apply migrations to native Postgres (goose) | `make integrations-migrate` |
 | Start local infra (Docker) | `make infra-up` |
+| Docker without Docker Desktop (macOS arm64) | `. .tools/docker/env.sh && colima start --vm-type vz --cpu 4 --memory 8` (docker + compose + buildx + Colima live in gitignored `.tools/docker`; `DOCKER_HOST` points at `~/.colima/default/docker.sock`; Colima shares only `$HOME`) |
+| Production-shaped local rehearsal | `deploy/scripts/rehearse-local.sh ~/some-empty-dir` (see `deploy/README.md` section 9) |
 | Destroy local infra + volumes | `make infra-reset` |
 | Start local Keycloak (Windows, native) | `powershell -ExecutionPolicy Bypass -File scripts/start-keycloak-local.ps1` (add `-Reset` to wipe data + re-import realm) |
 | Start local Keycloak (macOS/Linux, native) | `make keycloak-local-up` / `make keycloak-local-reset` |

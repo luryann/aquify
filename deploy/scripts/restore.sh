@@ -1,489 +1,186 @@
 #!/usr/bin/env bash
-# aquify Platform Restore Script
+# restore.sh — restore the application database and storage objects from a backup
+# made by backup.sh. Works on the same host or on a fresh one.
 #
-# Restores DB and MinIO objects from a backup snapshot.
+# Usage:  restore.sh <backup-timestamp | /path/to/archive> [--dry-run] [--skip-objects] [--yes]
+#   restore.sh 20261104-020000
+#   restore.sh /var/backups/aquify/aquify-backup-20261104-020000.tar.gz.gpg --yes
 #
-# Usage:
-#   restore.sh <backup-timestamp>
+# Order, and why:
+#   1. Find the archive (local, else rclone) and decrypt it into a private work dir.
+#   2. Check the snapshot is complete and the dump is readable BEFORE touching anything.
+#   3. Stop EVERY writer: api, worker, admin and keycloak (a live Keycloak keeps writing
+#      sessions into the database being replaced).
+#   4. pg_restore as the bootstrap superuser, --single-transaction --exit-on-error: the
+#      restore is all-or-nothing and any error aborts it. (Superuser is required because
+#      row-level security is FORCEd on tenant tables; the data load would otherwise be
+#      refused. Ownership and grants come back from the dump.)
+#   5. Compare schema version and club count with the backup's manifest.
+#   6. Restore objects (unless --skip-objects). A missing mc, credentials or snapshot
+#      directory is a hard failure, never a silent skip.
+#   7. Run migrations with the current release (the dump may be from an older schema).
+#   8. Start the services and require readiness plus a running worker.
 #
-# Examples:
-#   restore.sh 20260323-020015
-#   restore.sh 20260323-020015 --dry-run
-#
-# The script will:
-#   1. Locate the backup archive locally or download from offsite (rclone)
-#   2. GPG-decrypt the archive if encrypted
-#   3. Stop aquify-api and aquify-worker containers
-#   4. Restore PostgreSQL from the custom-format dump
-#   5. Restore MinIO objects via mc mirror
-#   6. Restart services
-#   7. Run health check
-#   8. Log restore event to /var/log/aquify/restores.log
-#
-# Required environment (sourced from /opt/aquify/.env.production or .env.backup):
-#   DATABASE_URL         PostgreSQL connection DSN
-#   MINIO_ENDPOINT       MinIO server URL
-#   MINIO_ACCESS_KEY     MinIO access key
-#   MINIO_SECRET_KEY     MinIO secret key
-#   MINIO_BUCKET         Production bucket name to restore into
-#   RCLONE_REMOTE        rclone remote:path where offsite backups live
-#   GPG_RECIPIENT        GPG key fingerprint (for decrypt — requires matching private key in keyring)
-#
-# Exit codes:
-#   0  Restore completed successfully
-#   1  Fatal error — manual intervention required
+# The plaintext work dir is removed on exit, success or failure. Keycloak USERS are not
+# in this archive (see backup.sh); this script restores application data only.
 
 set -euo pipefail
+umask 077
 
-# libpq does not expand a connection URI from PGDATABASE (only from a dbname
-# argument), so split DATABASE_URL into the PG* variables the tools read. This
-# keeps the embedded password out of `ps` output, which --dbname would expose.
-pg_env_from_url() {
-  local url="$1"
-  local re='^postgres(ql)?://(([^:@/]*)(:([^@]*))?@)?([^:/?]*)(:([0-9]+))?(/([^?]*))?(\?(.*))?$'
-  if [[ ! "${url}" =~ ${re} ]]; then
-    echo "DATABASE_URL must be a postgres:// URL" >&2
-    return 1
-  fi
-  local user="${BASH_REMATCH[3]}" pass="${BASH_REMATCH[5]}" host="${BASH_REMATCH[6]}"
-  local port="${BASH_REMATCH[8]}" db="${BASH_REMATCH[10]}" query="${BASH_REMATCH[12]}"
-  local sslmode=""
-  if [[ "${query}" =~ (^|&)sslmode=([^&]*) ]]; then sslmode="${BASH_REMATCH[2]}"; fi
-  _pg_urldecode() { local v="${1//\\/\\\\}"; printf '%b' "${v//%/\\x}"; }
-  [[ -n "${host}" ]] && export PGHOST="${host}"
-  [[ -n "${port}" ]] && export PGPORT="${port}"
-  [[ -n "${user}" ]] && export PGUSER="$(_pg_urldecode "${user}")"
-  [[ -n "${pass}" ]] && export PGPASSWORD="$(_pg_urldecode "${pass}")"
-  [[ -n "${db}" ]] && export PGDATABASE="$(_pg_urldecode "${db}")"
-  [[ -n "${sslmode}" ]] && export PGSSLMODE="${sslmode}"
-  return 0
-}
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+DEPLOY_DIR="${DEPLOY_DIR:-/opt/aquify}"
+DEPLOY_LOG="${RESTORE_LOG:-/var/log/aquify/restores.log}"
+# shellcheck source=lib.sh
+source "${SCRIPT_DIR}/lib.sh"
 
-# ---------------------------------------------------------------------------
-# Configuration
-# ---------------------------------------------------------------------------
-
-DEPLOY_DIR="/opt/aquify"
+BACKUP_ENV="${BACKUP_ENV:-${DEPLOY_DIR}/.env.backup}"
 BACKUP_DIR="${BACKUP_DIR:-/var/backups/aquify}"
-RESTORE_LOG="/var/log/aquify/restores.log"
-HEALTH_URL="${HEALTH_URL:-http://localhost:8080/api/v1/health/live}"
-HEALTH_TIMEOUT="${HEALTH_TIMEOUT:-120}"
-HEALTH_RETRY_INTERVAL=5
-COMPOSE_FILE="${DEPLOY_DIR}/docker-compose.production.yml"
-APP_SERVICES="aquify-api aquify-worker"
+WRITERS="aquify-api aquify-worker aquify-admin keycloak"
 
-# Load production env
-# shellcheck source=/dev/null
-[ -f "${DEPLOY_DIR}/.env.production" ] && source "${DEPLOY_DIR}/.env.production"
-# shellcheck source=/dev/null
-[ -f "${DEPLOY_DIR}/.env.backup" ] && source "${DEPLOY_DIR}/.env.backup"
-
-DATABASE_URL="${DATABASE_URL:-}"
-MINIO_ENDPOINT="${MINIO_ENDPOINT:-http://localhost:9000}"
-MINIO_ACCESS_KEY="${MINIO_ACCESS_KEY:-}"
-MINIO_SECRET_KEY="${MINIO_SECRET_KEY:-}"
-MINIO_BUCKET="${MINIO_BUCKET:-aquify-production}"
-RCLONE_REMOTE="${RCLONE_REMOTE:-}"
-
-DRY_RUN=false
-
-# ---------------------------------------------------------------------------
-# Argument parsing
-# ---------------------------------------------------------------------------
-
-usage() {
-  echo "Usage: $0 <backup-timestamp> [--dry-run]"
-  echo "  backup-timestamp  Format: YYYYMMDD-HHMMSS (e.g. 20260323-020015)"
-  echo "  --dry-run         Show what would be done without making changes"
-  exit 1
-}
-
-BACKUP_TIMESTAMP="${1:-}"
-if [[ -z "${BACKUP_TIMESTAMP}" ]]; then
-  usage
-fi
-shift
-
+TARGET=""; DRY_RUN=false; SKIP_OBJECTS=false; ASSUME_YES=false
 for arg in "$@"; do
   case "${arg}" in
     --dry-run) DRY_RUN=true ;;
-    *) echo "Unknown argument: ${arg}"; usage ;;
+    --skip-objects) SKIP_OBJECTS=true ;;
+    --yes) ASSUME_YES=true ;;
+    -*) die "unknown option ${arg}" ;;
+    *) [[ -z "${TARGET}" ]] || die "only one backup may be given"; TARGET="${arg}" ;;
   esac
 done
+[[ -n "${TARGET}" ]] || die "usage: restore.sh <backup-timestamp|archive> [--dry-run] [--skip-objects] [--yes]"
 
-# ---------------------------------------------------------------------------
-# Globals
-# ---------------------------------------------------------------------------
+bget() { envget "${BACKUP_ENV}" "$1"; }
+PG_DB="$(envget "${SECRETS_ENV}" POSTGRES_DB)"; PG_DB="${PG_DB:-aquify}"
+PG_SUPER="$(envget "${SECRETS_ENV}" POSTGRES_USER)"
+PG_SUPER_PASS="$(envget "${SECRETS_ENV}" POSTGRES_PASSWORD)"
+MINIO_ENDPOINT="$(bget MINIO_ENDPOINT)"; MINIO_ENDPOINT="${MINIO_ENDPOINT:-http://127.0.0.1:9000}"
+MINIO_ACCESS_KEY="$(bget MINIO_ACCESS_KEY)"; MINIO_SECRET_KEY="$(bget MINIO_SECRET_KEY)"
+MINIO_BUCKET="$(bget MINIO_BUCKET)"; MINIO_BUCKET="${MINIO_BUCKET:-aquify}"
+RCLONE_REMOTE="$(bget RCLONE_REMOTE)"
 
-SNAPSHOT_DIR="${BACKUP_DIR}/${BACKUP_TIMESTAMP}"
-RESTORE_START="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-OPERATOR="$(whoami)"
+ensure_log_dir
+acquire_lock
+WORK_DIR=""
+cleanup() { [[ -z "${WORK_DIR}" ]] || { find "${WORK_DIR}" -mindepth 1 -delete 2>/dev/null || true; rmdir "${WORK_DIR}" 2>/dev/null || true; }; release_lock; }
+trap cleanup EXIT
 
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
+[[ -f "${SECRETS_ENV}" ]] || die "secrets env file not found: ${SECRETS_ENV}"
+[[ -f "${RELEASE_ENV}" ]] || die "release env not found: ${RELEASE_ENV} (needed by compose)"
+[[ -n "${PG_SUPER}" && -n "${PG_SUPER_PASS}" ]] || die "POSTGRES_USER / POSTGRES_PASSWORD missing from ${SECRETS_ENV}"
 
-log() {
-  local level="$1"
-  shift
-  local ts
-  ts="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-  printf '%s [%-5s] %s\n' "${ts}" "${level}" "$*" | tee -a "${RESTORE_LOG}"
-}
+log "====== RESTORE START: ${TARGET} operator=$(whoami) dry-run=${DRY_RUN} ======"
 
-die() {
-  log "ERROR" "$*"
-  log "ERROR" "=== RESTORE ABORTED at step: ${CURRENT_STEP:-unknown} ==="
-  exit 1
-}
-
-# redact_dsn strips user:password@ credentials from a connection URI before
-# it is ever displayed, so operators confirming a restore don't leak the DB
-# password to their terminal scrollback/session recordings.
-redact_dsn() {
-  printf '%s' "$1" | sed -E 's#(://)[^/@]*@#\1[redacted]@#'
-}
-
-CURRENT_STEP="init"
-
-wait_for_health() {
-  local retries=$(( HEALTH_TIMEOUT / HEALTH_RETRY_INTERVAL ))
-  log "INFO" "Waiting for health check at ${HEALTH_URL} (timeout: ${HEALTH_TIMEOUT}s)..."
-  for i in $(seq 1 "${retries}"); do
-    local code
-    code="$(curl -s -o /dev/null -w "%{http_code}" --max-time 5 "${HEALTH_URL}" 2>/dev/null || echo "000")"
-    if [[ "${code}" == "200" ]]; then
-      log "INFO" "Health check passed (attempt ${i}/${retries})"
-      return 0
-    fi
-    log "INFO" "Attempt ${i}/${retries}: HTTP ${code} — retrying in ${HEALTH_RETRY_INTERVAL}s..."
-    sleep "${HEALTH_RETRY_INTERVAL}"
+# ---- 1. locate + decrypt ---------------------------------------------------
+ARCHIVE=""
+if [[ -f "${TARGET}" ]]; then
+  ARCHIVE="${TARGET}"
+else
+  for cand in "${BACKUP_DIR}/aquify-backup-${TARGET}.tar.gz.gpg" "${BACKUP_DIR}/aquify-backup-${TARGET}.tar.gz"; do
+    [[ -f "${cand}" ]] && { ARCHIVE="${cand}"; break; }
   done
-  return 1
-}
-
-confirm() {
-  local prompt="$1"
-  if [[ "${DRY_RUN}" == "true" ]]; then
-    log "INFO" "[dry-run] Skipping confirmation: ${prompt}"
-    return 0
-  fi
-  read -rp "${prompt} [yes/no]: " answer
-  [[ "${answer}" == "yes" ]] || die "Restore aborted by operator"
-}
-
-# ---------------------------------------------------------------------------
-# Setup
-# ---------------------------------------------------------------------------
-
-mkdir -p "$(dirname "${RESTORE_LOG}")"
-touch "${RESTORE_LOG}"
-log "INFO" "=== aquify Restore started: timestamp=${BACKUP_TIMESTAMP} operator=${OPERATOR} dry_run=${DRY_RUN} ==="
-
-# ---------------------------------------------------------------------------
-# Step 1: Locate backup archive
-# ---------------------------------------------------------------------------
-
-CURRENT_STEP="locate-archive"
-log "INFO" "--- Step 1: Locating backup archive ---"
-
-ARCHIVE_FILE=""
-# Check for GPG-encrypted archive first, then plain tar.gz
-for candidate in \
-  "${BACKUP_DIR}/aquify-backup-${BACKUP_TIMESTAMP}.tar.gz.gpg" \
-  "${BACKUP_DIR}/aquify-backup-${BACKUP_TIMESTAMP}.tar.gz"; do
-  if [[ -f "${candidate}" ]]; then
-    ARCHIVE_FILE="${candidate}"
-    log "INFO" "Found local archive: ${ARCHIVE_FILE}"
-    break
-  fi
-done
-
-# Also check if snapshot dir already exists (already extracted)
-if [[ -z "${ARCHIVE_FILE}" && -d "${SNAPSHOT_DIR}" ]]; then
-  log "INFO" "Snapshot directory already present at ${SNAPSHOT_DIR} — skipping download"
 fi
-
-if [[ -z "${ARCHIVE_FILE}" && ! -d "${SNAPSHOT_DIR}" ]]; then
-  log "INFO" "Archive not found locally — attempting offsite download via rclone..."
-
-  if ! command -v rclone &>/dev/null; then
-    die "rclone not found and no local archive exists for ${BACKUP_TIMESTAMP}"
-  fi
-  if [[ -z "${RCLONE_REMOTE}" ]]; then
-    die "RCLONE_REMOTE not set and no local archive exists for ${BACKUP_TIMESTAMP}"
-  fi
-
-  if [[ "${DRY_RUN}" == "true" ]]; then
-    log "INFO" "[dry-run] Would attempt rclone copy from ${RCLONE_REMOTE}/*/ for ${BACKUP_TIMESTAMP}"
-  else
-    # Try all tiers (daily/weekly/monthly)
-    found_offsite=false
-    for tier in daily weekly monthly; do
-      remote_path="${RCLONE_REMOTE}/${tier}/aquify-backup-${BACKUP_TIMESTAMP}.tar.gz.gpg"
-      log "INFO" "Trying: rclone copy '${remote_path}' ${BACKUP_DIR}/"
-      if rclone copy "${remote_path}" "${BACKUP_DIR}/" 2>> "${RESTORE_LOG}"; then
-        ARCHIVE_FILE="${BACKUP_DIR}/aquify-backup-${BACKUP_TIMESTAMP}.tar.gz.gpg"
-        [[ -f "${ARCHIVE_FILE}" ]] && { found_offsite=true; break; }
+if [[ -z "${ARCHIVE}" && -n "${RCLONE_REMOTE}" ]] && command -v rclone >/dev/null 2>&1; then
+  mkdir -p "${BACKUP_DIR}"
+  for tier in daily weekly monthly; do
+    for ext in tar.gz.gpg tar.gz; do
+      if [[ "${DRY_RUN}" == "true" ]]; then continue; fi
+      if rclone copyto "${RCLONE_REMOTE}/${tier}/aquify-backup-${TARGET}.${ext}" "${BACKUP_DIR}/aquify-backup-${TARGET}.${ext}" >/dev/null 2>&1; then
+        ARCHIVE="${BACKUP_DIR}/aquify-backup-${TARGET}.${ext}"; break 2
       fi
     done
-
-    if [[ "${found_offsite}" != "true" ]]; then
-      die "Could not locate archive for timestamp ${BACKUP_TIMESTAMP} locally or offsite"
-    fi
-    log "INFO" "Downloaded from offsite: ${ARCHIVE_FILE}"
-  fi
+  done
 fi
-
-# ---------------------------------------------------------------------------
-# Step 2: Decrypt archive
-# ---------------------------------------------------------------------------
-
-CURRENT_STEP="decrypt"
-log "INFO" "--- Step 2: Decrypting archive ---"
-
-if [[ -n "${ARCHIVE_FILE}" ]] && [[ "${ARCHIVE_FILE}" == *.gpg ]]; then
-  DECRYPTED_ARCHIVE="${ARCHIVE_FILE%.gpg}"
-
-  if [[ "${DRY_RUN}" == "true" ]]; then
-    log "INFO" "[dry-run] Would decrypt ${ARCHIVE_FILE} → ${DECRYPTED_ARCHIVE}"
-  else
-    log "INFO" "Decrypting ${ARCHIVE_FILE}..."
-    if gpg --batch --yes --decrypt --output "${DECRYPTED_ARCHIVE}" "${ARCHIVE_FILE}" 2>> "${RESTORE_LOG}"; then
-      log "INFO" "Decryption complete: ${DECRYPTED_ARCHIVE}"
-      ARCHIVE_FILE="${DECRYPTED_ARCHIVE}"
-    else
-      die "GPG decryption failed — verify private key is in keyring for the backup recipient"
-    fi
-  fi
-fi
-
-# ---------------------------------------------------------------------------
-# Step 3: Extract archive to snapshot directory
-# ---------------------------------------------------------------------------
-
-CURRENT_STEP="extract"
-log "INFO" "--- Step 3: Extracting archive ---"
-
-if [[ -n "${ARCHIVE_FILE}" ]] && [[ "${ARCHIVE_FILE}" == *.tar.gz ]]; then
-  if [[ "${DRY_RUN}" == "true" ]]; then
-    log "INFO" "[dry-run] Would extract ${ARCHIVE_FILE} → ${BACKUP_DIR}/"
-  else
-    if [[ ! -d "${SNAPSHOT_DIR}" ]]; then
-      log "INFO" "Extracting ${ARCHIVE_FILE}..."
-      tar -xzf "${ARCHIVE_FILE}" -C "${BACKUP_DIR}" 2>> "${RESTORE_LOG}" \
-        || die "tar extraction failed"
-      log "INFO" "Extracted to ${SNAPSHOT_DIR}"
-    else
-      log "INFO" "Snapshot dir already exists — skipping extraction"
-    fi
-  fi
-fi
-
-# Validate snapshot directory contents
-if [[ "${DRY_RUN}" != "true" ]]; then
-  if [[ ! -d "${SNAPSHOT_DIR}" ]]; then
-    die "Snapshot directory not found after extraction: ${SNAPSHOT_DIR}"
-  fi
-  log "INFO" "Snapshot contents:"
-  ls -lh "${SNAPSHOT_DIR}" | tee -a "${RESTORE_LOG}"
-fi
-
-# ---------------------------------------------------------------------------
-# Confirmation gate
-# ---------------------------------------------------------------------------
-
-echo ""
-echo "========================================================================"
-echo "  aquify RESTORE CONFIRMATION"
-echo "  Backup timestamp : ${BACKUP_TIMESTAMP}"
-echo "  Target database  : $(redact_dsn "${DATABASE_URL}")"
-echo "  Target MinIO     : ${MINIO_ENDPOINT}/${MINIO_BUCKET}"
-echo "  Dry run          : ${DRY_RUN}"
-echo ""
-echo "  WARNING: This will OVERWRITE the current database and object storage."
-echo "  Ensure you have verified the backup and notified the team."
-echo "========================================================================"
-echo ""
-confirm "Are you sure you want to restore from ${BACKUP_TIMESTAMP}?"
-
-# ---------------------------------------------------------------------------
-# Step 4: Stop application services
-# ---------------------------------------------------------------------------
-
-CURRENT_STEP="stop-services"
-log "INFO" "--- Step 4: Stopping application services ---"
+[[ -n "${ARCHIVE}" ]] || die "no archive found for '${TARGET}' locally or offsite"
+log "Archive: ${ARCHIVE}"
 
 if [[ "${DRY_RUN}" == "true" ]]; then
-  log "INFO" "[dry-run] Would stop services: ${APP_SERVICES}"
+  log "[dry-run] would decrypt, verify, stop ${WRITERS}, pg_restore, check manifest, restore objects, migrate, start services"
+  log "====== RESTORE DRY-RUN COMPLETE ======"
+  exit 0
+fi
+
+mkdir -p "${BACKUP_DIR}"
+WORK_DIR="$(mktemp -d "${BACKUP_DIR}/.restore-XXXXXX")"
+chmod 700 "${WORK_DIR}"
+if [[ "${ARCHIVE}" == *.gpg ]]; then
+  command -v gpg >/dev/null 2>&1 || die "gpg is required to decrypt ${ARCHIVE}"
+  gpg --batch --yes --decrypt --output "${WORK_DIR}/archive.tar.gz" "${ARCHIVE}" >> "${DEPLOY_LOG}" 2>&1 \
+    || die "gpg decryption failed (is the private key in this user's keyring?)"
+  TARBALL="${WORK_DIR}/archive.tar.gz"
 else
-  log "INFO" "Stopping: ${APP_SERVICES}..."
-  # shellcheck disable=SC2086
-  docker compose -f "${COMPOSE_FILE}" stop ${APP_SERVICES} \
-    >> "${RESTORE_LOG}" 2>&1 \
-    || die "Failed to stop application services"
-  log "INFO" "Services stopped"
+  TARBALL="${ARCHIVE}"
+fi
+tar -xzf "${TARBALL}" -C "${WORK_DIR}" || die "archive is not a valid tar.gz"
+SNAP="$(find "${WORK_DIR}" -mindepth 1 -maxdepth 1 -type d | head -n 1)"
+[[ -n "${SNAP}" ]] || die "archive contains no snapshot directory"
+
+# ---- 2. validate the snapshot before changing anything ----------------------
+[[ -s "${SNAP}/postgres.dump" ]] || die "snapshot has no postgres.dump"
+[[ -s "${SNAP}/manifest.txt" ]] || die "snapshot has no manifest.txt (not made by this backup.sh?)"
+want_version="$(envget "${SNAP}/manifest.txt" goose_version)"
+want_orgs="$(envget "${SNAP}/manifest.txt" org_count)"
+[[ -n "${want_version}" && -n "${want_orgs}" ]] || die "manifest.txt is incomplete"
+compose up -d postgres || die "could not start postgres"
+for _ in $(seq 1 30); do compose exec -T postgres pg_isready -U "${PG_SUPER}" -d "${PG_DB}" >/dev/null 2>&1 && break; sleep 2; done
+compose exec -T postgres pg_restore --list < "${SNAP}/postgres.dump" >/dev/null || die "postgres.dump is unreadable; nothing was changed"
+if [[ "${SKIP_OBJECTS}" != "true" ]]; then
+  [[ -d "${SNAP}/minio" ]] || die "snapshot has no minio/ directory (use --skip-objects only if that is intended)"
+  command -v mc >/dev/null 2>&1 || die "'mc' is required to restore objects (use --skip-objects only if that is intended)"
+  [[ -n "${MINIO_ACCESS_KEY}" && -n "${MINIO_SECRET_KEY}" ]] || die "MINIO_ACCESS_KEY / MINIO_SECRET_KEY missing from ${BACKUP_ENV}"
+fi
+log "Snapshot verified: schema ${want_version}, ${want_orgs} club(s)"
+
+if [[ "${ASSUME_YES}" != "true" ]]; then
+  read -r -p "This REPLACES database '${PG_DB}' on this host with the backup. Type RESTORE to continue: " answer
+  [[ "${answer}" == "RESTORE" ]] || die "aborted by operator"
 fi
 
-# ---------------------------------------------------------------------------
-# Step 5: Restore PostgreSQL
-# ---------------------------------------------------------------------------
+# ---- 3. stop every writer ---------------------------------------------------
+log "Stopping writers: ${WRITERS}"
+compose stop ${WRITERS} || die "could not stop all services; refusing to restore under live writers"
 
-CURRENT_STEP="restore-postgres"
-log "INFO" "--- Step 5: Restoring PostgreSQL ---"
-
-PG_DUMP="${SNAPSHOT_DIR}/postgres.dump"
-
-if [[ ! -f "${PG_DUMP}" ]] && [[ "${DRY_RUN}" != "true" ]]; then
-  die "PostgreSQL dump not found: ${PG_DUMP}"
+# ---- 4. database -------------------------------------------------------------
+log "Restoring PostgreSQL (single transaction, exit on first error)..."
+if ! PGPASSWORD="${PG_SUPER_PASS}" compose exec -T -e PGPASSWORD postgres \
+      pg_restore -U "${PG_SUPER}" -d "${PG_DB}" --clean --if-exists --single-transaction --exit-on-error --no-password \
+      < "${SNAP}/postgres.dump"; then
+  die "pg_restore failed; the transaction was rolled back and the database is unchanged. Services are STOPPED."
 fi
 
-if [[ "${DRY_RUN}" == "true" ]]; then
-  log "INFO" "[dry-run] Would run pg_restore --clean --if-exists from ${PG_DUMP}"
+# ---- 5. manifest check ---------------------------------------------------------
+q() { PGPASSWORD="${PG_SUPER_PASS}" compose exec -T -e PGPASSWORD postgres psql -U "${PG_SUPER}" -d "${PG_DB}" -Atq -c "$1"; }
+got_version="$(q "SELECT COALESCE(max(version_id), 0) FROM goose_db_version")" || die "cannot read the restored schema version"
+got_orgs="$(q "SELECT count(*) FROM orgs")" || die "cannot read the restored club count"
+[[ "${got_version}" == "${want_version}" ]] || die "schema version after restore is ${got_version}, manifest says ${want_version}"
+[[ "${got_orgs}" == "${want_orgs}" ]] || die "club count after restore is ${got_orgs}, manifest says ${want_orgs}"
+log "Database matches the manifest (schema ${got_version}, ${got_orgs} club(s))"
+
+# ---- 6. objects -------------------------------------------------------------------
+if [[ "${SKIP_OBJECTS}" == "true" ]]; then
+  log "WARNING: --skip-objects: stored files were NOT restored"
 else
-  log "INFO" "Restoring from ${PG_DUMP}..."
-  # Only this run's log lines count when looking for pg_restore errors; the log
-  # also holds earlier restores.
-  log_lines_before="$(wc -l < "${RESTORE_LOG}")"
-  # Host, user and password travel as PG* variables (see pg_env_from_url), not
-  # argv; pg_restore (unlike pg_dump) ignores PGDATABASE, so only the database
-  # name is passed explicitly.
-  if ( pg_env_from_url "${DATABASE_URL}" && pg_restore \
-      --dbname "${PGDATABASE:-}" \
-      --clean \
-      --if-exists \
-      --no-password \
-      --verbose \
-      "${PG_DUMP}" 2>> "${RESTORE_LOG}" ); then
-    log "INFO" "PostgreSQL restore complete"
-  else
-    # pg_restore exits non-zero for ignorable warnings — check for actual errors
-    if tail -n "+$((log_lines_before + 1))" "${RESTORE_LOG}" 2>/dev/null | grep -q "ERROR:"; then
-      die "pg_restore reported errors — see ${RESTORE_LOG}"
-    else
-      log "WARN" "pg_restore exited non-zero but no ERROR lines found — likely warnings only"
-    fi
-  fi
+  log "Restoring objects into ${MINIO_BUCKET}..."
+  compose up -d minio || die "could not start minio"
+  alias_env="MC_HOST_aquifydst=${MINIO_ENDPOINT/\/\//\/\/${MINIO_ACCESS_KEY}:${MINIO_SECRET_KEY}@}"
+  env "${alias_env}" mc mb --ignore-existing "aquifydst/${MINIO_BUCKET}" >> "${DEPLOY_LOG}" 2>&1 || die "cannot reach MinIO / create the bucket"
+  env "${alias_env}" mc mirror --overwrite --preserve "${SNAP}/minio" "aquifydst/${MINIO_BUCKET}" >> "${DEPLOY_LOG}" 2>&1 \
+    || die "object restore failed"
 fi
 
-# ---------------------------------------------------------------------------
-# Step 6: Run pending migrations
-# ---------------------------------------------------------------------------
+# ---- 7. migrate to the current release ---------------------------------------------
+log "Applying migrations for the current release..."
+compose --profile tools run --rm aquify-migrate || die "migration after restore failed"
 
-CURRENT_STEP="run-migrations"
-log "INFO" "--- Step 6: Running pending database migrations ---"
+# ---- 8. start and verify ----------------------------------------------------------------
+log "Starting services..."
+# The API validates Keycloak's JWKS through the ingress at startup, so keycloak AND caddy must
+# be up first (caddy is not started by `up keycloak`: found by running a restore on a clean
+# stack). api/worker are started before admin so compose does not wait on admin's
+# "api healthy" condition while the API is still retrying Keycloak; admin follows readiness.
+compose up -d keycloak caddy || die "keycloak/ingress did not start"
+compose up -d --no-deps aquify-api aquify-worker || die "api/worker did not start"
+wait_for_ready || die "API did not become ready after restore"
+compose up -d --no-deps aquify-admin || die "admin did not start"
+worker_running || die "worker is not running after restore"
 
-if command -v goose &>/dev/null; then
-  if [[ "${DRY_RUN}" == "true" ]]; then
-    log "INFO" "[dry-run] Would run: goose up (database migrations)"
-  else
-    log "INFO" "Running goose up..."
-    # DSN is passed via GOOSE_DBSTRING (env-only) rather than as a positional
-    # argument, so it never appears in `ps` output.
-    GOOSE_DRIVER="postgres" GOOSE_DBSTRING="${DATABASE_URL}" goose \
-      -dir "${DEPLOY_DIR}/db/migrations" \
-      up >> "${RESTORE_LOG}" 2>&1 \
-      || die "goose up failed — database may be at wrong schema version"
-    log "INFO" "Migrations applied"
-  fi
-else
-  log "WARN" "'goose' not found in PATH — skipping migration step. Run 'make db-up' manually after restore."
-fi
-
-# ---------------------------------------------------------------------------
-# Step 7: Restore MinIO
-# ---------------------------------------------------------------------------
-
-CURRENT_STEP="restore-minio"
-log "INFO" "--- Step 7: Restoring MinIO object storage ---"
-
-MINIO_BACKUP_DIR="${SNAPSHOT_DIR}/minio"
-
-if [[ ! -d "${MINIO_BACKUP_DIR}" ]] && [[ "${DRY_RUN}" != "true" ]]; then
-  log "WARN" "MinIO backup directory not found at ${MINIO_BACKUP_DIR} — skipping MinIO restore"
-else
-  if ! command -v mc &>/dev/null; then
-    log "WARN" "'mc' not found — skipping MinIO restore"
-  elif [[ -z "${MINIO_ACCESS_KEY}" || -z "${MINIO_SECRET_KEY}" ]]; then
-    log "WARN" "MINIO_ACCESS_KEY / MINIO_SECRET_KEY not set — skipping MinIO restore"
-  else
-    if [[ "${DRY_RUN}" == "true" ]]; then
-      log "INFO" "[dry-run] mc mirror ${MINIO_BACKUP_DIR} → aquify-restore/${MINIO_BUCKET}"
-    else
-      mc alias set aquify-restore "${MINIO_ENDPOINT}" "${MINIO_ACCESS_KEY}" "${MINIO_SECRET_KEY}" \
-        --api S3v4 2>> "${RESTORE_LOG}" \
-        || die "mc alias set failed"
-
-      log "INFO" "Mirroring ${MINIO_BACKUP_DIR} → aquify-restore/${MINIO_BUCKET}..."
-      if mc mirror --overwrite --preserve "${MINIO_BACKUP_DIR}" "aquify-restore/${MINIO_BUCKET}" \
-          >> "${RESTORE_LOG}" 2>&1; then
-        log "INFO" "MinIO restore complete"
-      else
-        die "mc mirror failed during restore — see ${RESTORE_LOG}"
-      fi
-    fi
-  fi
-fi
-
-# ---------------------------------------------------------------------------
-# Step 8: Restart services
-# ---------------------------------------------------------------------------
-
-CURRENT_STEP="restart-services"
-log "INFO" "--- Step 8: Restarting application services ---"
-
-if [[ "${DRY_RUN}" == "true" ]]; then
-  log "INFO" "[dry-run] Would start: ${APP_SERVICES}"
-else
-  log "INFO" "Starting: ${APP_SERVICES}..."
-  # shellcheck disable=SC2086
-  docker compose -f "${COMPOSE_FILE}" start ${APP_SERVICES} \
-    >> "${RESTORE_LOG}" 2>&1 \
-    || die "Failed to start application services after restore"
-  log "INFO" "Services started"
-fi
-
-# ---------------------------------------------------------------------------
-# Step 9: Health check
-# ---------------------------------------------------------------------------
-
-CURRENT_STEP="health-check"
-log "INFO" "--- Step 9: Health check ---"
-
-if [[ "${DRY_RUN}" == "true" ]]; then
-  log "INFO" "[dry-run] Would poll ${HEALTH_URL} for up to ${HEALTH_TIMEOUT}s"
-else
-  if wait_for_health; then
-    log "INFO" "Platform is healthy after restore"
-  else
-    die "Health check failed after restore — services may need manual intervention"
-  fi
-fi
-
-# ---------------------------------------------------------------------------
-# Step 10: Log restore event
-# ---------------------------------------------------------------------------
-
-CURRENT_STEP="log-restore"
-log "INFO" "--- Step 10: Logging restore event ---"
-
-RESTORE_END="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-RESTORE_RECORD="{\"started\":\"${RESTORE_START}\",\"completed\":\"${RESTORE_END}\",\"backup_timestamp\":\"${BACKUP_TIMESTAMP}\",\"operator\":\"${OPERATOR}\",\"dry_run\":${DRY_RUN}}"
-
-echo "${RESTORE_RECORD}" >> "${RESTORE_LOG}"
-log "INFO" "Restore event recorded to ${RESTORE_LOG}"
-
-# ---------------------------------------------------------------------------
-# Done
-# ---------------------------------------------------------------------------
-
-echo ""
-echo "========================================================================"
-echo "  aquify RESTORE COMPLETE"
-echo "  Backup timestamp : ${BACKUP_TIMESTAMP}"
-echo "  Completed at     : ${RESTORE_END}"
-echo "  Log              : ${RESTORE_LOG}"
-echo "========================================================================"
-
-log "INFO" "=== aquify Restore completed successfully: ${BACKUP_TIMESTAMP} ==="
-exit 0
+log "====== RESTORE SUCCESS: ${TARGET} (schema ${got_version}, ${got_orgs} club(s)) ======"

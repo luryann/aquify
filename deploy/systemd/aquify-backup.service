@@ -28,7 +28,8 @@ ProtectSystem=strict
 ReadWritePaths=/opt/aquify /var/backups/aquify /var/log/aquify
 ProtectHome=read-only
 
-EnvironmentFile=-/opt/aquify/.env.production
+# No EnvironmentFile: backup.sh parses /opt/aquify/.env.production and .env.backup itself
+# (they are never sourced). The aquify user needs access to the docker socket.
 
 [Install]
 WantedBy=multi-user.target

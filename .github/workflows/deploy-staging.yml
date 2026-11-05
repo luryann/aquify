@@ -43,6 +43,7 @@ jobs:
           echo "GHCR_NAMESPACE=${NS}" >> "$GITHUB_ENV"
           echo "API_IMAGE=${REGISTRY}/${NS}/aquify-api" >> "$GITHUB_ENV"
           echo "ADMIN_IMAGE=${REGISTRY}/${NS}/aquify-admin" >> "$GITHUB_ENV"
+          echo "ADMIN_PRODUCTION_IMAGE=${REGISTRY}/${NS}/aquify-admin-production" >> "$GITHUB_ENV"
 
       # -----------------------------------------------------------------------
       # Container Registry Login
@@ -118,6 +119,26 @@ jobs:
             NEXT_PUBLIC_APP_ENV=staging
             NEXT_PUBLIC_AUTH_ENABLE_DEV_STUB_TOKENS=false
 
+      # NEXT_PUBLIC_* values are compiled into the browser bundle, so the image
+      # that runs in production must be built with NEXT_PUBLIC_APP_ENV=production;
+      # a staging build promoted unchanged would carry "staging" (which, for
+      # example, re-enables localhost org resolution). Build that variant from the
+      # same commit under its own name so production promotes it without a rebuild.
+      - name: Build and push Admin image (production build)
+        uses: docker/build-push-action@v6
+        with:
+          context: admin
+          file: admin/Dockerfile
+          push: true
+          tags: |
+            ${{ env.ADMIN_PRODUCTION_IMAGE }}:sha-${{ env.SHORT_SHA }}
+          cache-from: type=gha,scope=admin-production
+          cache-to: type=gha,mode=max,scope=admin-production
+          build-args: |
+            BUILD_SHA=${{ env.DEPLOY_SHA }}
+            NEXT_PUBLIC_APP_ENV=production
+            NEXT_PUBLIC_AUTH_ENABLE_DEV_STUB_TOKENS=false
+
       # -----------------------------------------------------------------------
       # Deploy to staging server
       # -----------------------------------------------------------------------
@@ -142,15 +163,16 @@ jobs:
 
             cd "${DEPLOY_DIR}"
 
-            # Pull new images
-            IMAGE_TAG="${IMAGE_TAG}" docker compose \
-              -f docker-compose.staging.yml pull aquify-api aquify-admin aquify-worker
-
-            # Rolling restart of application containers only
-            IMAGE_TAG="${IMAGE_TAG}" docker compose \
-              -f docker-compose.staging.yml up -d \
-              --no-deps --remove-orphans \
-              aquify-api aquify-admin aquify-worker
+            # Same release flow as production (scripts/promote.sh): deploy lock, pull, run
+            # migrations with the new image BEFORE any container changes, swap api/admin/worker,
+            # require readiness, roll back on failure. Secrets live in .env.staging (compose
+            # interpolation) and .env.staging.app (api/worker); release.env holds only the tag.
+            DEPLOY_DIR="${DEPLOY_DIR}" \
+            COMPOSE_FILE="${DEPLOY_DIR}/docker-compose.staging.yml" \
+            SECRETS_ENV="${DEPLOY_DIR}/.env.staging" \
+            DEPLOY_LOG=/var/log/aquify/deploys.log \
+            GHCR_NAMESPACE="${GHCR_NAMESPACE}" \
+              "${DEPLOY_DIR}/scripts/promote.sh" "${IMAGE_TAG}"
 
             echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] Deploy complete IMAGE_TAG=${IMAGE_TAG}" \
               >> /var/log/aquify/deploys.log

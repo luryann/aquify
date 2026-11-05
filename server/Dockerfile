@@ -26,6 +26,12 @@ RUN go mod download && go mod verify
 # Copy source
 COPY server/ ./
 
+# Embed the schema migrations (db/migrations is the single source of truth) so
+# `aquify-api migrate up` can initialise/upgrade the database from this image
+# alone. The build fails if nothing was copied.
+COPY db/migrations ./internal/dbmigrate/sql/
+RUN test "$(ls internal/dbmigrate/sql/*.sql | wc -l)" -gt 0
+
 # Build arguments for embedding version metadata
 ARG BUILD_SHA=unknown
 ARG BUILD_REF=unknown

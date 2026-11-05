@@ -12,99 +12,37 @@ live exclusively on production infrastructure, managed by the procedures below.
 
 ## Secret Storage
 
-### Production VPS
+Production secrets live on the server in three files under `/opt/aquify/`, created from the
+templates in `deploy/env/` (owner `root:aquify`, mode `640`, never committed, never in an image):
 
-All runtime secrets are stored in a single env file on the server:
+| File | Contains | Used by |
+|---|---|---|
+| `.env.production` | infrastructure secrets: Postgres superuser/owner/app/backup/Keycloak-DB passwords, Redis, MinIO root, Keycloak bootstrap admin, Grafana, `AQUIFY_DOMAIN`, `ACME_EMAIL` | compose variable interpolation (`--env-file`), host scripts. **Not** handed to the app containers |
+| `.env.app` | API/worker runtime config: `DATABASE_URL` (restricted app role), `REDIS_URL`, storage keys, OIDC, Keycloak admin client, Stripe, Postmark, signing/encryption keys | `aquify-api`, `aquify-worker` only (`env_file`) |
+| `.env.backup` | `MINIO_ACCESS_KEY`/`SECRET_KEY`, `GPG_RECIPIENT`, `RCLONE_REMOTE`, `ALERT_WEBHOOK` | `backup.sh`, `restore.sh` |
 
-```
-/opt/aquify/.env.production
-```
+`release.env` (image tag and registry namespace, no secrets) is separate and owned by the deploy
+user, so deploy automation never writes a secrets file. The scripts parse env files; they never
+`source` them.
 
-Ownership and permissions:
-```
-chown root:aquify /opt/aquify/.env.production
-chmod 640 /opt/aquify/.env.production
-```
+`deploy/scripts/preflight.sh` validates all of the above (placeholders, formats, permissions,
+consistency between files). The templates are checked against the compose file and the server
+source by `go test ./internal/deploycheck`, so a documented variable that nothing reads (the old
+`SESSION_SIGNING_KEY`/`SESSION_ENCRYPTION_KEY`) fails the build.
 
-Only `root` and members of the `aquify` system group can read this file. The `aquify`
-service user (which runs the systemd unit) is a member of that group. The file is
-**never** committed to git and is **never** included in Docker images.
+### What each secret is
 
-### Staging VPS
-
-Same pattern at `/opt/aquify/.env.staging`, owned `root:aquify`, mode `640`.
-
----
-
-## Secret Categories
-
-### Database Credentials
-| Variable | Description |
-|---|---|
-| `POSTGRES_PASSWORD` | PostgreSQL superuser / application user password |
-| `DATABASE_URL` | Full DSN including credentials: `postgres://aquify:<pw>@postgres:5432/aquify?sslmode=disable` |
-
-### Redis
-| Variable | Description |
-|---|---|
-| `REDIS_PASSWORD` | Redis AUTH password |
-| `REDIS_URL` | Full URL: `redis://:${REDIS_PASSWORD}@redis:6379/0` |
-
-### Object Storage (MinIO / S3-compatible)
-| Variable | Description |
-|---|---|
-| `MINIO_ROOT_USER` | MinIO root user (equivalent to AWS Access Key ID) |
-| `MINIO_ROOT_PASSWORD` | MinIO root password (equivalent to AWS Secret Access Key) |
-| `STORAGE_ENDPOINT` | Storage endpoint (required outside development; `S3_ENDPOINT` is a legacy alias) |
-| `STORAGE_ACCESS_KEY` | App-scoped access key (not root key) |
-| `STORAGE_SECRET_KEY` | App-scoped secret key |
-| `STORAGE_REGION` | Region (use `us-east-1` for MinIO) |
-| `STORAGE_BUCKET` | Target bucket name |
-| `INTEGRATIONS_ENCRYPTION_KEY` | Required at startup outside development; encrypts stored integration credentials |
-| `WORKER_SCHEDULED_ORG_IDS` | Required in staging/production for org-scoped scheduled jobs |
-| `PLATFORM_ORG_ID` | Optional; enables the `/api/v1/platform/*` operator plane |
-| `STRIPE_CONNECT_REQUIRED` | Defaults to on outside development; each club uses its own Stripe Connect account |
-
-### Stripe (Payments)
-| Variable | Description |
-|---|---|
-| `STRIPE_SECRET_KEY` | Live secret key (`sk_live_...`) |
-| `STRIPE_WEBHOOK_SECRET` | Webhook endpoint signing secret (`whsec_...`) |
-
-### Postmark (Email)
-| Variable | Description |
-|---|---|
-| `POSTMARK_SERVER_TOKEN` | Server API token |
-| `POSTMARK_FROM_EMAIL` | Verified sender address |
-| `POSTMARK_WEBHOOK_AUTH_HEADER_NAME` | Custom header name for webhook auth |
-| `POSTMARK_WEBHOOK_AUTH_HEADER_VALUE` | Custom header value for webhook auth |
-
-### Keycloak / OIDC
-| Variable | Description |
-|---|---|
-| `KEYCLOAK_ADMIN_PASSWORD` | Keycloak admin console password |
-| `OIDC_CLIENT_ID` | aquify app client ID in Keycloak realm |
-| `OIDC_CLIENT_SECRET` | aquify app client secret |
-| `OIDC_STATE_SIGNING_KEY` | HMAC key for signing OAuth2 state parameter (32+ random bytes, hex-encoded) |
-| `OIDC_AUTHORIZE_URL` | Authorization endpoint |
-| `OIDC_TOKEN_URL` | Token endpoint |
-| `OIDC_JWKS_URL` | JWKS endpoint for token validation |
-| `OIDC_REDIRECT_URL` | Registered callback URL |
-
-### Session / CSRF
-| Variable | Description |
-|---|---|
-| `SESSION_SIGNING_KEY` | HMAC key for session token signing (32+ random bytes, hex-encoded) |
-| `SESSION_ENCRYPTION_KEY` | AES key for session payload encryption (32 bytes, hex-encoded) |
-| `SECURITY_CSRF_HEADER_NAME` | CSRF header name (default: `X-CSRF-Token`) |
-
-### Observability
-| Variable | Description |
-|---|---|
-| `GRAFANA_ADMIN_PASSWORD` | Grafana admin password |
-| `OTEL_EXPORTER_OTLP_ENDPOINT` | OTLP endpoint for traces |
-
----
+- **Database roles** (`.env.production`): four distinct passwords for `aquify_admin` (bootstrap
+  superuser, break-glass only), `aquify_owner` (schema owner, migrations only), `aquify_app`
+  (API/worker; the same value appears in `DATABASE_URL`), `aquify_backup` (read-only), plus the
+  `keycloak` role. 16+ characters of `[A-Za-z0-9_-]`.
+- **`INTEGRATIONS_ENCRYPTION_KEY`, `OIDC_STATE_SIGNING_KEY`**: 32+ characters. Losing the first
+  makes stored third-party credentials unreadable; escrow it.
+- **MinIO**: root credentials are administration only. The app uses a scoped service account.
+- **Stripe**: `sk_live_...`, the platform webhook secret and the Connect webhook secret.
+- **Postmark**: server token (also used as Keycloak's SMTP credentials), from address, webhook auth.
+- **Keycloak**: `OIDC_CLIENT_SECRET` and `KEYCLOAK_ADMIN_CLIENT_SECRET` are written into the
+  realm by `keycloak/render_realm.py`, so they only need to be set once, in `.env.app`.
 
 ## Secret Generation
 
@@ -135,7 +73,7 @@ distinct credentials.
 
 2. **Update .env.production on the VPS**
    ```bash
-   sudo nano /opt/aquify/.env.production
+   sudo nano /opt/aquify/.env.production   # or .env.app for application secrets
    # Edit the relevant variable, save and exit
    ```
 
@@ -159,12 +97,14 @@ distinct credentials.
      >> /var/log/aquify/ops.log
    ```
 
-For `POSTGRES_PASSWORD` rotation, also run:
+For a database role password (`AQUIFY_*_DB_PASSWORD`, `KEYCLOAK_DB_PASSWORD`, `POSTGRES_PASSWORD`):
+edit `.env.production`, recreate the container so it sees the new value (`... up -d postgres`; a brief database restart), then re-apply the roles (idempotent, sets every password again):
 ```bash
-docker exec -it aquify-production-postgres-1 \
-  psql -U aquify -c "ALTER USER aquify PASSWORD 'newpassword';"
+docker compose --project-directory /opt/aquify --env-file .env.production --env-file release.env \
+  -f docker-compose.production.yml exec postgres bash /docker-entrypoint-initdb.d/10-bootstrap.sh
 ```
-Then update `DATABASE_URL` and `POSTGRES_PASSWORD` in `.env.production` and restart.
+If it is the application role, also change the password inside `DATABASE_URL` in `.env.app`
+(they must match; `preflight.sh` checks), then restart the api and worker.
 
 ---
 

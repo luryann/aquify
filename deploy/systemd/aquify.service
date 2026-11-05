@@ -11,22 +11,28 @@ User=aquify
 Group=aquify
 WorkingDirectory=/opt/aquify
 
-# Pull latest images before starting
-ExecStartPre=/usr/bin/docker compose -f docker-compose.production.yml pull --quiet
+# Compose reads ${VARS} for docker-compose.production.yml from these two files
+# (service env_file entries do NOT feed interpolation):
+#   .env.production  infrastructure secrets (root:aquify 640, never written by scripts)
+#   release.env      IMAGE_TAG / GHCR_NAMESPACE, rewritten by promote.sh and rollback.sh
+# There is deliberately no `pull` here: a restart must come back on the exact
+# images that were last promoted, not on whatever a tag points at today. Images are
+# pulled by promote.sh.
 
 # Start all services, removing any orphaned containers
-ExecStart=/usr/bin/docker compose -f docker-compose.production.yml up --remove-orphans
+ExecStart=/usr/bin/docker compose --project-directory /opt/aquify --env-file /opt/aquify/.env.production --env-file /opt/aquify/release.env -f /opt/aquify/docker-compose.production.yml up --remove-orphans
 
 # Graceful shutdown: stop all containers
-ExecStop=/usr/bin/docker compose -f docker-compose.production.yml down
+ExecStop=/usr/bin/docker compose --project-directory /opt/aquify --env-file /opt/aquify/.env.production --env-file /opt/aquify/release.env -f /opt/aquify/docker-compose.production.yml down
 
-# Reload: rolling restart of application services only
-ExecReload=/usr/bin/docker compose -f docker-compose.production.yml up -d --no-deps --remove-orphans aquify-api aquify-admin aquify-worker
+# Reload: recreate the application services only (use promote.sh for releases)
+ExecReload=/usr/bin/docker compose --project-directory /opt/aquify --env-file /opt/aquify/.env.production --env-file /opt/aquify/release.env -f /opt/aquify/docker-compose.production.yml up -d --no-deps --remove-orphans aquify-api aquify-admin aquify-worker
 
 Restart=on-failure
 RestartSec=10s
-TimeoutStartSec=120s
-TimeoutStopSec=60s
+# First start after a fresh install may need to pull/extract several images.
+TimeoutStartSec=600s
+TimeoutStopSec=120s
 
 # Logging
 StandardOutput=journal
@@ -39,9 +45,6 @@ PrivateTmp=true
 ProtectSystem=strict
 ReadWritePaths=/opt/aquify /var/log/aquify
 ProtectHome=read-only
-
-# Environment
-EnvironmentFile=-/opt/aquify/.env.production
 
 [Install]
 WantedBy=multi-user.target

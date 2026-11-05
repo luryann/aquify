@@ -1,0 +1,82 @@
+-- Restricted database roles for Aquify. Executed by 10-bootstrap.sh (and by the
+-- deploy/README.md "rotate database passwords" step) as the bootstrap superuser,
+-- connected to the application database. Names and passwords arrive as custom
+-- settings (aquify.*), never interpolated into this text, and every statement is
+-- idempotent: re-running it re-asserts attributes and sets the passwords again.
+--
+-- Roles
+--   owner   owns the database and everything the migrations create; used ONLY by
+--           `aquify-api migrate up`. LOGIN, not superuser, not BYPASSRLS.
+--   app     what the API and worker connect as. DML on tables created by owner,
+--           no DDL, NOSUPERUSER NOBYPASSRLS so row-level security always applies.
+--   backup  read-only; BYPASSRLS because pg_dump must read every club's rows
+--           (with FORCE RLS a plain role would be refused or dump nothing).
+--   kc      Keycloak's role; owns its own separate database (created by the shell
+--           wrapper), no access to the application database.
+--
+-- Why not one role: row-level security is the database-level tenant isolation
+-- (docs/runbooks/multi-tenancy-operations.md section 1). A superuser or
+-- BYPASSRLS application role silently disables it.
+
+DO $bootstrap$
+DECLARE
+  db_name   text := current_setting('aquify.db_name');
+  owner_u   text := current_setting('aquify.owner_user');
+  owner_pw  text := current_setting('aquify.owner_password');
+  app_u     text := current_setting('aquify.app_user');
+  app_pw    text := current_setting('aquify.app_password');
+  backup_u  text := current_setting('aquify.backup_user');
+  backup_pw text := current_setting('aquify.backup_password');
+  kc_u      text := current_setting('aquify.kc_user');
+  kc_pw     text := current_setting('aquify.kc_password');
+BEGIN
+  IF owner_u IN (app_u, backup_u, kc_u) OR app_u IN (backup_u, kc_u) OR backup_u = kc_u THEN
+    RAISE EXCEPTION 'aquify role names must all be different';
+  END IF;
+
+  -- owner
+  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = owner_u) THEN
+    EXECUTE format('CREATE ROLE %I LOGIN', owner_u);
+  END IF;
+  EXECUTE format('ALTER ROLE %I LOGIN NOSUPERUSER NOBYPASSRLS NOCREATEDB NOCREATEROLE NOREPLICATION PASSWORD %L', owner_u, owner_pw);
+
+  -- app
+  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = app_u) THEN
+    EXECUTE format('CREATE ROLE %I LOGIN', app_u);
+  END IF;
+  EXECUTE format('ALTER ROLE %I LOGIN NOSUPERUSER NOBYPASSRLS NOCREATEDB NOCREATEROLE NOREPLICATION PASSWORD %L', app_u, app_pw);
+
+  -- backup (read-only, sees all rows)
+  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = backup_u) THEN
+    EXECUTE format('CREATE ROLE %I LOGIN', backup_u);
+  END IF;
+  EXECUTE format('ALTER ROLE %I LOGIN NOSUPERUSER BYPASSRLS NOCREATEDB NOCREATEROLE NOREPLICATION PASSWORD %L', backup_u, backup_pw);
+  EXECUTE format('GRANT pg_read_all_data TO %I', backup_u);
+
+  -- keycloak
+  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = kc_u) THEN
+    EXECUTE format('CREATE ROLE %I LOGIN', kc_u);
+  END IF;
+  EXECUTE format('ALTER ROLE %I LOGIN NOSUPERUSER NOBYPASSRLS NOCREATEDB NOCREATEROLE NOREPLICATION PASSWORD %L', kc_u, kc_pw);
+
+  -- The owner owns the application database and its public schema, so the
+  -- migrations create objects owned by it.
+  EXECUTE format('ALTER DATABASE %I OWNER TO %I', db_name, owner_u);
+  EXECUTE format('REVOKE ALL ON DATABASE %I FROM PUBLIC', db_name);
+  EXECUTE format('GRANT CONNECT ON DATABASE %I TO %I, %I, %I', db_name, owner_u, app_u, backup_u);
+  EXECUTE format('REVOKE ALL ON DATABASE %I FROM %I', db_name, kc_u);
+
+  EXECUTE format('ALTER SCHEMA public OWNER TO %I', owner_u);
+  EXECUTE 'REVOKE ALL ON SCHEMA public FROM PUBLIC';
+  EXECUTE format('GRANT USAGE ON SCHEMA public TO %I, %I', app_u, backup_u);
+
+  -- Objects the owner creates from now on (every migration) are usable by the
+  -- app: data access only. Functions keep the default PUBLIC EXECUTE.
+  EXECUTE format('ALTER DEFAULT PRIVILEGES FOR ROLE %I IN SCHEMA public GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO %I', owner_u, app_u);
+  EXECUTE format('ALTER DEFAULT PRIVILEGES FOR ROLE %I IN SCHEMA public GRANT USAGE, SELECT ON SEQUENCES TO %I', owner_u, app_u);
+
+  -- Re-run safety: tables that already exist (a re-run after migrations).
+  EXECUTE format('GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO %I', app_u);
+  EXECUTE format('GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO %I', app_u);
+END
+$bootstrap$;

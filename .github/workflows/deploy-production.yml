@@ -18,6 +18,11 @@ permissions:
 
 env:
   REGISTRY: ghcr.io
+  # Inputs reach shell steps only through these variables, never by ${{ }}
+  # interpolation into script text (that would let a crafted input run commands
+  # on the runner or, via the SSH step, on the production host).
+  IMAGE_TAG_INPUT: ${{ github.event.inputs.image_tag }}
+  CONFIRM_INPUT: ${{ github.event.inputs.confirm }}
 
 jobs:
   # ---------------------------------------------------------------------------
@@ -36,15 +41,23 @@ jobs:
           NS="$(printf '%s' "$RAW_NAMESPACE" | tr '[:upper:]' '[:lower:]')"
           echo "GHCR_NAMESPACE=${NS}" >> "$GITHUB_ENV"
           echo "API_IMAGE=${REGISTRY}/${NS}/aquify-api" >> "$GITHUB_ENV"
-          echo "ADMIN_IMAGE=${REGISTRY}/${NS}/aquify-admin" >> "$GITHUB_ENV"
+          echo "ADMIN_IMAGE=${REGISTRY}/${NS}/aquify-admin-production" >> "$GITHUB_ENV"
 
       - name: Verify confirmation string
         run: |
-          if [ "${{ github.event.inputs.confirm }}" != "DEPLOY" ]; then
-            echo "ERROR: Confirmation string must be exactly 'DEPLOY'. Got: '${{ github.event.inputs.confirm }}'"
+          if [ "${CONFIRM_INPUT}" != "DEPLOY" ]; then
+            echo "ERROR: Confirmation string must be exactly 'DEPLOY'."
             exit 1
           fi
           echo "Confirmation verified."
+
+      - name: Validate image tag
+        run: |
+          # Same rule promote.sh enforces on the server.
+          if ! printf '%s' "${IMAGE_TAG_INPUT}" | grep -Eq '^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$'; then
+            echo "ERROR: image_tag must match [A-Za-z0-9][A-Za-z0-9._-]{0,127}"
+            exit 1
+          fi
 
       - name: Log in to GitHub Container Registry
         uses: docker/login-action@v3
@@ -55,7 +68,7 @@ jobs:
 
       - name: Verify API image exists in GHCR
         run: |
-          IMAGE="${{ env.API_IMAGE }}:${{ github.event.inputs.image_tag }}"
+          IMAGE="${API_IMAGE}:${IMAGE_TAG_INPUT}"
           echo "Checking existence of ${IMAGE} ..."
           docker manifest inspect "${IMAGE}" > /dev/null 2>&1 || {
             echo "ERROR: Image ${IMAGE} not found in GHCR."
@@ -66,7 +79,7 @@ jobs:
 
       - name: Verify Admin image exists in GHCR
         run: |
-          IMAGE="${{ env.ADMIN_IMAGE }}:${{ github.event.inputs.image_tag }}"
+          IMAGE="${ADMIN_IMAGE}:${IMAGE_TAG_INPUT}"
           echo "Checking existence of ${IMAGE} ..."
           docker manifest inspect "${IMAGE}" > /dev/null 2>&1 || {
             echo "ERROR: Image ${IMAGE} not found in GHCR."
@@ -99,13 +112,13 @@ jobs:
           GHCR_NAMESPACE: ${{ env.GHCR_NAMESPACE }}
         uses: appleboy/ssh-action@v1
         with:
-          envs: GHCR_NAMESPACE
+          envs: GHCR_NAMESPACE,IMAGE_TAG_INPUT
           host: ${{ secrets.PRODUCTION_SSH_HOST }}
           username: ${{ secrets.PRODUCTION_SSH_USER }}
           key: ${{ secrets.PRODUCTION_SSH_KEY }}
           script: |
             set -euo pipefail
-            /opt/aquify/scripts/promote.sh "${{ github.event.inputs.image_tag }}"
+            /opt/aquify/scripts/promote.sh "${IMAGE_TAG_INPUT}"
 
       # -----------------------------------------------------------------------
       # Health check

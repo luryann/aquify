@@ -1,290 +1,195 @@
-# aquify Platform — Deployment Guide
+# Aquify — production deployment guide
 
-This document covers deploying the aquify platform to a self-managed VPS behind
-Cloudflare, using Docker Compose and GitHub Actions CI/CD.
+Single Linux host (Ubuntu 22.04/24.04 or Debian 12), Docker Compose, GitHub Actions
+for images. This guide matches the files in this directory; every claim below is
+backed by a test or is listed under **What is not yet verified**.
 
----
-
-## Prerequisites
-
-### On the VPS
-- Ubuntu 22.04 LTS or Debian 12
-- Docker Engine 25+ and Docker Compose V2 (`docker compose`, not `docker-compose`)
-- SSH access as a non-root deploy user (`aquify`)
-- Ports 80/443 open to Cloudflare IP ranges only (via `ufw` or `iptables`)
-- Internal ports (8080, 8081, 3000, 3001, 9090, etc.) firewalled from public access
-
-### On the Developer/CI Machine
-- `ssh` and `scp` for manual operations
-- `docker` with GHCR login for manual image operations
-- `gh` CLI for GitHub Actions interactions
+Related: `docs/production-readiness-tracker.md` (issue list and status),
+`deploy/secrets/README.md` (secret handling), `docs/runbooks/multi-tenancy-operations.md`.
 
 ---
 
-## VPS Directory Structure
-
-After first-time setup the server has the following layout:
+## 1. Layout on the server
 
 ```
 /opt/aquify/
-  docker-compose.production.yml   # Production compose file (pulled from repo)
-  docker-compose.staging.yml      # Staging compose file
-  .env.production                 # Production secrets (root:aquify 640, NOT in repo)
-  .env.staging                    # Staging secrets (root:aquify 640, NOT in repo)
-  scripts/
-    promote.sh                    # Promote an image tag to production
-    rollback.sh                   # Revert to previous image tag
-    backup.sh                     # Daily backup routine
-    smoke.sh                      # Post-deploy smoke tests
-  keycloak/
-    production-realm.json         # Keycloak realm config (host-provisioned, NOT in repo; see below)
-    staging-realm.json
-
-/var/log/aquify/
-  deploys.log                     # Deploy history
-  backup.log                      # Backup run log
-  smoke.log                       # Smoke test log
-  ops.log                         # Manual ops notes
-
-/var/backups/aquify/
-  aquify_backup_<timestamp>.tar.gz  # Daily local backup archives (7-day retention)
+  docker-compose.production.yml
+  .env.production        infra secrets + compose ${VARS}   root:aquify 640   (never written by scripts)
+  .env.app               API/worker runtime config         root:aquify 640
+  .env.backup            backup settings                   root:aquify 640
+  release.env            IMAGE_TAG, GHCR_NAMESPACE         aquify  644       (rewritten by promote/rollback)
+  caddy/Caddyfile        ingress routes
+  postgres/init/         role bootstrap (roles.sql.in, 10-bootstrap.sh)
+  keycloak/production-realm.json     rendered, see 4
+  prometheus/ grafana/ loki/ docs/observability/   monitoring config
+  scripts/               promote.sh rollback.sh backup.sh restore.sh preflight.sh lib.sh smoke.sh
+/var/log/aquify/  /var/backups/aquify/
 ```
 
----
+Why two secret files: `.env.production` feeds compose variable interpolation and holds the
+Postgres superuser and schema-owner passwords; only `.env.app` is handed to the API and worker
+containers, so those privileged passwords never reach the long-running application.
+`release.env` is separate so deploy automation never has to write a root-owned secrets file.
 
-## First-Time Server Setup
+## 2. Network and DNS
 
-### 1. Install Docker
+Open 80/443 (and 443/udp) to the internet; nothing else. All other published ports are bound to
+127.0.0.1 (enforced by a test). Create A/AAAA records for the four names under your domain, all
+pointing at the server: `app.`, `api.`, `auth.`, `files.`. The `caddy` service obtains and renews
+certificates automatically. For a rehearsal VM without DNS use a wildcard name such as
+`203-0-113-10.sslip.io` as `AQUIFY_DOMAIN`.
+
+If Cloudflare proxies the names, see the note at the top of `caddy/Caddyfile`.
+
+## 3. First-time setup
 
 ```bash
+# 3.1 host
 curl -fsSL https://get.docker.com | sh
-sudo usermod -aG docker aquify
-```
-
-### 2. Create the aquify system user
-
-```bash
 sudo useradd -r -m -d /opt/aquify -s /bin/bash aquify
-sudo mkdir -p /opt/aquify /var/log/aquify /var/backups/aquify
-sudo chown -R aquify:aquify /opt/aquify /var/log/aquify /var/backups/aquify
+sudo usermod -aG docker aquify
+sudo mkdir -p /var/log/aquify /var/backups/aquify && sudo chown -R aquify:aquify /opt/aquify /var/log/aquify /var/backups/aquify
+
+# 3.2 Loki logging driver (every service logs through it; compose will not start without it)
+sudo docker plugin install grafana/loki-docker-driver:latest --alias loki --grant-all-permissions
+
+# 3.3 copy the deploy bundle from a checkout of the release you are installing
+rsync -a deploy/ aquify@HOST:/opt/aquify/
+rsync -a docs/observability/ aquify@HOST:/opt/aquify/docs/observability/   # alert rules + dashboards, mounted by compose
 ```
 
-### 3. Copy compose files and scripts
-
 ```bash
-# From your workstation
-scp deploy/docker-compose.production.yml aquify@your-vps:/opt/aquify/
-scp deploy/docker-compose.staging.yml aquify@your-vps:/opt/aquify/
-scp -r deploy/scripts/ aquify@your-vps:/opt/aquify/scripts/
-scp -r deploy/prometheus/ aquify@your-vps:/opt/aquify/prometheus/
-scp -r deploy/grafana/ aquify@your-vps:/opt/aquify/grafana/
-scp -r deploy/loki/ aquify@your-vps:/opt/aquify/loki/
-chmod +x /opt/aquify/scripts/*.sh
-```
-
-### 3b. Provision the Keycloak realm files
-
-`keycloak/production-realm.json` and `keycloak/staging-realm.json` are not in the repo; Compose bind-mounts them
-and Keycloak imports them on first start (`start --import-realm`). If the file is missing, Docker creates an empty
-directory and OIDC will not work. Derive each from `deploy/keycloak/realm-aquify-local.json`, but remove the
-`users` array and the service-account user, replace the `aquify-id`/`aquify-admin` client secrets and redirect URIs
-with the real hostnames, and point `smtpServer` at the real provider. Never ship the local seed users or secrets.
-
-### 4. Create .env.production
-
-```bash
-sudo nano /opt/aquify/.env.production
-# Fill in all secrets per deploy/secrets/README.md
-# Also set METRICS_ADDR=:9091 so Prometheus can scrape the API and worker
-# (deploy/prometheus/*.yml targets aquify-api:9091 and aquify-worker:9091).
-sudo chown root:aquify /opt/aquify/.env.production
-sudo chmod 640 /opt/aquify/.env.production
-```
-
-### 5. Install the systemd units
-
-```bash
-sudo cp deploy/systemd/aquify.service /etc/systemd/system/
-sudo cp deploy/systemd/aquify-backup.service /etc/systemd/system/
-sudo cp deploy/systemd/aquify-backup.timer /etc/systemd/system/
-sudo systemctl daemon-reload
-sudo systemctl enable aquify aquify-backup.timer
-```
-
-### 6. Run database migrations
-
-```bash
-# Ensure the postgres container is up first
-sudo systemctl start aquify
-# Then run goose migrations
-docker exec aquify-production-aquify-api-1 /aquify-api migrate up
-```
-
-### 7. Configure Cloudflare
-
-- Point DNS for `api.aquify.club`, `app.aquify.club`, `auth.aquify.club` to the VPS IP.
-- Enable Cloudflare proxy (orange cloud).
-- Create Page Rules or Transform Rules to proxy `/api/*` to port 8080 and `/` to port 3000.
-- Configure SSL/TLS to "Full (strict)" mode.
-- Add firewall rule to allow only Cloudflare IP ranges on ports 80/443.
-
----
-
-## Staging vs Production Environments
-
-| Aspect | Staging | Production |
-|---|---|---|
-| Compose file | `docker-compose.staging.yml` | `docker-compose.production.yml` |
-| Env file | `.env.staging` | `.env.production` |
-| Mailpit | Yes (catches all outbound email) | No (real Postmark) |
-| Uptime Kuma | Yes (internal status page) | No (external status provider) |
-| Image tag | `latest-staging` or `sha-<short>` | Promoted via `promote.sh` |
-| PostgreSQL connections | max 100 | max 200 |
-| Redis AOF | everysec | always (stronger durability) |
-| Restart policy | `unless-stopped` | `always` |
-| Resource limits | Reduced | Production-scale |
-
----
-
-## How CI/CD Promotes Code
-
-### Automatic staging deploys (after CI passes on `main`)
-
-The deploy runs from a `workflow_run` trigger on the `CI` workflow, only when CI
-concluded successfully, and deploys the exact commit CI tested (`head_sha`). A
-failed CI run deploys nothing. It can still be started by hand with
-`workflow_dispatch`.
-
-1. GitHub Actions (`.github/workflows/deploy-staging.yml`) builds and pushes
-   `ghcr.io/luryann/aquify-api:sha-<short>` and `aquify-admin:sha-<short>`.
-2. SSH into the staging VPS and run `docker compose pull + up -d`.
-3. Wait up to 180s for `/api/v1/health/live` to return 200.
-4. Run `/opt/aquify/scripts/smoke.sh`.
-5. Notify Slack on success or failure when `SLACK_WEBHOOK` is configured.
-
-Images default to the repository owner namespace so `GITHUB_TOKEN` can publish
-them. Both workflows accept the Actions variable `GHCR_NAMESPACE` to override
-that namespace (use lowercase). For a different owner, also configure the
-`GHCR_TOKEN` secret with package access to that owner; its account must match
-the workflow actor used for registry login. Private images require a registry
-login on each VPS with a token that can read those packages.
-
-Before the first deploy with this change, sync the updated Compose files to
-`/opt/aquify` on both hosts. They use `${GHCR_NAMESPACE}` (required; compose fails if unset) for API, admin,
-and worker images. Workflows pass the selected namespace over SSH; manual
-deploys and rollbacks must export the same `GHCR_NAMESPACE`. To make manual `docker compose` and `scripts/rollback.sh` runs work, put `GHCR_NAMESPACE=<owner>` in `/opt/aquify/.env` (compose reads it automatically).
-
-### Manual production deploys
-
-1. Identify the staging SHA that passed all smoke tests, e.g. `sha-abc1234`.
-2. Go to GitHub Actions → "Deploy to Production" → "Run workflow".
-3. Enter the `image_tag` (`sha-abc1234`) and type `DEPLOY` to confirm.
-4. GitHub requires a manual approval from an environment reviewer (configured in
-   GitHub Settings → Environments → production).
-5. The workflow SSHes to the production VPS and runs `/opt/aquify/scripts/promote.sh sha-abc1234`.
-6. `promote.sh` backs up `.env.production`, updates `IMAGE_TAG`, pulls images,
-   does a rolling restart, and verifies health. Auto-rollback fires on failure.
-
----
-
-## Manual Deploy Steps
-
-If CI is unavailable or you need to deploy manually:
-
-```bash
-ssh aquify@prod-vps
+# 3.4 configuration (as root)
 cd /opt/aquify
-
-# Promote a specific tag
-./scripts/promote.sh sha-abc1234
-
-# Or pull latest-staging and restart everything
-IMAGE_TAG=latest-staging docker compose -f docker-compose.production.yml pull
-IMAGE_TAG=latest-staging docker compose -f docker-compose.production.yml up -d --remove-orphans
+install -m 640 -o root -g aquify env/production.env.example .env.production
+install -m 640 -o root -g aquify env/app.env.example .env.app
+# edit both: replace every CHANGE_ME and example.com value. Secrets: openssl rand -hex 24 (or 32)
+printf 'IMAGE_TAG=sha-XXXXXXX\nGHCR_NAMESPACE=your-ghcr-owner\n' > release.env && chown aquify: release.env
+# 3.5 validate (prints every problem; exit 0 only when clean)
+sudo -u aquify ./scripts/preflight.sh
 ```
 
----
-
-## Rollback
-
-To roll back to the previous version immediately:
+`preflight.sh` checks placeholders, secret format and uniqueness, file permissions, that
+`DATABASE_URL` uses the restricted app role and not the owner/superuser, that every hostname derives
+from `AQUIFY_DOMAIN`, https everywhere, no dev switches, and (when Docker is present)
+`docker compose config`.
 
 ```bash
-ssh aquify@prod-vps
-/opt/aquify/scripts/rollback.sh
+# 3.6 infrastructure first, then the schema, then the app
+cd /opt/aquify
+C="docker compose --project-directory /opt/aquify --env-file .env.production --env-file release.env -f docker-compose.production.yml"
+$C build minio                      # MinIO has no published image any more: built from pinned source (minio/Dockerfile, ~3 min)
+$C up -d postgres redis minio       # first start runs postgres/init/10-bootstrap.sh: creates the roles
+$C --profile tools run --rm aquify-migrate          # = aquify-api migrate up, as the schema-owner role
+# 3.7 MinIO: create the bucket and a scoped service account, put its keys in .env.app
+#     (mc alias set ...; mc mb local/aquify; mc admin user svcacct add --access-key ... local minioadmin-user)
+# 3.8 Keycloak realm
+python3 keycloak/render_realm.py --app-env .env.app --out keycloak/production-realm.json
+# 3.9 everything
+sudo cp systemd/aquify*.service systemd/aquify-backup.timer /etc/systemd/system/ && sudo systemctl daemon-reload
+sudo systemctl enable --now aquify aquify-backup.timer
 ```
 
-This restores `.env.production.prev`, pulls the old image, restarts app containers,
-and verifies health. The operation takes under 2 minutes in normal circumstances.
+Database roles (`postgres/init/roles.sql.in`): `aquify_owner` owns the schema and is used only by
+migrations; `aquify_app` is what the API/worker use (NOSUPERUSER, NOBYPASSRLS, DML only, so
+row-level security always applies); `aquify_backup` is read-only with BYPASSRLS for `pg_dump`;
+`keycloak` owns its own database. The API refuses to start if its `DATABASE_URL` role is a
+superuser or has BYPASSRLS. To rotate a database password: change it in `.env.production`, then
+`$C exec postgres bash /docker-entrypoint-initdb.d/10-bootstrap.sh` (idempotent), update `.env.app`
+if it is the app role, and restart.
 
-For an emergency rollback from CI, re-run "Deploy to Production" with the last
-known-good image tag.
+## 4. Keycloak
 
----
+`keycloak/render_realm.py` builds the production realm from `realm-aquify-local.json`: no seed
+users, client secrets taken from `.env.app`, https redirect URIs, TLS required, e-mail verification
+on, Postmark SMTP. It refuses to write a realm containing development values (tested). Keycloak
+imports it only on first start of an empty realm. Create the first administrator by hand through an
+SSH tunnel to `127.0.0.1:8081` (the admin console is not exposed publicly), with an `org_id`
+attribute and the `admin` realm role, and enrol MFA.
 
-## Monitoring Endpoints
+## 5. Releases
 
-| Service | URL | Notes |
+Images are built by `.github/workflows/deploy-staging.yml` (API, admin for staging, and
+`aquify-admin-production`, which carries `NEXT_PUBLIC_APP_ENV=production`; browser-bundle values are
+fixed at build time so production must not reuse the staging admin image). Production:
+GitHub Actions → "Deploy to Production" → image tag + `DEPLOY`, approved by an environment reviewer.
+On the host that runs `scripts/promote.sh <tag>`:
+
+1. takes a deploy lock; validates the tag; records the last healthy release as the rollback target
+2. writes the tag to `release.env` (never touches the secrets files); pulls images
+3. **runs the migration with the new image before any running container changes**; a failed
+   migration aborts with the old release still serving
+4. recreates api/admin/worker; requires `/api/v1/health/ready` = 200 and a running worker
+5. otherwise runs `rollback.sh`
+
+Migrations apply before the swap and rollback does not undo them, so every migration must be
+backward compatible with the previous release (add columns/tables first; drop in a later release).
+A destructive mistake is recovered from backup, not by rollback.
+
+Manual: `./scripts/promote.sh sha-abc1234`, `./scripts/rollback.sh`.
+Staging uses the same flow: `deploy-staging.yml` calls `promote.sh` with `COMPOSE_FILE=docker-compose.staging.yml`
+and `SECRETS_ENV=.env.staging`. The staging host needs the same file split as production: `.env.staging`
+(compose interpolation: the role passwords, `MINIO_*`, `KEYCLOAK_*`, `GRAFANA_*`), `.env.staging.app`
+(api/worker runtime config, `APP_ENV=staging`), `release.env`, `postgres/init/`, `minio/` and a rendered
+`keycloak/staging-realm.json` (`render_realm.py`). Staging compose validates with `docker compose config`
+but a staging host deploy has **not** been run.
+
+## 6. Backup and restore
+
+`scripts/backup.sh` (daily, `aquify-backup.timer`): `pg_dump` of the app database as the read-only
+role inside the postgres container (verified readable), a MinIO mirror, a Keycloak realm export and
+a manifest, then one **gpg-encrypted** archive, uploaded with rclone; the plaintext snapshot is
+deleted. Any failed step fails the run and alerts. Settings in `.env.backup`
+(`MINIO_ACCESS_KEY`, `MINIO_SECRET_KEY`, `GPG_RECIPIENT`, `RCLONE_REMOTE`, optional `ALERT_WEBHOOK`).
+
+Not covered: **Keycloak users and credentials** (Keycloak's own database), Redis jobs, and the
+`.env.*` files. Escrow the env files and the GPG private key separately and take a `pg_dump` of the
+`keycloak` database if accounts must survive host loss.
+
+`scripts/restore.sh <timestamp|archive> [--yes] [--skip-objects] [--dry-run]` works on the same host or
+a fresh one (bootstrap the roles, then restore): verifies the snapshot first, stops api/worker/admin
+**and keycloak**, restores in one transaction that aborts on the first error, checks the schema
+version and club count against the manifest, restores objects (missing tools are an error), runs
+migrations, starts services and requires readiness.
+
+## 7. Operating
+
+```bash
+sudo systemctl status aquify ; journalctl -u aquify -f
+$C ps ; $C logs -f aquify-api
+curl -fsS https://api.<domain>/api/v1/health/ready
+SMOKE_AUTH_TOKEN=... SMOKE_ORG_ID=... API_BASE_URL=https://api.<domain> ./scripts/smoke.sh
+```
+
+Metrics: API and worker serve Prometheus metrics on `METRICS_ADDR` (`:9091`) inside the compose
+network; Prometheus/Grafana bind to 127.0.0.1 (use an SSH tunnel). Redis is the job broker with
+`noeviction`: at its 512 MB cap enqueues fail loudly rather than dropping jobs; alert on memory use.
+
+## 8. Tests that guard this directory
+
+| Test | Command | Proves |
 |---|---|---|
-| API liveness | `https://api.aquify.club/api/v1/health/live` | Public |
-| API readiness | `https://api.aquify.club/api/v1/health/ready` | Public |
-| Prometheus | `http://vps-ip:9090` | Firewalled, VPN/SSH tunnel required |
-| Grafana | `https://grafana.aquify.club` | Admin login required |
-| Keycloak Admin | `https://auth.aquify.club/admin` | Admin login required |
-| MinIO Console | `https://minio.aquify.club` | Admin login required |
+| Compose/workflow policy, templates, realm, ingress | `cd server && go test ./internal/deploycheck` | strict YAML, env split, noeviction, only ingress public, templates match compose and code, realm has no seed users |
+| Role model | same package, needs `DATABASE_URL` (superuser, disposable DB) | roles bootstrap; all migrations run as the non-superuser owner; app role is subject to RLS and cannot do DDL |
+| Migrations | `cd server && go test ./internal/dbmigrate ./cmd/api` | fresh apply, idempotent, concurrent-safe, failure rolls back |
+| Promote/rollback | `bash deploy/scripts/test-promote-rollback.sh` | ordering, env files, lock, failure paths (stub docker) |
+| Preflight | `bash deploy/scripts/test-preflight.sh` | each misconfiguration is caught |
+| Backup/restore | `bash deploy/scripts/test-backup-restore.sh` | encrypted archive, no plaintext left, ordering, all-or-nothing, failure paths (stub tools) |
+| Bootstrap wrapper | `bash deploy/postgres/test-bootstrap.sh` | input validation |
 
----
+## 9. Local rehearsal and what it does not prove
 
-## Backup Schedule
+`scripts/rehearse-local.sh <dir under $HOME>` stages a production-shaped deployment on a dev machine
+(synthetic secrets, `*.localtest.me`, Caddy internal CA via `rehearsal.override.yml`). Docker for
+macOS without Docker Desktop: `. .tools/docker/env.sh` (Colima + docker + compose, all under the
+gitignored `.tools/docker`). The stage dir must live under `$HOME`; Colima shares nothing else, so
+bind mounts elsewhere arrive as empty directories.
 
-Backups run daily at 02:00 local time via the `aquify-backup.timer` systemd unit.
-
-Each backup includes:
-- PostgreSQL full dump (gzip-compressed)
-- Redis RDB snapshot
-- Encrypted copy of `.env.production`
-
-Local retention: 7 days. Remote retention (restic/S3): 30 daily, 12 weekly,
-12 monthly snapshots.
-
-To verify backup health:
-```bash
-sudo systemctl status aquify-backup.timer
-journalctl -u aquify-backup.service -n 50
-```
-
-To trigger a manual backup:
-```bash
-sudo systemctl start aquify-backup.service
-```
-
----
-
-## Service Management
-
-```bash
-# Start / stop / restart the entire platform
-sudo systemctl start aquify
-sudo systemctl stop aquify
-sudo systemctl restart aquify
-
-# Rolling restart of app containers only (zero-downtime)
-sudo systemctl reload aquify
-
-# View logs
-journalctl -u aquify -f
-journalctl -u aquify-backup -n 100
-
-# Check container status
-cd /opt/aquify && docker compose -f docker-compose.production.yml ps
-```
-
-### Application health and internal API routing
-
-API containers use `/aquify-api healthcheck http://localhost:8080/api/v1/health/live`;
-this works in the distroless image without a shell or wget. Admin containers
-serve `/api/health`. Public API health paths include the `/api/v1` prefix.
-
-The admin server proxies `/api/v1/*` using `API_INTERNAL_URL` at request time.
-Compose sets it to `http://aquify-api:8080`; set it explicitly for other hosting
-layouts. It is a server-only setting and can change when promoting an image.
+Run this way (arm64 images, Colima VM): `docker compose config`, image builds, role bootstrap by the
+real postgres image, migrations, Caddy routing and blocked Keycloak paths, Keycloak realm import, the
+Loki driver, Prometheus scraping, presigned upload/download through `files.<domain>`, Redis restart and
+`noeviction` at the cap, encrypted backup, restore onto emptied volumes, and promote / failed-migration /
+rollback with the real scripts. **Not run:** ACME certificate issuance on a public name, amd64 images,
+Stripe and Postmark with real test accounts (readiness reports 503 until valid keys are present), a
+browser sign-in with MFA, and the restore on a second host. See
+`docs/production-readiness-tracker.md` for the per-item record.

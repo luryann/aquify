@@ -1,6 +1,6 @@
 SHELL := /bin/zsh
 
-.PHONY: dev dev-full dev-api dev-admin test test-p0 test-tenancy lint lint-openapi infra-up infra-down infra-reset db-up db-down db-status cutover-rehearsal cutover-smoke cutover-certify cutover-billing-check provider-validation-evidence parallel-meet-cycle-evidence stability-report-evidence launch-evidence-bundle verify-launch-evidence keycloak-dist keycloak-local-up keycloak-local-reset integrations-install integrations-up integrations-down integrations-status integrations-migrate
+.PHONY: embed-migrations dev dev-full dev-api dev-admin test test-p0 test-tenancy lint lint-openapi infra-up infra-down infra-reset db-up db-down db-status cutover-rehearsal cutover-smoke cutover-certify cutover-billing-check provider-validation-evidence parallel-meet-cycle-evidence stability-report-evidence launch-evidence-bundle verify-launch-evidence keycloak-dist keycloak-local-up keycloak-local-reset integrations-install integrations-up integrations-down integrations-status integrations-migrate
 
 COMPOSE_FILE ?= docker-compose.yml
 DOCKER_COMPOSE ?= docker compose
@@ -175,6 +175,14 @@ infra-down:
 
 infra-reset:
 	@$(DOCKER_COMPOSE) --env-file $(DOCKER_ENV_FILE) -f $(COMPOSE_FILE) down -v --remove-orphans
+
+# Copy db/migrations into the API's embed directory (gitignored). Docker builds
+# do this themselves; run it before a local `go build` of a binary that must be
+# able to `migrate up`, and before the embed drift test in CI.
+embed-migrations:
+	@mkdir -p server/internal/dbmigrate/sql
+	@cp -f $(MIGRATIONS_DIR)/*.sql server/internal/dbmigrate/sql/
+	@echo "embedded migrations from $(MIGRATIONS_DIR)"
 
 db-up:
 	@set -a; \

@@ -1,0 +1,21 @@
+# Build context for admin/Dockerfile (`COPY . .`). Without this, the host's
+# node_modules (wrong OS/arch binaries) overwrite the clean `npm ci` result, and local
+# env files and build output are copied into image layers and the build cache.
+node_modules
+.next
+out
+coverage
+playwright-report
+test-results
+.git
+.gitignore
+npm-debug.log*
+.DS_Store
+
+# Local environment files may hold real credentials; never send them to the builder.
+.env
+.env.*
+!.env.example
+*.local
+*.pem
+*.key

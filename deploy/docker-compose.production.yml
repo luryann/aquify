@@ -3,11 +3,13 @@ name: aquify-production
 x-restart: &always-restart
   restart: always
 
+# The Loki driver runs inside the Docker daemon on the HOST, not in the compose network:
+# it cannot resolve the service name "loki", so it pushes to the loopback port loki publishes.
 x-logging: &default-logging
   logging:
     driver: loki
     options:
-      loki-url: "http://loki:3100/loki/api/v1/push"
+      loki-url: "http://127.0.0.1:3100/loki/api/v1/push"
       loki-pipeline-stages: |
         - json:
             expressions:
@@ -18,12 +20,69 @@ x-logging: &default-logging
 
 services:
   # ---------------------------------------------------------------------------
+  # Ingress: the only service reachable from the internet
+  # ---------------------------------------------------------------------------
+
+  # Terminates TLS (automatic certificates), routes by hostname and sets
+  # X-Forwarded-*. Routes live in ./caddy/Caddyfile. Every other published port in
+  # this file is bound to 127.0.0.1.
+  caddy:
+    image: caddy:2.8-alpine@sha256:af32e97399febea808609119bb21544d0265c58a02836576e32a2d082c262c17
+    <<: [*always-restart, *default-logging]
+    environment:
+      AQUIFY_DOMAIN: ${AQUIFY_DOMAIN:?set AQUIFY_DOMAIN}
+      ACME_EMAIL: ${ACME_EMAIL:?set ACME_EMAIL}
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_production_data:/data
+      - caddy_production_config:/config
+    # No depends_on: the API validates Keycloak's JWKS at startup THROUGH this ingress
+    # (https://auth.<domain>), so waiting for a healthy API here deadlocks a cold
+    # `compose up`. Caddy answers 502 for upstreams that are not up yet.
+    networks:
+      aquify-net:
+        # The API signs presigned URLs for files.<domain>; this alias lets the API
+        # container reach that same name through the ingress instead of the public IP.
+        aliases:
+          - files.${AQUIFY_DOMAIN}
+    mem_limit: 256m
+    labels:
+      com.aquify.service: "ingress"
+      com.aquify.env: "production"
+
+  # ---------------------------------------------------------------------------
   # Application Services
   # ---------------------------------------------------------------------------
 
+  # One-shot schema migration, run by deploy/scripts/promote.sh before the app
+  # containers are replaced:  compose --profile tools run --rm aquify-migrate
+  # It connects as the schema-owning role; the long-running api/worker use the
+  # restricted application role and never see this password.
+  aquify-migrate:
+    image: ghcr.io/${GHCR_NAMESPACE:?set GHCR_NAMESPACE to the registry owner}/aquify-api:${IMAGE_TAG:?set IMAGE_TAG (release.env)}
+    profiles: ["tools"]
+    restart: "no"
+    command: ["migrate", "up"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      APP_ENV: production
+      MIGRATE_DATABASE_URL: postgres://${AQUIFY_OWNER_DB_USER:-aquify_owner}:${AQUIFY_OWNER_DB_PASSWORD:?set AQUIFY_OWNER_DB_PASSWORD}@postgres:5432/${POSTGRES_DB:-aquify}?sslmode=disable
+    networks:
+      - aquify-net
+    mem_limit: 256m
+    labels:
+      com.aquify.service: "migrate"
+      com.aquify.env: "production"
+
   aquify-api:
-    image: ghcr.io/${GHCR_NAMESPACE:?set GHCR_NAMESPACE to the registry owner}/aquify-api:${IMAGE_TAG:-latest}
-    <<: *always-restart
+    image: ghcr.io/${GHCR_NAMESPACE:?set GHCR_NAMESPACE to the registry owner}/aquify-api:${IMAGE_TAG:?set IMAGE_TAG (release.env)}
+    <<: [*always-restart, *default-logging]
     depends_on:
       postgres:
         condition: service_healthy
@@ -31,8 +90,11 @@ services:
         condition: service_healthy
       minio:
         condition: service_healthy
+    # Runtime config only (see deploy/env/app.env.example). Infra secrets such as
+    # the Postgres superuser and role-owner passwords live in .env.production,
+    # which is used for interpolation and is NOT handed to the app containers.
     env_file:
-      - .env.production
+      - .env.app
     environment:
       APP_ENV: production
       API_ADDR: ":8080"
@@ -53,16 +115,14 @@ services:
     labels:
       com.aquify.service: "api"
       com.aquify.env: "production"
-    <<: *default-logging
 
   aquify-admin:
-    image: ghcr.io/${GHCR_NAMESPACE:?set GHCR_NAMESPACE to the registry owner}/aquify-admin:${IMAGE_TAG:-latest}
-    <<: *always-restart
+    image: ghcr.io/${GHCR_NAMESPACE:?set GHCR_NAMESPACE to the registry owner}/aquify-admin-production:${IMAGE_TAG:?set IMAGE_TAG (release.env)}
+    <<: [*always-restart, *default-logging]
     depends_on:
       aquify-api:
         condition: service_healthy
-    env_file:
-      - .env.production
+    # No env_file: the admin server reads only the variables listed here.
     environment:
       NODE_ENV: production
       API_INTERNAL_URL: http://aquify-api:8080
@@ -84,19 +144,18 @@ services:
     labels:
       com.aquify.service: "admin"
       com.aquify.env: "production"
-    <<: *default-logging
 
   aquify-worker:
-    image: ghcr.io/${GHCR_NAMESPACE:?set GHCR_NAMESPACE to the registry owner}/aquify-api:${IMAGE_TAG:-latest}
+    image: ghcr.io/${GHCR_NAMESPACE:?set GHCR_NAMESPACE to the registry owner}/aquify-api:${IMAGE_TAG:?set IMAGE_TAG (release.env)}
     command: ["worker"]
-    <<: *always-restart
+    <<: [*always-restart, *default-logging]
     depends_on:
       postgres:
         condition: service_healthy
       redis:
         condition: service_healthy
     env_file:
-      - .env.production
+      - .env.app
     environment:
       APP_ENV: production
       AUTH_ENABLE_DEV_STUB_TOKENS: "false"
@@ -107,21 +166,31 @@ services:
     labels:
       com.aquify.service: "worker"
       com.aquify.env: "production"
-    <<: *default-logging
 
   # ---------------------------------------------------------------------------
   # Data Services
   # ---------------------------------------------------------------------------
 
   postgres:
-    image: postgres:16-alpine
+    image: postgres:16-alpine@sha256:0cefaabd882e42bcb2a2f3dc56d3ce4770560ba62fd7f197f1a2e008fd5731ab
     <<: *always-restart
-    env_file:
-      - .env.production
+    # POSTGRES_USER is the bootstrap superuser: used only by the init script and
+    # break-glass maintenance, never by the application. The init script
+    # (deploy/postgres/init/) creates the restricted roles below on first start of
+    # an EMPTY data volume; re-run it for password rotation (deploy/README.md).
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-aquify}
-      POSTGRES_USER: ${POSTGRES_USER:-aquify}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_USER: ${POSTGRES_USER:-aquify_admin}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
+      AQUIFY_OWNER_DB_USER: ${AQUIFY_OWNER_DB_USER:-aquify_owner}
+      AQUIFY_OWNER_DB_PASSWORD: ${AQUIFY_OWNER_DB_PASSWORD:?set AQUIFY_OWNER_DB_PASSWORD}
+      AQUIFY_APP_DB_USER: ${AQUIFY_APP_DB_USER:-aquify_app}
+      AQUIFY_APP_DB_PASSWORD: ${AQUIFY_APP_DB_PASSWORD:?set AQUIFY_APP_DB_PASSWORD}
+      AQUIFY_BACKUP_DB_USER: ${AQUIFY_BACKUP_DB_USER:-aquify_backup}
+      AQUIFY_BACKUP_DB_PASSWORD: ${AQUIFY_BACKUP_DB_PASSWORD:?set AQUIFY_BACKUP_DB_PASSWORD}
+      KEYCLOAK_DB_NAME: ${KEYCLOAK_DB_NAME:-keycloak}
+      KEYCLOAK_DB_USER: ${KEYCLOAK_DB_USER:-keycloak}
+      KEYCLOAK_DB_PASSWORD: ${KEYCLOAK_DB_PASSWORD:?set KEYCLOAK_DB_PASSWORD}
     command: >
       postgres
         -c max_connections=200
@@ -148,8 +217,9 @@ services:
         -c ssl=off
     volumes:
       - postgres_production_data:/var/lib/postgresql/data
+      - ./postgres/init:/docker-entrypoint-initdb.d:ro
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-aquify} -d ${POSTGRES_DB:-aquify}"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-aquify_admin} -d ${POSTGRES_DB:-aquify}"]
       interval: 10s
       timeout: 5s
       retries: 10
@@ -163,16 +233,27 @@ services:
       com.aquify.env: "production"
 
   redis:
-    image: redis:7-alpine
+    image: redis:7-alpine@sha256:8da19c7399dca900c6822a1cf30f9d2285585e2c4b457ff4095b0f4500054d3f
     <<: *always-restart
-    command: >
-      redis-server
-        --requirepass ${REDIS_PASSWORD}
+    # Redis is the Asynq job broker, not a cache: it must never evict keys
+    # (noeviction), otherwise memory pressure silently drops queued email, billing
+    # and deletion jobs. At the memory cap writes fail loudly instead, which the
+    # API surfaces as enqueue errors. The password reaches redis through the
+    # environment so it is not part of the container's visible command line.
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?set REDIS_PASSWORD}
+      REDISCLI_AUTH: ${REDIS_PASSWORD}
+    command:
+      - sh
+      - -c
+      - >
+        exec redis-server
+        --requirepass "$$REDIS_PASSWORD"
         --appendonly yes
         --appendfsync always
         --aof-use-rdb-preamble yes
-        --maxmemory 256mb
-        --maxmemory-policy allkeys-lru
+        --maxmemory 512mb
+        --maxmemory-policy noeviction
         --save 900 1
         --save 300 10
         --save 60 10000
@@ -181,33 +262,33 @@ services:
     volumes:
       - redis_production_data:/data
     healthcheck:
-      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "ping"]
+      test: ["CMD", "redis-cli", "ping"]
       interval: 10s
       timeout: 3s
       retries: 10
       start_period: 10s
     networks:
       - aquify-net
-    mem_limit: 384m
+    mem_limit: 768m
     cpus: "0.5"
     labels:
       com.aquify.service: "redis"
       com.aquify.env: "production"
 
   minio:
-    image: minio/minio:latest
+    image: aquify-minio:2026-02-12
+    build: ./minio
     <<: *always-restart
+    # The admin console (9001) is not published: reach it through an SSH tunnel to
+    # the container network when needed. Only the S3 API is exposed, on loopback,
+    # for the ingress proxy and host backup tooling.
     command: server /data --console-address ":9001"
-    env_file:
-      - .env.production
     environment:
-      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
-      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
-      MINIO_BROWSER_REDIRECT_URL: https://minio.aquify.club
-      MINIO_PROMETHEUS_AUTH_TYPE: public
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:?set MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?set MINIO_ROOT_PASSWORD}
+      MINIO_PROMETHEUS_AUTH_TYPE: jwt
     ports:
       - "127.0.0.1:9000:9000"
-      - "127.0.0.1:9001:9001"
     volumes:
       - minio_production_data:/data
     healthcheck:
@@ -229,30 +310,34 @@ services:
   # ---------------------------------------------------------------------------
 
   keycloak:
-    image: quay.io/keycloak/keycloak:26.5
-    <<: *always-restart
+    image: quay.io/keycloak/keycloak:26.5@sha256:45ae20191531eb608ddb0b775d012b40d3e4f942697f3214694887dd7c108d13
+    <<: [*always-restart, *default-logging]
     command: start --import-realm
-    env_file:
-      - .env.production
+    # Keycloak has its own database and role; it never sees application data and
+    # the application role never sees Keycloak's.
     environment:
       KC_DB: postgres
-      KC_DB_URL: jdbc:postgresql://postgres:5432/${POSTGRES_DB:-aquify}
-      KC_DB_USERNAME: ${POSTGRES_USER:-aquify}
-      KC_DB_PASSWORD: ${POSTGRES_PASSWORD}
-      KC_HOSTNAME: auth.aquify.club
+      KC_DB_URL: jdbc:postgresql://postgres:5432/${KEYCLOAK_DB_NAME:-keycloak}
+      KC_DB_USERNAME: ${KEYCLOAK_DB_USER:-keycloak}
+      KC_DB_PASSWORD: ${KEYCLOAK_DB_PASSWORD:?set KEYCLOAK_DB_PASSWORD}
+      # TLS ends at the ingress (caddy); Keycloak speaks plain http on the internal
+      # network and trusts the forwarded headers it sets. (KC_PROXY=edge was removed
+      # in Keycloak 26; the replacement is KC_PROXY_HEADERS.)
+      KC_HOSTNAME: https://auth.${AQUIFY_DOMAIN:?set AQUIFY_DOMAIN}
       KC_HTTP_ENABLED: "true"
       KC_HTTP_PORT: "8081"
-      KC_PROXY: edge
+      KC_PROXY_HEADERS: xforwarded
       KC_LOG_LEVEL: WARN
       KC_BOOTSTRAP_ADMIN_USERNAME: ${KEYCLOAK_ADMIN_USER:-admin}
-      KC_BOOTSTRAP_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD}
+      KC_BOOTSTRAP_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:?set KEYCLOAK_ADMIN_PASSWORD}
     ports:
       - "127.0.0.1:8081:8081"
     depends_on:
       postgres:
         condition: service_healthy
     volumes:
-      - ./keycloak/production-realm.json:/opt/keycloak/data/import/production-realm.json:ro
+      # Keycloak requires the import file to be named <realm>-realm.json.
+      - ./keycloak/production-realm.json:/opt/keycloak/data/import/aquify-realm.json:ro
     networks:
       - aquify-net
     mem_limit: 768m
@@ -260,14 +345,13 @@ services:
     labels:
       com.aquify.service: "keycloak"
       com.aquify.env: "production"
-    <<: *default-logging
 
   # ---------------------------------------------------------------------------
   # Observability
   # ---------------------------------------------------------------------------
 
   prometheus:
-    image: prom/prometheus:latest
+    image: prom/prometheus:v3.16.0@sha256:e04987641b57704f408e31f6373ba4138ecf27cb4a165d24aabb6c38fddd0f06
     <<: *always-restart
     command:
       - "--config.file=/etc/prometheus/prometheus.yml"
@@ -277,7 +361,7 @@ services:
       - "--web.enable-admin-api"
     volumes:
       - ./prometheus/prometheus.production.yml:/etc/prometheus/prometheus.yml:ro
-      - ../docs/observability/prometheus/alerts.yaml:/etc/prometheus/alerts.yaml:ro
+      - ./docs/observability/prometheus/alerts.yaml:/etc/prometheus/alerts.yaml:ro
       - prometheus_production_data:/prometheus
     ports:
       - "127.0.0.1:9090:9090"
@@ -290,21 +374,18 @@ services:
       com.aquify.env: "production"
 
   grafana:
-    image: grafana/grafana:latest
+    image: grafana/grafana:13.3.0@sha256:488984b716c0862639f91a698adbe2862677a5a07bad42da5f03f3030883b205
     <<: *always-restart
-    env_file:
-      - .env.production
     environment:
       GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
-      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD}
-      GF_SERVER_ROOT_URL: https://grafana.aquify.club
-      GF_INSTALL_PLUGINS: grafana-loki-datasource
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?set GRAFANA_ADMIN_PASSWORD}
+      GF_SERVER_ROOT_URL: http://localhost:3001
       GF_AUTH_ANONYMOUS_ENABLED: "false"
       GF_SECURITY_DISABLE_GRAVATAR: "true"
       GF_USERS_ALLOW_SIGN_UP: "false"
     volumes:
       - grafana_production_data:/var/lib/grafana
-      - ../docs/observability/grafana:/etc/grafana/provisioning/dashboards:ro
+      - ./docs/observability/grafana:/etc/grafana/provisioning/dashboards:ro
       - ./grafana/datasources.production.yml:/etc/grafana/provisioning/datasources/datasources.yml:ro
     ports:
       - "127.0.0.1:3001:3000"
@@ -320,7 +401,7 @@ services:
       com.aquify.env: "production"
 
   loki:
-    image: grafana/loki:latest
+    image: grafana/loki:3.7.9@sha256:0db216b630ae1f348a1584c67f3cead8b4c1fc839169a39501db664744158e28
     <<: *always-restart
     command: -config.file=/etc/loki/loki.yml
     volumes:
@@ -341,6 +422,10 @@ services:
 # ---------------------------------------------------------------------------
 
 volumes:
+  caddy_production_data:
+    driver: local
+  caddy_production_config:
+    driver: local
   postgres_production_data:
     driver: local
   redis_production_data:

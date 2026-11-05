@@ -1,462 +1,258 @@
 #!/usr/bin/env bash
-# aquify Platform Backup Script
+# backup.sh — encrypted backup of PostgreSQL, MinIO objects and the Keycloak realm.
 #
-# Runs daily via systemd timer (aquify-backup.service / aquify-backup.timer).
-# Backs up:
-#   1. PostgreSQL database (pg_dump --format=custom --compress=9)
-#   2. MinIO object storage (mc mirror to backup bucket)
-#   3. Keycloak realm export (partial-export via Admin REST API)
+# Usage:  backup.sh [--dry-run]
+# Run daily by aquify-backup.timer as the deploy user.
 #
-# Creates a timestamped directory: /var/backups/aquify/YYYYMMDD-HHMMSS/
-# Archives and GPG-encrypts the snapshot, then uploads offsite via rclone.
+# What is captured (one directory, then one encrypted archive):
+#   postgres.dump        pg_dump custom format of the application database, taken by
+#                        the read-only backup role INSIDE the postgres container
+#                        (no host pg client, no published database port)
+#   minio/               mirror of the storage bucket
+#   keycloak-realm-*.json  Keycloak partial export (clients, roles, groups)
+#   manifest.txt         schema version and club count, checked again by restore.sh
 #
-# Retention:
-#   Local:   7 days (raw snapshots pruned; archives kept 30 days)
-#   Offsite: 30 daily, 12 weekly (Sunday), 3 monthly (1st of month)
+# NOT captured, by design: Keycloak USERS and credentials live in Keycloak's own
+# database (keycloak) which is NOT included here; take a separate pg_dump of it if
+# user accounts must survive host loss (see deploy/README.md "Backup coverage").
+# Redis (job queue) is not backed up; AOF protects restarts, not host loss.
+# Secrets files (.env.*) are not in the archive; escrow them separately.
 #
-# Failure alerting: sends Slack message to ALERT_WEBHOOK on any step failure.
-# Prometheus: writes aquify_backup_last_success_timestamp to node_exporter textfile.
+# Safety rules:
+#   * The archive is ALWAYS encrypted (gpg --recipient GPG_RECIPIENT). Without a
+#     recipient the run fails; ALLOW_UNENCRYPTED_BACKUP=1 exists only for
+#     synthetic-data rehearsals and is logged as an error-level warning.
+#   * The plaintext snapshot directory is removed once the archive exists.
+#   * Any failed step fails the whole run (non-zero exit + alert), never a warning.
 #
-# Usage:
-#   backup.sh [--dry-run]
-#
-# Required environment (sourced from /opt/aquify/.env.production or .env.backup):
-#   DATABASE_URL                  PostgreSQL connection DSN
-#   MINIO_ENDPOINT                MinIO server URL (e.g. http://localhost:9000)
-#   MINIO_ACCESS_KEY              MinIO access key
-#   MINIO_SECRET_KEY              MinIO secret key
-#   MINIO_BUCKET                  Source bucket name
-#   BACKUP_BUCKET                 Destination bucket for object mirror backup
-#   KEYCLOAK_URL                  Keycloak server URL
-#   KEYCLOAK_REALM                Realm name to export
-#   KEYCLOAK_ADMIN_USER           Keycloak admin username
-#   KEYCLOAK_ADMIN_PASS           Keycloak admin password
-#   RCLONE_REMOTE                 rclone remote:path (e.g. b2:aquify-backups-offsite)
-#   GPG_RECIPIENT                 GPG key fingerprint or email for encryption
-#   ALERT_WEBHOOK                 Slack incoming webhook URL for failure alerts
-#
-# Optional:
-#   BACKUP_DIR                    Base local backup path (default: /var/backups/aquify)
-#   BACKUP_RETENTION_DAYS         Days to keep local archives (default: 30)
-#   NODE_EXPORTER_TEXTFILE_DIR    Path to node_exporter textfile dir (default: /var/lib/node_exporter)
+# Config: infrastructure secrets from .env.production, the rest from .env.backup
+# (root:aquify 640): MINIO_ACCESS_KEY MINIO_SECRET_KEY [MINIO_ENDPOINT MINIO_BUCKET]
+# GPG_RECIPIENT [RCLONE_REMOTE ALERT_WEBHOOK KEYCLOAK_URL KEYCLOAK_REALM].
 
 set -euo pipefail
+umask 077
 
-# libpq does not expand a connection URI from PGDATABASE (only from a dbname
-# argument), so split DATABASE_URL into the PG* variables the tools read. This
-# keeps the embedded password out of `ps` output, which --dbname would expose.
-pg_env_from_url() {
-  local url="$1"
-  local re='^postgres(ql)?://(([^:@/]*)(:([^@]*))?@)?([^:/?]*)(:([0-9]+))?(/([^?]*))?(\?(.*))?$'
-  if [[ ! "${url}" =~ ${re} ]]; then
-    echo "DATABASE_URL must be a postgres:// URL" >&2
-    return 1
-  fi
-  local user="${BASH_REMATCH[3]}" pass="${BASH_REMATCH[5]}" host="${BASH_REMATCH[6]}"
-  local port="${BASH_REMATCH[8]}" db="${BASH_REMATCH[10]}" query="${BASH_REMATCH[12]}"
-  local sslmode=""
-  if [[ "${query}" =~ (^|&)sslmode=([^&]*) ]]; then sslmode="${BASH_REMATCH[2]}"; fi
-  _pg_urldecode() { local v="${1//\\/\\\\}"; printf '%b' "${v//%/\\x}"; }
-  [[ -n "${host}" ]] && export PGHOST="${host}"
-  [[ -n "${port}" ]] && export PGPORT="${port}"
-  [[ -n "${user}" ]] && export PGUSER="$(_pg_urldecode "${user}")"
-  [[ -n "${pass}" ]] && export PGPASSWORD="$(_pg_urldecode "${pass}")"
-  [[ -n "${db}" ]] && export PGDATABASE="$(_pg_urldecode "${db}")"
-  [[ -n "${sslmode}" ]] && export PGSSLMODE="${sslmode}"
-  return 0
-}
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+DEPLOY_DIR="${DEPLOY_DIR:-/opt/aquify}"
+DEPLOY_LOG="${BACKUP_LOG:-/var/log/aquify/backup.log}"
+# shellcheck source=lib.sh
+source "${SCRIPT_DIR}/lib.sh"
 
-# ---------------------------------------------------------------------------
-# Configuration
-# ---------------------------------------------------------------------------
-
-DEPLOY_DIR="/opt/aquify"
+BACKUP_ENV="${BACKUP_ENV:-${DEPLOY_DIR}/.env.backup}"
 BACKUP_DIR="${BACKUP_DIR:-/var/backups/aquify}"
-BACKUP_LOG="/var/log/aquify/backup.log"
-BACKUP_RETENTION_DAYS="${BACKUP_RETENTION_DAYS:-30}"
+BACKUP_RETENTION_DAYS="${BACKUP_RETENTION_DAYS:-14}"
 NODE_EXPORTER_TEXTFILE_DIR="${NODE_EXPORTER_TEXTFILE_DIR:-/var/lib/node_exporter}"
-
-# Load production env if not already set
-# shellcheck source=/dev/null
-[ -f "${DEPLOY_DIR}/.env.production" ] && source "${DEPLOY_DIR}/.env.production"
-# Optionally load a dedicated backup credentials file (overrides above)
-# shellcheck source=/dev/null
-[ -f "${DEPLOY_DIR}/.env.backup" ] && source "${DEPLOY_DIR}/.env.backup"
-
-DATABASE_URL="${DATABASE_URL:-}"
-MINIO_ENDPOINT="${MINIO_ENDPOINT:-http://localhost:9000}"
-MINIO_ACCESS_KEY="${MINIO_ACCESS_KEY:-}"
-MINIO_SECRET_KEY="${MINIO_SECRET_KEY:-}"
-MINIO_BUCKET="${MINIO_BUCKET:-aquify-production}"
-BACKUP_BUCKET="${BACKUP_BUCKET:-aquify-backup-objects}"
-KEYCLOAK_URL="${KEYCLOAK_URL:-http://localhost:8443}"
-KEYCLOAK_REALM="${KEYCLOAK_REALM:-aquify}"
-KEYCLOAK_ADMIN_USER="${KEYCLOAK_ADMIN_USER:-admin}"
-KEYCLOAK_ADMIN_PASS="${KEYCLOAK_ADMIN_PASS:-}"
-RCLONE_REMOTE="${RCLONE_REMOTE:-}"
-GPG_RECIPIENT="${GPG_RECIPIENT:-}"
-ALERT_WEBHOOK="${ALERT_WEBHOOK:-}"
 
 DRY_RUN=false
 [[ "${1:-}" == "--dry-run" ]] && DRY_RUN=true
 
-# ---------------------------------------------------------------------------
-# Globals set at runtime
-# ---------------------------------------------------------------------------
+bget() { envget "${BACKUP_ENV}" "$1"; }
+PG_DB="$(envget "${SECRETS_ENV}" POSTGRES_DB)"; PG_DB="${PG_DB:-aquify}"
+PG_USER="$(envget "${SECRETS_ENV}" AQUIFY_BACKUP_DB_USER)"
+PG_PASS="$(envget "${SECRETS_ENV}" AQUIFY_BACKUP_DB_PASSWORD)"
+MINIO_ENDPOINT="$(bget MINIO_ENDPOINT)"; MINIO_ENDPOINT="${MINIO_ENDPOINT:-http://127.0.0.1:9000}"
+MINIO_ACCESS_KEY="$(bget MINIO_ACCESS_KEY)"
+MINIO_SECRET_KEY="$(bget MINIO_SECRET_KEY)"
+MINIO_BUCKET="$(bget MINIO_BUCKET)"; MINIO_BUCKET="${MINIO_BUCKET:-aquify}"
+KEYCLOAK_URL="$(bget KEYCLOAK_URL)"; KEYCLOAK_URL="${KEYCLOAK_URL:-http://127.0.0.1:8081}"
+KEYCLOAK_REALM="$(bget KEYCLOAK_REALM)"; KEYCLOAK_REALM="${KEYCLOAK_REALM:-aquify}"
+KC_ADMIN_USER="$(envget "${SECRETS_ENV}" KEYCLOAK_ADMIN_USER)"
+KC_ADMIN_PASS="$(envget "${SECRETS_ENV}" KEYCLOAK_ADMIN_PASSWORD)"
+GPG_RECIPIENT="$(bget GPG_RECIPIENT)"
+RCLONE_REMOTE="$(bget RCLONE_REMOTE)"
+ALERT_WEBHOOK="$(bget ALERT_WEBHOOK)"
 
 TIMESTAMP="$(date -u +%Y%m%d-%H%M%S)"
 SNAPSHOT_DIR="${BACKUP_DIR}/${TIMESTAMP}"
 ERRORS=()
 
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
-log() {
-  local level="$1"
-  shift
-  local ts
-  ts="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-  printf '%s [%-5s] %s\n' "${ts}" "${level}" "$*" | tee -a "${BACKUP_LOG}"
-}
-
-# Records a failed step and returns; unlike restore.sh's die(), it does NOT exit.
-# The caller continues and the run is reported failed at the end.
-record_failure() {
-  log "ERROR" "$*"
-  ERRORS+=("$*")
-}
+record_failure() { log "ERROR: $*"; ERRORS+=("$*"); }
 
 send_alert() {
-  local msg="$1"
-  if [[ -z "${ALERT_WEBHOOK}" ]]; then
-    log "WARN" "ALERT_WEBHOOK not configured — Slack alert suppressed"
-    return
-  fi
-  curl -s -X POST "${ALERT_WEBHOOK}" \
-    -H "Content-Type: application/json" \
-    --data "{\"text\":\":rotating_light: *aquify Backup FAILED* [${TIMESTAMP}]\n${msg}\nCheck ${BACKUP_LOG}\"}" \
-    --max-time 10 \
-    2>/dev/null || log "WARN" "Failed to send Slack alert (curl error)"
+  [[ -n "${ALERT_WEBHOOK}" ]] || { log "WARN: ALERT_WEBHOOK not set; no alert sent"; return 0; }
+  curl -s -X POST "${ALERT_WEBHOOK}" -H "Content-Type: application/json" --max-time 10 \
+    --data "{\"text\":\"aquify backup FAILED [${TIMESTAMP}]: $1\"}" >/dev/null 2>&1 \
+    || log "WARN: failed to deliver the alert"
 }
 
-write_prometheus_metric() {
-  local metric_file="${NODE_EXPORTER_TEXTFILE_DIR}/aquify_backup.prom"
-  if [[ -d "${NODE_EXPORTER_TEXTFILE_DIR}" ]]; then
-    {
-      echo "# HELP aquify_backup_last_success_timestamp Unix timestamp of last successful aquify backup"
-      echo "# TYPE aquify_backup_last_success_timestamp gauge"
-      echo "aquify_backup_last_success_timestamp $(date +%s)"
-    } > "${metric_file}.tmp" && mv "${metric_file}.tmp" "${metric_file}"
-    log "INFO" "Prometheus metric written: ${metric_file}"
-  fi
+write_metric() {
+  [[ -d "${NODE_EXPORTER_TEXTFILE_DIR}" ]] || return 0
+  {
+    echo "# HELP aquify_backup_last_success_timestamp Unix time of the last successful aquify backup"
+    echo "# TYPE aquify_backup_last_success_timestamp gauge"
+    echo "aquify_backup_last_success_timestamp $(date +%s)"
+  } > "${NODE_EXPORTER_TEXTFILE_DIR}/aquify_backup.prom.tmp" \
+    && mv "${NODE_EXPORTER_TEXTFILE_DIR}/aquify_backup.prom.tmp" "${NODE_EXPORTER_TEXTFILE_DIR}/aquify_backup.prom"
 }
 
-# ---------------------------------------------------------------------------
-# Setup
-# ---------------------------------------------------------------------------
-
-setup() {
-  mkdir -p "${SNAPSHOT_DIR}" "$(dirname "${BACKUP_LOG}")"
-  touch "${BACKUP_LOG}"
-  log "INFO" "=== aquify Backup started: ${TIMESTAMP} ==="
-  [[ "${DRY_RUN}" == "true" ]] && log "INFO" "DRY RUN MODE — no data will be written or uploaded"
+# psql_scalar <sql>: one value from the database as the backup role.
+psql_scalar() {
+  PGPASSWORD="${PG_PASS}" compose exec -T -e PGPASSWORD postgres \
+    psql -U "${PG_USER}" -d "${PG_DB}" -Atq -c "$1"
 }
-
-# ---------------------------------------------------------------------------
-# Step 1: PostgreSQL backup
-# ---------------------------------------------------------------------------
 
 backup_postgres() {
-  log "INFO" "--- Step 1: PostgreSQL backup ---"
-
-  if [[ -z "${DATABASE_URL}" ]]; then
-    record_failure "DATABASE_URL is not set — skipping PostgreSQL backup"
-    return
+  log "--- PostgreSQL ---"
+  if [[ -z "${PG_USER}" || -z "${PG_PASS}" ]]; then
+    record_failure "AQUIFY_BACKUP_DB_USER / AQUIFY_BACKUP_DB_PASSWORD missing from ${SECRETS_ENV}"; return 0
   fi
+  local dump="${SNAPSHOT_DIR}/postgres.dump"
+  if [[ "${DRY_RUN}" == "true" ]]; then log "[dry-run] pg_dump ${PG_DB} -> ${dump}"; return 0; fi
 
-  local dump_file="${SNAPSHOT_DIR}/postgres.dump"
-
-  if [[ "${DRY_RUN}" == "true" ]]; then
-    log "INFO" "[dry-run] pg_dump --format=custom --compress=9 → ${dump_file}"
-    return
+  # The password reaches the container through the docker CLI's environment
+  # (-e PGPASSWORD without a value), so it never appears in a process listing.
+  if ! PGPASSWORD="${PG_PASS}" compose exec -T -e PGPASSWORD postgres \
+        pg_dump -U "${PG_USER}" -d "${PG_DB}" --format=custom --compress=9 --no-password > "${dump}"; then
+    record_failure "pg_dump failed"; rm -f "${dump}"; return 0
   fi
-
-  log "INFO" "Running pg_dump (custom format, compression level 9)..."
-  # Connection settings travel as PG* variables (see pg_env_from_url), not argv.
-  if ( pg_env_from_url "${DATABASE_URL}" && pg_dump \
-      --format=custom \
-      --compress=9 \
-      --no-password \
-      > "${dump_file}" 2>> "${BACKUP_LOG}" ); then
-    local sz
-    sz="$(du -sh "${dump_file}" | cut -f1)"
-    log "INFO" "pg_dump complete: ${dump_file} (${sz})"
-  else
-    record_failure "pg_dump failed — see ${BACKUP_LOG}"
-    rm -f "${dump_file}"
+  # A dump that cannot be read back is not a backup.
+  if ! compose exec -T postgres pg_restore --list < "${dump}" > /dev/null; then
+    record_failure "pg_restore --list could not read the dump; backup is unusable"; rm -f "${dump}"; return 0
   fi
+  local version orgs
+  version="$(psql_scalar "SELECT COALESCE(max(version_id), 0) FROM goose_db_version" 2>/dev/null)" || version=""
+  orgs="$(psql_scalar "SELECT count(*) FROM orgs" 2>/dev/null)" || orgs=""
+  if [[ -z "${version}" || -z "${orgs}" ]]; then
+    record_failure "could not read the schema version / club count for the manifest"; return 0
+  fi
+  {
+    echo "timestamp=${TIMESTAMP}"
+    echo "database=${PG_DB}"
+    echo "goose_version=${version}"
+    echo "org_count=${orgs}"
+  } > "${SNAPSHOT_DIR}/manifest.txt"
+  log "pg_dump verified ($(du -h "${dump}" | cut -f1)); schema ${version}, ${orgs} club(s)"
 }
-
-# ---------------------------------------------------------------------------
-# Step 2: MinIO object storage backup
-# ---------------------------------------------------------------------------
 
 backup_minio() {
-  log "INFO" "--- Step 2: MinIO object storage backup ---"
-
-  if ! command -v mc &>/dev/null; then
-    record_failure "'mc' (MinIO client) not found in PATH — skipping MinIO backup"
-    return
-  fi
-
+  log "--- MinIO ---"
+  if ! command -v mc >/dev/null 2>&1; then record_failure "'mc' (MinIO client) is not installed"; return 0; fi
   if [[ -z "${MINIO_ACCESS_KEY}" || -z "${MINIO_SECRET_KEY}" ]]; then
-    record_failure "MINIO_ACCESS_KEY / MINIO_SECRET_KEY not set — skipping MinIO backup"
-    return
+    record_failure "MINIO_ACCESS_KEY / MINIO_SECRET_KEY missing from ${BACKUP_ENV}"; return 0
   fi
-
-  # Register a temporary mc alias scoped to this run
-  mc alias set aquify-src "${MINIO_ENDPOINT}" "${MINIO_ACCESS_KEY}" "${MINIO_SECRET_KEY}" \
-    --api S3v4 2>> "${BACKUP_LOG}" \
-    || { record_failure "mc alias set failed"; return; }
-
-  local minio_dir="${SNAPSHOT_DIR}/minio"
-  mkdir -p "${minio_dir}"
-
-  if [[ "${DRY_RUN}" == "true" ]]; then
-    log "INFO" "[dry-run] mc mirror aquify-src/${MINIO_BUCKET} → ${minio_dir}"
-    return
-  fi
-
-  log "INFO" "Mirroring aquify-src/${MINIO_BUCKET} → ${minio_dir}..."
-  if mc mirror --preserve "aquify-src/${MINIO_BUCKET}" "${minio_dir}" >> "${BACKUP_LOG}" 2>&1; then
-    local cnt
-    cnt="$(find "${minio_dir}" -type f | wc -l | tr -d ' ')"
-    log "INFO" "MinIO mirror complete: ${cnt} objects"
-  else
-    record_failure "mc mirror failed — see ${BACKUP_LOG}"
+  if [[ "${DRY_RUN}" == "true" ]]; then log "[dry-run] mc mirror ${MINIO_BUCKET}"; return 0; fi
+  # Credentials go through mc's environment alias form, not a persisted config.
+  local alias_env="MC_HOST_aquifysrc=${MINIO_ENDPOINT/\/\//\/\/${MINIO_ACCESS_KEY}:${MINIO_SECRET_KEY}@}"
+  mkdir -p "${SNAPSHOT_DIR}/minio"
+  if ! env "${alias_env}" mc mirror --preserve "aquifysrc/${MINIO_BUCKET}" "${SNAPSHOT_DIR}/minio" >> "${DEPLOY_LOG}" 2>&1; then
+    record_failure "mc mirror failed"
   fi
 }
-
-# ---------------------------------------------------------------------------
-# Step 3: Keycloak realm export
-# ---------------------------------------------------------------------------
 
 backup_keycloak() {
-  log "INFO" "--- Step 3: Keycloak realm export ---"
-
-  if [[ -z "${KEYCLOAK_ADMIN_PASS}" ]]; then
-    log "WARN" "KEYCLOAK_ADMIN_PASS not set — skipping Keycloak export"
-    return
-  fi
-
+  log "--- Keycloak realm ---"
+  if [[ -z "${KC_ADMIN_PASS}" ]]; then record_failure "KEYCLOAK_ADMIN_PASSWORD missing from ${SECRETS_ENV}"; return 0; fi
+  if ! command -v python3 >/dev/null 2>&1; then record_failure "python3 is required to read the Keycloak token"; return 0; fi
   local realm_file="${SNAPSHOT_DIR}/keycloak-realm-${KEYCLOAK_REALM}.json"
-
-  if [[ "${DRY_RUN}" == "true" ]]; then
-    log "INFO" "[dry-run] Keycloak partial-export for realm ${KEYCLOAK_REALM} → ${realm_file}"
-    return
-  fi
-
-  # Obtain admin token from master realm. Credentials are passed via stdin
-  # rather than -d arguments so they never appear in `ps` output.
-  log "INFO" "Requesting Keycloak admin token..."
-  local token_json
-  token_json="$(curl -sf -X POST \
-    "${KEYCLOAK_URL}/realms/master/protocol/openid-connect/token" \
-    -H "Content-Type: application/x-www-form-urlencoded" \
-    --data-binary @- \
-    --max-time 30 2>> "${BACKUP_LOG}" <<EOF
-client_id=admin-cli&username=${KEYCLOAK_ADMIN_USER}&password=${KEYCLOAK_ADMIN_PASS}&grant_type=password
-EOF
-)" \
-    || { record_failure "Keycloak token request failed (is Keycloak up?)"; return; }
-
-  local access_token
-  access_token="$(printf '%s' "${token_json}" | \
-    python3 -c "import sys,json; print(json.load(sys.stdin).get('access_token',''))" 2>/dev/null)" \
-    || access_token=""
-
-  if [[ -z "${access_token}" ]]; then
-    record_failure "Failed to parse Keycloak access token — check credentials"
-    return
-  fi
-
-  log "INFO" "Exporting realm '${KEYCLOAK_REALM}' (clients + groups/roles)..."
-  local http_code
-  http_code="$(curl -sf -w "%{http_code}" -o "${realm_file}" \
-    "${KEYCLOAK_URL}/admin/realms/${KEYCLOAK_REALM}/partial-export?exportClients=true&exportGroupsAndRoles=true" \
-    -H "Authorization: Bearer ${access_token}" \
-    --max-time 60 2>> "${BACKUP_LOG}")" \
-    || http_code="error"
-
-  if [[ "${http_code}" == "200" ]]; then
-    local sz
-    sz="$(du -sh "${realm_file}" | cut -f1)"
-    log "INFO" "Keycloak export complete: ${realm_file} (${sz})"
-  else
-    record_failure "Keycloak export HTTP status: ${http_code}"
-    rm -f "${realm_file}"
+  if [[ "${DRY_RUN}" == "true" ]]; then log "[dry-run] export realm ${KEYCLOAK_REALM}"; return 0; fi
+  local token_json access_token
+  # printf, not a heredoc: a heredoc appends a newline that ends up inside grant_type and
+  # Keycloak answers unsupported_grant_type (found by running against real Keycloak). The
+  # body goes through stdin so the password never appears in the process list. The password
+  # charset is restricted to [A-Za-z0-9_-] by preflight.sh, so no URL-encoding is needed.
+  token_json="$(printf 'client_id=admin-cli&username=%s&password=%s&grant_type=password' "${KC_ADMIN_USER}" "${KC_ADMIN_PASS}" \
+    | curl -sf -X POST "${KEYCLOAK_URL}/realms/master/protocol/openid-connect/token" \
+      -H "Content-Type: application/x-www-form-urlencoded" --data-binary @- --max-time 30
+  )" || { record_failure "Keycloak token request failed (is Keycloak up?)"; return 0; }
+  access_token="$(printf '%s' "${token_json}" | python3 -c "import sys,json; print(json.load(sys.stdin).get('access_token',''))" 2>/dev/null)" || access_token=""
+  if [[ -z "${access_token}" ]]; then record_failure "no access token in the Keycloak response"; return 0; fi
+  if ! curl -sf -o "${realm_file}" --max-time 60 -H "Authorization: Bearer ${access_token}" \
+        "${KEYCLOAK_URL}/admin/realms/${KEYCLOAK_REALM}/partial-export?exportClients=true&exportGroupsAndRoles=true" \
+        -X POST; then
+    record_failure "Keycloak realm export failed"; rm -f "${realm_file}"
   fi
 }
 
-# ---------------------------------------------------------------------------
-# Step 4: Create archive and GPG-encrypt
-# Returns the path to the final archive file (stdout)
-# ---------------------------------------------------------------------------
-
+# create_archive: sets ARCHIVE_PATH to the final archive ("" when none was made).
+# It must run in the main shell, NOT inside $(...): record_failure appends to ERRORS,
+# and a subshell would silently drop those failures and let the run exit 0.
+ARCHIVE_PATH=""
 create_archive() {
-  log "INFO" "--- Step 4: Creating backup archive ---"
-
-  local archive_tar="${BACKUP_DIR}/aquify-backup-${TIMESTAMP}.tar.gz"
-  local archive_out
-
-  if [[ "${DRY_RUN}" == "true" ]]; then
-    log "INFO" "[dry-run] Would create ${archive_tar}$( [[ -n "${GPG_RECIPIENT}" ]] && echo '.gpg' )"
-    echo ""
-    return
+  ARCHIVE_PATH=""
+  local tarball="${BACKUP_DIR}/aquify-backup-${TIMESTAMP}.tar.gz"
+  if [[ "${DRY_RUN}" == "true" ]]; then log "[dry-run] archive ${tarball}"; return 0; fi
+  if [[ ! -s "${SNAPSHOT_DIR}/postgres.dump" ]]; then
+    record_failure "no database dump in the snapshot; refusing to create an archive"; return 0
   fi
-
-  log "INFO" "Creating tar.gz: ${archive_tar}..."
-  tar -czf "${archive_tar}" -C "${BACKUP_DIR}" "${TIMESTAMP}" 2>> "${BACKUP_LOG}" \
-    || { record_failure "tar failed"; echo ""; return; }
-
-  local sz
-  sz="$(du -sh "${archive_tar}" | cut -f1)"
-  log "INFO" "Archive: ${archive_tar} (${sz})"
-
+  if ! tar -czf "${tarball}" -C "${BACKUP_DIR}" "${TIMESTAMP}"; then
+    record_failure "tar failed"; rm -f "${tarball}"; return 0
+  fi
   if [[ -n "${GPG_RECIPIENT}" ]]; then
-    archive_out="${archive_tar}.gpg"
-    log "INFO" "GPG-encrypting for recipient: ${GPG_RECIPIENT}..."
-    if gpg --batch --yes --trust-model always \
-        --encrypt --recipient "${GPG_RECIPIENT}" \
-        --output "${archive_out}" \
-        "${archive_tar}" 2>> "${BACKUP_LOG}"; then
-      log "INFO" "Encrypted: ${archive_out}"
-      rm -f "${archive_tar}"
-      echo "${archive_out}"
+    if gpg --batch --yes --trust-model always --encrypt --recipient "${GPG_RECIPIENT}" \
+         --output "${tarball}.gpg" "${tarball}" >> "${DEPLOY_LOG}" 2>&1; then
+      rm -f "${tarball}"
+      ARCHIVE_PATH="${tarball}.gpg"
     else
-      record_failure "GPG encryption failed — unencrypted archive NOT uploaded"
-      rm -f "${archive_out}" 2>/dev/null || true
-      echo ""
+      record_failure "gpg encryption failed; no unencrypted archive was kept"
+      rm -f "${tarball}" "${tarball}.gpg"
     fi
+  elif [[ "${ALLOW_UNENCRYPTED_BACKUP:-}" == "1" ]]; then
+    log "ERROR-LEVEL WARNING: ALLOW_UNENCRYPTED_BACKUP=1; the archive is NOT encrypted (rehearsal use only)"
+    ARCHIVE_PATH="${tarball}"
   else
-    log "WARN" "GPG_RECIPIENT not set — backup archive is NOT encrypted"
-    echo "${archive_tar}"
+    record_failure "GPG_RECIPIENT is not set: refusing to write an unencrypted backup"
+    rm -f "${tarball}"
   fi
 }
-
-# ---------------------------------------------------------------------------
-# Step 5: Upload offsite via rclone (tiered by date)
-# ---------------------------------------------------------------------------
 
 upload_offsite() {
-  local archive_path="$1"
-  log "INFO" "--- Step 5: Offsite upload ---"
-
-  if [[ -z "${archive_path}" ]]; then
-    record_failure "No archive path supplied to upload_offsite — skipping"
-    return
+  local archive="$1"
+  if [[ -z "${archive}" ]]; then return 0; fi
+  if [[ -z "${RCLONE_REMOTE}" ]]; then record_failure "RCLONE_REMOTE not set: the backup is on this host only"; return 0; fi
+  if ! command -v rclone >/dev/null 2>&1; then record_failure "'rclone' is not installed"; return 0; fi
+  [[ "${DRY_RUN}" == "true" ]] && { log "[dry-run] rclone copy ${archive}"; return 0; }
+  local dom dow tier
+  dom="$(date +%d)"; dow="$(date +%u)"
+  if [[ "${dom}" == "01" ]]; then tier=monthly; elif [[ "${dow}" == "7" ]]; then tier=weekly; else tier=daily; fi
+  if ! rclone copy "${archive}" "${RCLONE_REMOTE}/${tier}/" >> "${DEPLOY_LOG}" 2>&1; then
+    record_failure "rclone upload failed; the backup is on this host only"; return 0
   fi
-
-  if ! command -v rclone &>/dev/null; then
-    record_failure "'rclone' not found in PATH — skipping offsite upload"
-    return
-  fi
-
-  if [[ -z "${RCLONE_REMOTE}" ]]; then
-    record_failure "RCLONE_REMOTE not set — skipping offsite upload"
-    return
-  fi
-
-  if [[ "${DRY_RUN}" == "true" ]]; then
-    log "INFO" "[dry-run] rclone copy ${archive_path} → ${RCLONE_REMOTE}/<tier>/"
-    return
-  fi
-
-  # Determine retention tier
-  local day_of_week day_of_month tier
-  day_of_week="$(date +%u)"    # 1=Mon … 7=Sun
-  day_of_month="$(date +%d)"   # 01–31
-
-  if [[ "${day_of_month}" == "01" ]]; then
-    tier="monthly"
-  elif [[ "${day_of_week}" == "7" ]]; then
-    tier="weekly"
-  else
-    tier="daily"
-  fi
-
-  local remote_path="${RCLONE_REMOTE}/${tier}/"
-  log "INFO" "Uploading to ${remote_path} (tier: ${tier})..."
-
-  if rclone copy --progress "${archive_path}" "${remote_path}" >> "${BACKUP_LOG}" 2>&1; then
-    log "INFO" "Offsite upload complete → ${remote_path}"
-  else
-    record_failure "rclone upload failed — backup is local only"
-  fi
+  log "Uploaded to ${RCLONE_REMOTE}/${tier}/"
+  # Offsite retention: daily 30d, weekly 12 weeks, monthly 12 months.
+  local spec name age rc
+  for spec in "daily 30d" "weekly 84d" "monthly 366d"; do
+    read -r name age <<< "${spec}"
+    # rclone exits 3 ("directory not found") for a tier that has not been written yet (the
+    # weekly/monthly folders do not exist until their first upload); that is not a failure.
+    # Found by running against a real rclone: every daily run reported two false errors.
+    rc=0
+    rclone delete --min-age "${age}" "${RCLONE_REMOTE}/${name}/" >> "${DEPLOY_LOG}" 2>&1 || rc=$?
+    if [[ "${rc}" != "0" && "${rc}" != "3" ]]; then record_failure "offsite retention pruning failed for ${name}"; fi
+  done
 }
 
-# ---------------------------------------------------------------------------
-# Step 6: Prune old local backups and archives
-# ---------------------------------------------------------------------------
-
-prune_old_backups() {
-  log "INFO" "--- Step 6: Pruning old local data ---"
-
-  if [[ "${DRY_RUN}" == "true" ]]; then
-    log "INFO" "[dry-run] Would prune snapshot dirs and archives older than ${BACKUP_RETENTION_DAYS} days"
-    return
-  fi
-
-  # Prune snapshot directories (raw data, kept shorter than archive files)
-  local removed_dirs=0
-  while IFS= read -r -d '' d; do
-    rm -rf "${d}"
-    (( removed_dirs++ )) || true
-    log "INFO" "Pruned snapshot dir: ${d}"
-  done < <(find "${BACKUP_DIR}" -maxdepth 1 -type d -name "20*-??????" \
-              -mtime "+${BACKUP_RETENTION_DAYS}" -print0 2>/dev/null)
-
-  # Prune archive files older than retention
-  local removed_files=0
-  while IFS= read -r -d '' f; do
-    rm -f "${f}"
-    (( removed_files++ )) || true
-    log "INFO" "Pruned archive: ${f}"
-  done < <(find "${BACKUP_DIR}" -maxdepth 1 \( -name "aquify-backup-*.tar.gz" -o -name "aquify-backup-*.tar.gz.gpg" \) \
-              -mtime "+${BACKUP_RETENTION_DAYS}" -print0 2>/dev/null)
-
-  log "INFO" "Pruning complete: removed ${removed_dirs} snapshot dir(s), ${removed_files} archive file(s)"
+prune_local() {
+  [[ "${DRY_RUN}" == "true" ]] && return 0
+  find "${BACKUP_DIR}" -maxdepth 1 -type f \( -name 'aquify-backup-*.tar.gz' -o -name 'aquify-backup-*.tar.gz.gpg' \) \
+    -mtime "+${BACKUP_RETENTION_DAYS}" -delete 2>/dev/null || true
 }
-
-# ---------------------------------------------------------------------------
-# Main
-# ---------------------------------------------------------------------------
 
 main() {
-  setup
-  backup_postgres  || true
-  backup_minio     || true
-  backup_keycloak  || true
+  ensure_log_dir
+  mkdir -p "${SNAPSHOT_DIR}"
+  chmod 700 "${SNAPSHOT_DIR}"
+  log "=== aquify backup started: ${TIMESTAMP} ==="
+  backup_postgres
+  backup_minio
+  backup_keycloak
 
-  local archive
-  archive="$(create_archive)"
-
+  create_archive
+  local archive="${ARCHIVE_PATH}"
+  # The plaintext snapshot never outlives the run.
+  if [[ "${DRY_RUN}" != "true" ]]; then
+    find "${SNAPSHOT_DIR}" -mindepth 1 -delete 2>/dev/null || true
+    rmdir "${SNAPSHOT_DIR}" 2>/dev/null || true
+  fi
   upload_offsite "${archive}"
-  prune_old_backups
+  prune_local
 
-  if [[ "${#ERRORS[@]}" -gt 0 ]]; then
-    local error_summary
-    error_summary="$(printf '• %s\n' "${ERRORS[@]}")"
-    log "ERROR" "Backup finished with ${#ERRORS[@]} error(s):"
-    printf '%s\n' "${ERRORS[@]}" | while read -r e; do log "ERROR" "  ${e}"; done
-    send_alert "Backup [${TIMESTAMP}] failed with ${#ERRORS[@]} error(s):\n${error_summary}"
+  if (( ${#ERRORS[@]} > 0 )); then
+    log "Backup finished with ${#ERRORS[@]} error(s)"
+    send_alert "$(printf '%s; ' "${ERRORS[@]}")"
     exit 1
   fi
-
-  log "INFO" "=== aquify Backup completed successfully: ${TIMESTAMP} ==="
-  write_prometheus_metric
-  exit 0
+  log "=== aquify backup completed: ${TIMESTAMP} (${archive:-dry-run}) ==="
+  write_metric
 }
 
 main "$@"
