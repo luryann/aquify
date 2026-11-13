@@ -167,3 +167,141 @@ export function isValidSlug(slug: string): boolean {
 export function orgStatusLabel(s: OrgStatus): string {
   return { provisioning: 'Setting up', active: 'Active', suspended: 'Suspended', offboarding: 'Closing', deleted: 'Deleted' }[s]
 }
+
+// ── Club support (operator console) ──────────────────────────────────────────
+
+export type ClubDomain = { domain: string; verified: boolean }
+
+export type ClubOverview = {
+  org: PlatformOrg
+  domains: ClubDomain[]
+  role_counts: Partial<Record<'admin' | 'coach' | 'parent' | 'swimmer', number>>
+  payments: { connected: boolean; charges_enabled: boolean; payouts_enabled: boolean; details_submitted: boolean }
+}
+
+export type ClubUser = {
+  id: string
+  email: string
+  first_name: string
+  last_name: string
+  enabled: boolean
+  email_verified: boolean
+  mfa_enrolled: boolean
+  roles: string[]
+}
+
+export type ClubActivityEvent = {
+  id: string
+  action: string
+  actor_user_id: string
+  occurred_at: string
+  resource_id: string
+  metadata?: Record<string, string>
+}
+
+export type SupportAction = 'password-reset' | 'resend-verification' | 'sign-out' | 'reset-mfa' | 'disable' | 'enable'
+
+const clubPath = (orgId: string, rest = '') => `/api/v1/platform/orgs/${encodeURIComponent(orgId)}${rest}`
+
+export function fetchClubOverview(api: ApiClient, platformOrgId: string, orgId: string): Promise<ClubOverview> {
+  return api.get<ClubOverview>(clubPath(orgId, '/overview'), undefined, orgHeaders(platformOrgId))
+}
+
+export const CLUB_USERS_PAGE_SIZE = 200
+
+export async function fetchClubUsers(api: ApiClient, platformOrgId: string, orgId: string, opts: { search?: string; role?: string; offset?: number } = {}): Promise<ClubUser[]> {
+  const q = new URLSearchParams({ limit: String(CLUB_USERS_PAGE_SIZE) })
+  if (opts.offset) q.set('offset', String(opts.offset))
+  if (opts.search?.trim()) q.set('search', opts.search.trim())
+  if (opts.role) q.set('role', opts.role)
+  const res = await api.get<{ items: ClubUser[] }>(clubPath(orgId, `/users?${q}`), undefined, orgHeaders(platformOrgId))
+  return res.items ?? []
+}
+
+export async function fetchClubActivity(api: ApiClient, platformOrgId: string, orgId: string): Promise<ClubActivityEvent[]> {
+  const res = await api.get<{ items: ClubActivityEvent[] }>(clubPath(orgId, '/activity'), undefined, orgHeaders(platformOrgId))
+  return res.items ?? []
+}
+
+export function updatePlatformOrg(api: ApiClient, platformOrgId: string, orgId: string, input: { name?: string; plan?: string; reason: string }): Promise<PlatformOrg> {
+  return api.patch(clubPath(orgId), input, orgHeaders(platformOrgId))
+}
+
+export function runSupportAction(api: ApiClient, platformOrgId: string, orgId: string, userId: string, action: SupportAction, reason: string): Promise<void> {
+  return api.post(clubPath(orgId, `/users/${encodeURIComponent(userId)}/${action}`), { reason }, orgHeaders(platformOrgId)).then(() => undefined)
+}
+
+export function addClubAdmin(
+  api: ApiClient, platformOrgId: string, orgId: string,
+  input: { email: string; first_name: string; last_name: string; reason: string },
+): Promise<{ user_id: string; promoted: boolean }> {
+  return api.post(clubPath(orgId, '/admins'), input, orgHeaders(platformOrgId))
+}
+
+/** What each support action does, in the words the operator confirms. */
+export const SUPPORT_ACTIONS: Record<SupportAction, { label: string; consequence: string; done: string; danger?: boolean }> = {
+  'password-reset': { label: 'Send password reset', consequence: 'Emails them a link to choose a new password. Their current password keeps working until they use it.', done: 'Password reset email sent' },
+  'resend-verification': { label: 'Resend verification', consequence: 'Emails them a fresh link to confirm their address.', done: 'Verification email sent' },
+  'sign-out': { label: 'Sign out everywhere', consequence: 'Ends their open aquify sessions. They can sign back in straight away, and it doesn’t sign them out of the identity provider.', done: 'Signed out everywhere' },
+  'reset-mfa': { label: 'Reset MFA', consequence: 'Removes their authenticator and backup codes and signs them out. They set up MFA again at their next sign-in.', done: 'MFA reset', danger: true },
+  disable: { label: 'Disable account', consequence: 'Signs them out and blocks sign-in until you enable the account again. If this is the club’s only administrator, add another one first.', done: 'Account disabled', danger: true },
+  enable: { label: 'Enable account', consequence: 'Lets them sign in again.', done: 'Account enabled' },
+}
+
+/** The actions that make sense for this account right now, in display order. */
+export function supportActionsFor(u: Pick<ClubUser, 'enabled' | 'email_verified' | 'mfa_enrolled'>): SupportAction[] {
+  if (!u.enabled) return ['enable']
+  const out: SupportAction[] = ['password-reset']
+  if (!u.email_verified) out.push('resend-verification')
+  out.push('sign-out')
+  if (u.mfa_enrolled) out.push('reset-mfa')
+  out.push('disable')
+  return out
+}
+
+export const REASON_MIN = 3
+export const REASON_MAX = 500
+
+/** The audit trail needs a real reason: 3 to 500 characters once trimmed. */
+export function isValidReason(reason: string): boolean {
+  const n = [...reason.trim()].length
+  return n >= REASON_MIN && n <= REASON_MAX
+}
+
+const ACTIVITY_LABELS: Record<string, string> = {
+  'platform.org.create': 'Club created',
+  'platform.org.update': 'Club details changed',
+  'platform.org.suspend': 'Club paused',
+  'platform.org.resume': 'Club resumed',
+  'platform.org.offboard': 'Closing started',
+  'platform.org.offboard_cancel': 'Closing cancelled',
+  'platform.org.export': 'Data export created',
+  'platform.org.purge': 'Club data deleted',
+  'platform.org.restore': 'Club data restored',
+  'platform.org.domain_add': 'Web address added',
+  'platform.org.domain_verify': 'Web address verified',
+  'platform.user.password_reset': 'Password reset sent',
+  'platform.user.resend_verification': 'Verification email resent',
+  'platform.user.sign_out': 'User signed out everywhere',
+  'platform.user.mfa_reset': 'MFA reset',
+  'platform.user.disable': 'Account disabled',
+  'platform.user.enable': 'Account enabled',
+  'platform.user.admin_add': 'Administrator added',
+}
+
+export function activityLabel(action: string): string {
+  return ACTIVITY_LABELS[action] ?? action.replace(/^platform\./, '').replace(/[._]/g, ' ')
+}
+
+export function userDisplayName(u: Pick<ClubUser, 'first_name' | 'last_name' | 'email'>): string {
+  return `${u.first_name} ${u.last_name}`.trim() || u.email
+}
+
+/** One plain line on where the club's Stripe account stands (operator view). */
+export function operatorPaymentSummary(p: ClubOverview['payments']): string {
+  if (!p.connected) return 'Not connected'
+  if (p.charges_enabled && p.payouts_enabled) return 'Taking payments, payouts on'
+  if (p.charges_enabled) return 'Taking payments, payouts waiting on Stripe'
+  if (!p.details_submitted) return 'Connected, setup unfinished'
+  return 'Stripe is reviewing details'
+}

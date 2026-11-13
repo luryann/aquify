@@ -478,9 +478,13 @@ func (b *RedisBackend) listQueueTasks(queue string, status TaskStatus) ([]TaskIn
 
 func (b *RedisBackend) collectTaskInfos(queue string, listFn taskLister) ([]*asynq.TaskInfo, error) {
 	var out []*asynq.TaskInfo
-	page := 0
+	page := 1 // asynq pages are 1-indexed; page 0 re-reads the first page
 	for {
 		items, err := listFn(queue, asynq.Page(page), asynq.PageSize(100))
+		if errors.Is(err, asynq.ErrQueueNotFound) {
+			// A queue nobody has enqueued to yet simply has no tasks.
+			return out, nil
+		}
 		if err != nil {
 			return nil, err
 		}

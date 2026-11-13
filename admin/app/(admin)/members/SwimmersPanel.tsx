@@ -137,7 +137,7 @@ function deriveRows(swimmers: SwimmerRecord[], households: HouseholdRecord[], gr
 }
 
 const INPUT_STYLE: React.CSSProperties = { width: '100%' }
-const EMPTY_FORM = { first_name: '', last_name: '', household_id: '', date_of_birth: '', gender: 'female', usa_swimming_id: '', registration_status: 'active' }
+const EMPTY_FORM = { first_name: '', last_name: '', household_id: '', date_of_birth: '', gender: 'female', usa_swimming_id: '', middle_initial: '', registration_status: 'active' }
 
 export function SwimmersPanel() {
   const { session } = useSession()
@@ -331,9 +331,15 @@ export function SwimmersPanel() {
                   </select>
                 </div>
               </div>
-              <div>
-                <label className="form-label">USA Swimming ID</label>
-                <input aria-label="e.g. AB12CD34EF56" style={INPUT_STYLE} value={form.usa_swimming_id} onChange={(e) => setForm((f) => ({ ...f, usa_swimming_id: e.target.value.toUpperCase() }))} placeholder="e.g. AB12CD34EF56" />
+              <div className="cols-2 u-gap-12px">
+                <div>
+                  <label className="form-label" htmlFor="new-swimmer-usas-id">USA Swimming ID</label>
+                  <input id="new-swimmer-usas-id" style={INPUT_STYLE} value={form.usa_swimming_id} onChange={(e) => setForm((f) => ({ ...f, usa_swimming_id: e.target.value.toUpperCase() }))} placeholder="e.g. AB12CD34EF56" />
+                </div>
+                <div>
+                  <label className="form-label" htmlFor="new-swimmer-middle-initial">Middle initial</label>
+                  <input id="new-swimmer-middle-initial" style={INPUT_STYLE} maxLength={1} value={form.middle_initial} onChange={(e) => setForm((f) => ({ ...f, middle_initial: e.target.value.replace(/[^A-Za-z]/g, '').toUpperCase() }))} placeholder="Optional" />
+                </div>
               </div>
               <div>
                 <label className="form-label">Registration status</label>

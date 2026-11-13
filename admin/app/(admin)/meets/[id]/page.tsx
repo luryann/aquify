@@ -8,10 +8,11 @@ import { Tabs } from '@/components/ui/Tabs'
 import { Table, type Column } from '@/components/ui/Table'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { useSession } from '@/lib/session'
-import { formatDateOnly, parseBackendDate } from '@/lib/dates'
+import { formatDateOnly, formatDeadline, parseBackendDate } from '@/lib/dates'
 import { formatSwimTime } from '@/lib/performanceData'
 import { useApiClient } from '@/lib/api'
 import { ReportsPanel } from './ReportsPanel'
+import { EventsBySession } from './EventsBySession'
 import { AddMeetEventForm } from './AddMeetEventForm'
 import { EntryFileExport } from './EntryFileExport'
 import { ResultsImport } from './ResultsImport'
@@ -33,6 +34,7 @@ import {
 import { uiErrorMessage } from '@/lib/frontend-telemetry'
 import { useConfirm } from '@/components/ui/ConfirmDialog'
 import { PageSkeleton } from '@/components/ui/PageSkeleton'
+import './meet-detail.css'
 
 type SessionRow = {
   id: string
@@ -41,10 +43,12 @@ type SessionRow = {
   warmupTime: string
   startTime: string
   eventCount: number
+  number: number
 }
 
 type EventRow = {
   id: string
+  sessionId: string
   eventNumber: string
   name: string
   course: string
@@ -71,6 +75,12 @@ type EntryRow = {
 
 function formatTime(value?: string | null) {
   if (!value) return '—'
+  // Bare clock times ("13:55" or "13:55:00") come from time-only fields.
+  const clock = /^(\d{1,2}):(\d{2})(?::\d{2})?$/.exec(value.trim())
+  if (clock) {
+    const h = Number(clock[1])
+    return `${h % 12 || 12}:${clock[2]} ${h < 12 ? 'AM' : 'PM'}`
+  }
   const parsed = parseBackendDate(value)
   if (!Number.isNaN(parsed.getTime())) {
     return parsed.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })
@@ -110,17 +120,9 @@ function StatusBadge({ status }: { status: string }) {
 const SESSION_COLS: Column<SessionRow>[] = [
   { key: 'name', label: 'Session', render: (row) => <span className="u-fs-fs-base u-fw-600" style={{ color: 'var(--text)' }}>{row.name}</span> },
   { key: 'date', label: 'Date', render: (row) => <span className="u-ff-font-body u-fs-fs-sm" style={{ color: 'var(--text-subtle)' }}>{formatDateOnly(row.date)}</span> },
-  { key: 'warmupTime', label: 'Warm-up', render: (row) => <span className="u-ff-font-body u-fs-fs-sm" style={{ color: 'var(--text-muted)' }}>{formatTime(row.warmupTime)}</span> },
-  { key: 'startTime', label: 'Start', render: (row) => <span className="u-ff-font-body u-fs-fs-sm" style={{ color: 'var(--text)' }}>{formatTime(row.startTime)}</span> },
+  { key: 'warmupTime', label: 'Warm-up', render: (row) => <span className="u-fs-fs-sm plain-digits" style={{ color: 'var(--text-muted)' }}>{formatTime(row.warmupTime)}</span> },
+  { key: 'startTime', label: 'Start', render: (row) => <span className="u-fs-fs-sm plain-digits" style={{ color: 'var(--text)' }}>{formatTime(row.startTime)}</span> },
   { key: 'eventCount', label: 'Events', align: 'right', render: (row) => <span className="u-ff-font-body u-fs-fs-sm" style={{ color: 'var(--text)' }}>{row.eventCount}</span> },
-]
-
-const EVENT_COLS: Column<EventRow>[] = [
-  { key: 'eventNumber', label: 'Event', render: (row) => <span className="u-ff-font-body u-fs-fs-sm u-fw-600" style={{ color: 'var(--text)' }}>{row.eventNumber}</span> },
-  { key: 'name', label: 'Name', render: (row) => <span className="u-fs-fs-base" style={{ color: 'var(--text)' }}>{row.name}</span> },
-  { key: 'sessionName', label: 'Session', render: (row) => <span className="u-fs-fs-sm" style={{ color: 'var(--text-subtle)' }}>{row.sessionName}</span> },
-  { key: 'ageGroup', label: 'Age/Gender', render: (row) => <span className="u-ff-font-body u-fs-fs-sm" style={{ color: 'var(--text-muted)' }}>{row.gender} {row.ageGroup}</span> },
-  { key: 'entries', label: 'Entries', align: 'right', render: (row) => <span className="u-ff-font-body u-fs-fs-sm" style={{ color: 'var(--accent-text, var(--accent))' }}>{row.entries}</span> },
 ]
 
 const COMMITMENT_COLS: Column<CommitmentRow>[] = [
@@ -136,7 +138,7 @@ const ENTRY_COLS: Column<EntryRow>[] = [
   { key: 'status', label: 'Status', render: (row) => <StatusBadge status={row.status} /> },
 ]
 
-// ─── Lifecycle bar ────────────────────────────────────────────────────────────
+// ─── Lifecycle ────────────────────────────────────────────────────────────────
 
 const LIFECYCLE_STAGES = [
   { key: 'draft', label: 'Draft' },
@@ -145,7 +147,6 @@ const LIFECYCLE_STAGES = [
   { key: 'commitment_closed', label: 'Commitments closed' },
   { key: 'entry_finalized', label: 'Entries finalized' },
   { key: 'completed', label: 'Completed' },
-  { key: 'archived', label: 'Archived' },
 ]
 
 type LifecycleAction = {
@@ -177,89 +178,64 @@ function getLifecycleActions(status: string): LifecycleAction[] {
   }
 }
 
-function MeetLifecycleBar({
-  meet,
-  onTransition,
-  transitioning,
-}: {
-  meet: MeetRecord
-  onTransition: (toStatus: string) => void
-  transitioning: boolean
-}) {
+function LifecycleActions({ status, onTransition, transitioning }: { status: string; onTransition: (toStatus: string) => void; transitioning: boolean }) {
   const confirm = useConfirm()
-  const stageIndex = LIFECYCLE_STAGES.findIndex((s) => s.key === meet.status)
-  const actions = getLifecycleActions(meet.status)
-
-  if (meet.status === 'archived') return null
-
+  const actions = getLifecycleActions(status)
+  if (actions.length === 0) return null
   return (
-    <div className="u-p-16px-20px u-mb-24px u-gap-20px" style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border)', borderRadius: '12px', display: 'flex', alignItems: 'center', flexWrap: 'wrap' }}>
-      {/* Progress track */}
-      <div className="u-gap-0" style={{ flex: 1, minWidth: '260px', display: 'flex', alignItems: 'center' }}>
-        {LIFECYCLE_STAGES.filter((s) => s.key !== 'archived').map((stage, i, arr) => {
-          const idx = LIFECYCLE_STAGES.findIndex((s2) => s2.key === stage.key)
-          const isPast = idx < stageIndex
-          const isCurrent = idx === stageIndex
-          const isLast = i === arr.length - 1
-          const dotColor = isPast ? 'var(--success)' : isCurrent ? 'var(--accent)' : 'var(--border)'
-          const lineColor = isPast ? 'var(--success)' : 'var(--border)'
-          return (
-            <div key={stage.key} style={{ display: 'flex', alignItems: 'center', flex: isLast ? 0 : 1, minWidth: 0 }}>
-              <div title={stage.label} style={{
-                width: isCurrent ? '10px' : '8px',
-                height: isCurrent ? '10px' : '8px',
-                borderRadius: '50%',
-                background: dotColor,
-                border: isCurrent ? `2px solid var(--accent)` : 'none',
-                boxShadow: isCurrent ? '0 0 0 3px var(--accent-subtle)' : 'none',
-                flexShrink: 0,
-                transition: 'all 0.2s',
-              }} />
-              {!isLast && (
-                <div style={{ flex: 1, height: '2px', background: lineColor, minWidth: '8px', transition: 'background 0.2s' }} />
-              )}
-            </div>
-          )
-        })}
-      </div>
-
-      {/* Current label */}
-      <div className="u-fs-fs-sm u-ff-font-body" style={{ color: 'var(--text-muted)', whiteSpace: 'nowrap', flexShrink: 0 }}>
-        {LIFECYCLE_STAGES[stageIndex]?.label ?? meet.status}
-      </div>
-
-      {/* Action buttons */}
-      {actions.length > 0 && (
-        <div className="u-gap-8px" style={{ display: 'flex', flexShrink: 0 }}>
-          {actions.map((action) => (
-            <button type="button"
-              key={action.toStatus}
-              disabled={transitioning}
-              onClick={async () => {
-                if (action.confirm) {
-                  const ok = await confirm({ title: `${action.label}?`, message: action.confirm, confirmLabel: action.label, destructive: action.variant === 'danger' })
-                  if (!ok) return
-                }
-                onTransition(action.toStatus)
-              }}
-              className="u-p-8px-16px u-fs-fs-sm u-fw-600 u-ff-font-body" style={{ borderRadius: '6px', cursor: transitioning ? 'not-allowed' : 'pointer', opacity: transitioning ? 0.6 : 1, transition: 'all 0.15s', border: action.variant === 'ghost' ? '1px solid var(--border)' : 'none', background: action.variant === 'primary'
-                  ? 'var(--accent)'
-                  : action.variant === 'danger'
-                  ? 'var(--error-bg)'
-                  : 'transparent', color: action.variant === 'primary'
-                  ? '#fff'
-                  : action.variant === 'danger'
-                  ? 'var(--error)'
-                  : 'var(--text-subtle)' }}
-            >
-              {transitioning ? '…' : action.label}
-            </button>
-          ))}
-        </div>
-      )}
+    <div className="md-actions">
+      {[...actions].reverse().map((action) => (
+        <button
+          type="button"
+          key={action.toStatus}
+          disabled={transitioning}
+          className={action.variant === 'primary' ? 'btn btn-primary' : action.variant === 'danger' ? 'btn btn-ghost' : 'btn btn-secondary'}
+          style={action.variant === 'danger' ? { color: 'var(--error)' } : undefined}
+          onClick={async () => {
+            if (action.confirm) {
+              const ok = await confirm({ title: `${action.label}?`, message: action.confirm, confirmLabel: action.label, destructive: action.variant === 'danger' })
+              if (!ok) return
+            }
+            onTransition(action.toStatus)
+          }}
+        >
+          {transitioning && action.variant === 'primary' ? <span className="spinner spinner-sm" aria-hidden /> : null}
+          {action.label}
+        </button>
+      ))}
     </div>
   )
 }
+
+function StageSteps({ status }: { status: string }) {
+  const current = LIFECYCLE_STAGES.findIndex((s) => s.key === status)
+  if (current < 0) return null // archived
+  return (
+    <ol className="md-steps" aria-label="Meet stage">
+      {LIFECYCLE_STAGES.map((stage, i) => (
+        <li key={stage.key} className="md-step" data-state={i < current ? 'done' : i === current ? 'current' : 'todo'} aria-current={i === current ? 'step' : undefined}>
+          {stage.label}
+        </li>
+      ))}
+    </ol>
+  )
+}
+
+function StackBar({ parts }: { parts: { label: string; value: number; color: string }[] }) {
+  const total = parts.reduce((n, p) => n + p.value, 0)
+  if (total === 0) return null
+  return (
+    <>
+      <div className="md-bar" role="img" aria-label={parts.map((p) => `${p.value} ${p.label}`).join(', ')}>
+        {parts.filter((p) => p.value > 0).map((p) => <span key={p.label} style={{ flex: p.value, background: p.color }} />)}
+      </div>
+      <div className="md-legend">
+        {parts.map((p) => <span key={p.label}><i style={{ background: p.color }} /><b>{p.value}</b>{p.label}</span>)}
+      </div>
+    </>
+  )
+}
+
 
 // Events can be added until entries are finalized; after that the event list
 // is what was exported to the host and must not drift.
@@ -299,8 +275,8 @@ function MeetDetailPageContent() {
   const [error, setError] = useState<string | null>(null)
   const [transitioning, setTransitioning] = useState(false)
   const [transitionError, setTransitionError] = useState<string | null>(null)
-  const [lastRefreshedAt, setLastRefreshedAt] = useState<Date | null>(null)
   const [reloadKey, setReloadKey] = useState(0)
+  const [showAddEvent, setShowAddEvent] = useState(false)
 
   useEffect(() => {
     let cancelled = false
@@ -345,9 +321,11 @@ function MeetDetailPageContent() {
           warmupTime: meetSession.warmup_time || meetSession.warmup_at || '',
           startTime: meetSession.start_time || meetSession.start_at || '',
           eventCount: eventCountBySession[meetSession.id] ?? 0,
-        })).sort((a, b) => a.date.localeCompare(b.date)))
+          number: meetSession.session_number ?? meetSession.session_order ?? 0,
+        })).sort((a, b) => a.number - b.number || a.date.localeCompare(b.date) || a.startTime.localeCompare(b.startTime)))
         setEvents(rawEvents.map((event) => ({
           id: event.id,
+          sessionId: event.session_id || '',
           eventNumber: event.event_number?.toString() || '—',
           name: [event.distance, formatStroke(event.stroke)].filter(Boolean).join(' ') || 'Meet event',
           course: event.course || nextMeet.course,
@@ -375,7 +353,6 @@ function MeetDetailPageContent() {
             status: entry.status,
           }
         }).sort((a, b) => a.swimmer.localeCompare(b.swimmer)))
-        setLastRefreshedAt(new Date())
       } catch (err) {
         if (!cancelled) {
           setError(uiErrorMessage(err, 'Couldn’t load meet details. Try again.'))
@@ -442,132 +419,162 @@ function MeetDetailPageContent() {
     return <div className="page"><EmptyState icon="alert-circle" title="Unable to load meet" description={error ?? 'Meet not found.'} /></div>
   }
 
+  const invited = commitments.filter((c) => c.status === 'invited').length
+  const yes = commitments.filter((c) => c.status === 'committed_yes' || c.status === 'coach_reviewed' || c.status === 'locked').length
+  const no = commitments.filter((c) => c.status === 'committed_no').length
+  const pendingEntries = entries.filter((e) => e.status === 'submitted').length
+  const approvedEntries = entries.filter((e) => e.status === 'approved').length
+  const exportedEntries = entries.filter((e) => e.status === 'exported').length
+  const resultsOpen = meet.status === 'entry_finalized' || meet.status === 'completed' || meet.status === 'archived'
+
+  const todo: { count?: number; text: string; tab: string }[] = []
+  if (events.length === 0 && EDITABLE_EVENT_STATUSES.has(meet.status)) todo.push({ text: 'Add events so families can sign up', tab: 'events' })
+  if (meet.status === 'commitment_open' && invited > 0) todo.push({ count: invited, text: `${invited === 1 ? 'swimmer has' : 'swimmers have'} not responded`, tab: 'commitments' })
+  if (pendingEntries > 0) todo.push({ count: pendingEntries, text: `${pendingEntries === 1 ? 'entry needs' : 'entries need'} approval`, tab: 'entries' })
+  if ((meet.status === 'entry_finalized' || meet.status === 'completed') && approvedEntries > 0) todo.push({ count: approvedEntries, text: 'approved, not yet sent to the host', tab: 'entries' })
+
+  const dateRows: { label: string; value: string | null }[] = [
+    { label: 'Dates', value: meet.start_date ? (meet.end_date && meet.end_date !== meet.start_date ? `${formatDateOnly(meet.start_date)} – ${formatDateOnly(meet.end_date)}` : formatDateOnly(meet.start_date)) : null },
+    { label: 'Commitments due', value: meet.commitment_deadline ? formatDeadline(meet.commitment_deadline) : null },
+    { label: 'Entries due', value: meet.entry_deadline ? formatDeadline(meet.entry_deadline) : null },
+    { label: 'Age-up date', value: meet.age_up_date ? formatDateOnly(meet.age_up_date) : null },
+  ]
+
   return (
     <div className="page">
-      <Link href="/meets" className="u-gap-4px u-fs-fs-base u-mb-20px" style={{ display: 'inline-flex', alignItems: 'center', color: 'var(--text-subtle)', textDecoration: 'none' }}>
+      <Link href="/meets" className="btn btn-ghost u-fs-fs-sm u-gap-6px u-mb-8px" style={{ marginLeft: 'calc(var(--space-2) * -1)' }}>
         <Icon name="chevron-left" size={14} /> Meets
       </Link>
 
       <div className="page-header">
         <div>
-          <div className="u-gap-6px-12px u-mb-4px" style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap' }}>
+          <div className="u-gap-6px-12px" style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap' }}>
             <h1 className="page-title">{meet.name}</h1>
             <StatusBadge status={meet.status} />
           </div>
-          <div className="u-fs-fs-sm u-ff-font-body" style={{ color: 'var(--text-muted)' }}>
-            {meet.host_org || 'Host TBD'} · {meet.location || 'Location TBD'}
+          <div className="md-meta">
+            <span>{meet.course}</span>
+            {meet.host_org ? <span>{meet.host_org}</span> : null}
+            {meet.location ? <span>{meet.location}</span> : null}
           </div>
         </div>
+        <LifecycleActions status={meet.status} onTransition={handleTransition} transitioning={transitioning} />
       </div>
 
-      <MeetLifecycleBar meet={meet} onTransition={handleTransition} transitioning={transitioning} />
+      <StageSteps status={meet.status} />
 
       {transitionError && (
-        <div className="u-mb-16px u-p-12px-16px u-fs-fs-base u-ff-font-body" style={{ borderRadius: '6px', background: 'var(--error-bg)', color: 'var(--error)', border: '1px solid var(--error)' }}>
+        <div role="alert" className="u-mb-16px u-p-12px-16px u-fs-fs-base" style={{ borderRadius: '8px', background: 'var(--error-bg)', color: 'var(--error)', border: '1px solid var(--error-border)' }}>
           {transitionError}
         </div>
       )}
 
-      <div className="cols-4 u-gap-12px u-mb-24px" >
-        {[
-          { label: 'Course', value: meet.course, color: 'var(--text)' },
-          { label: 'Sessions', value: sessions.length.toString(), color: 'var(--text)' },
-          { label: 'Events', value: events.length.toString(), color: 'var(--accent-text, var(--accent))' },
-          { label: 'Entries', value: entries.length.toString(), color: 'var(--success)' },
-        ].map((stat) => (
-          <div key={stat.label} className="card u-p-16px-16px" >
-            <div className="u-fs-fs-sm u-ff-font-body u-mb-6px" style={{ color: 'var(--text-muted)' }}>{stat.label}</div>
-            <div className="u-fs-fs-xl u-ff-font-body u-fw-700" style={{ color: stat.color }}>{stat.value}</div>
-          </div>
-        ))}
-      </div>
-
       <Tabs tabs={tabs} active={activeTab} onChange={setActiveTab} />
 
       {activeTab === 'overview' ? (
-        <div className="cols-2 u-gap-16px" >
-          {meet.status === 'entry_finalized' || meet.status === 'completed' || meet.status === 'archived' ? (
-            <ResultsImport meetId={meetId} />
-          ) : null}
-          <div className="card u-p-20px" >
-            <h3 className="card-title u-mb-16px" >Dates &amp; host</h3>
-            <div className="u-gap-12px" style={{ display: 'flex', flexDirection: 'column' }}>
-              {[
-                { label: 'Start date', value: formatDateOnly(meet.start_date) },
-                { label: 'End date', value: formatDateOnly(meet.end_date || meet.start_date) },
-                { label: 'Commit deadline', value: formatDateOnly(meet.commitment_deadline) },
-                { label: 'Entry deadline', value: formatDateOnly(meet.entry_deadline) },
-                { label: 'Host', value: meet.host_org || '—' },
-              ].map((row) => (
-                <div key={row.label} className="u-fs-fs-base u-pb-12px" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--border)' }}>
-                  <span style={{ color: 'var(--text-muted)' }}>{row.label}</span>
-                  <span className="u-ff-font-body u-fw-600" style={{ color: 'var(--text)' }}>{row.value}</span>
-                </div>
-              ))}
+        <div className="split-aside u-gap-16px">
+          <div className="stack" style={{ gap: 'var(--space-4)', minWidth: 0 }}>
+            <div className="card">
+              <h2 className="card-title u-mb-12px">Needs attention</h2>
+              {todo.length > 0 ? (
+                <ul className="md-todo">
+                  {todo.map((item) => (
+                    <li key={item.text}>
+                      <button type="button" className="md-todo-item" onClick={() => setActiveTab(item.tab)}>
+                        {item.count !== undefined ? <span className="md-todo-count">{item.count}</span> : null}
+                        <span className="md-todo-text">{item.text}</span>
+                        <Icon name="chevron-right" size={14} className="md-todo-go" />
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="md-clear"><Icon name="check-circle" size={15} /> All clear</p>
+              )}
             </div>
+
+            {commitments.length > 0 ? (
+              <div className="card">
+                <h2 className="card-title u-mb-12px">Commitments</h2>
+                <StackBar parts={[
+                  { label: 'going', value: yes, color: 'var(--success)' },
+                  { label: 'not going', value: no, color: 'var(--error)' },
+                  { label: 'no response', value: invited, color: 'var(--border-strong, var(--border))' },
+                ]} />
+              </div>
+            ) : null}
+
+            {entries.length > 0 ? (
+              <div className="card">
+                <h2 className="card-title u-mb-12px">Entries</h2>
+                <StackBar parts={[
+                  { label: 'to review', value: pendingEntries, color: 'var(--warning)' },
+                  { label: 'approved', value: approvedEntries, color: 'var(--success)' },
+                  { label: 'exported', value: exportedEntries, color: 'var(--info)' },
+                ]} />
+              </div>
+            ) : null}
+
+            {resultsOpen ? <ResultsImport meetId={meetId} /> : null}
           </div>
-          <div className="card u-p-20px" >
-            <h3 className="card-title u-mb-16px" >Open items</h3>
-            <div className="u-gap-12px" style={{ display: 'flex', flexDirection: 'column' }}>
-              <div className="u-fs-fs-base" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <span style={{ color: 'var(--text-muted)' }}>Households yet to respond</span>
-                <span className="u-ff-font-body u-fw-600" style={{ color: commitments.filter((c) => c.status === 'invited').length > 0 ? 'var(--warning)' : 'var(--text)' }}>
-                  {commitments.filter((c) => c.status === 'invited').length}
-                </span>
-              </div>
-              <div className="u-fs-fs-base" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <span style={{ color: 'var(--text-muted)' }}>Entries awaiting approval</span>
-                <span className="u-ff-font-body u-fw-600" style={{ color: entries.filter((e) => e.status === 'submitted').length > 0 ? 'var(--warning)' : 'var(--text)' }}>
-                  {entries.filter((e) => e.status === 'submitted').length}
-                </span>
-              </div>
-              <p className="u-fs-fs-xs u-ff-font-body u-mt-4px" style={{ color: 'var(--text-muted)' }}>
-                {lastRefreshedAt ? `Updated ${lastRefreshedAt.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}` : 'Waiting for first refresh…'}
-              </p>
-            </div>
+
+          <div className="card">
+            <dl className="md-facts">
+              {dateRows.map((row) => (
+                <FactRow key={row.label} label={row.label} value={row.value} />
+              ))}
+            </dl>
           </div>
         </div>
       ) : null}
 
-      {activeTab === 'sessions' ? <Table columns={SESSION_COLS} data={sessions} emptyTitle="No sessions" emptyDescription="No meet sessions have been created yet." /> : null}
+      {activeTab === 'sessions' ? <Table columns={SESSION_COLS} data={sessions} emptyTitle="No sessions" /> : null}
       {activeTab === 'events' && meet ? (
         <div>
-          {EDITABLE_EVENT_STATUSES.has(meet.status) ? (
+          {EDITABLE_EVENT_STATUSES.has(meet.status) && (events.length === 0 || showAddEvent) ? (
             <AddMeetEventForm
               meetId={meetId}
               course={meet.course || 'SCY'}
               sessions={sessions.map((s) => ({ id: s.id, name: s.name }))}
               suggestedEventNumber={nextEventNumber(events)}
-              onCreated={() => setReloadKey((k) => k + 1)}
+              onCreated={() => { setShowAddEvent(false); setReloadKey((k) => k + 1) }}
             />
           ) : null}
-          <Table columns={EVENT_COLS} data={events} emptyTitle="No events" emptyDescription="No events have been configured yet." />
+          <EventsBySession
+            events={events}
+            sessions={sessions}
+            formatTime={formatTime}
+            toolbarExtra={EDITABLE_EVENT_STATUSES.has(meet.status) ? (
+              <button type="button" className="btn btn-secondary u-fs-fs-sm u-gap-6px" aria-expanded={showAddEvent} onClick={() => setShowAddEvent((v) => !v)}>
+                <Icon name={showAddEvent ? 'x' : 'plus'} size={13} /> {showAddEvent ? 'Cancel' : 'Add event'}
+              </button>
+            ) : null}
+          />
         </div>
       ) : null}
       {activeTab === 'commitments' ? (
         <div>
-          <div className="u-mb-12px" style={{ display: 'flex', justifyContent: 'flex-end' }}>
-            <Link href={`/commitments?meet=${meetId}`} className="u-fs-fs-sm u-gap-4px" style={{ color: 'var(--accent-text, var(--accent))', textDecoration: 'none', display: 'inline-flex', alignItems: 'center' }}>
-              Manage commitments (selections, approvals, lock) <Icon name="chevron-right" size={12} />
-            </Link>
+          <div className="md-toolbar">
+            <Link href={`/commitments?meet=${meetId}`} className="btn btn-secondary u-fs-fs-sm">Manage commitments <Icon name="chevron-right" size={12} /></Link>
           </div>
-          <Table columns={COMMITMENT_COLS} data={commitments} emptyTitle="No commitments" emptyDescription="No swimmer commitments are recorded for this meet." />
+          <Table columns={COMMITMENT_COLS} data={commitments} emptyTitle="No commitments" />
         </div>
       ) : null}
       {activeTab === 'entries' ? (
         <div>
-          {meet && (meet.status === 'entry_finalized' || meet.status === 'completed') && entries.length > 0 ? (
-            <EntryFileExport meetId={meetId} onExported={() => setReloadKey((k) => k + 1)} />
-          ) : null}
-          <div className="u-gap-16px u-mb-12px" style={{ display: 'flex', justifyContent: 'flex-end', flexWrap: 'wrap' }}>
-            <Link href={`/performance/relays?meet_id=${meetId}`} className="u-fs-fs-sm u-gap-4px" style={{ color: 'var(--accent-text, var(--accent))', textDecoration: 'none', display: 'inline-flex', alignItems: 'center' }}>
-              Build relays <Icon name="chevron-right" size={12} />
-            </Link>
-            <Link href={`/entries?meet=${meetId}`} className="u-fs-fs-sm u-gap-4px" style={{ color: 'var(--accent-text, var(--accent))', textDecoration: 'none', display: 'inline-flex', alignItems: 'center' }}>
-              Manage entries (approve, scratch, add) <Icon name="chevron-right" size={12} />
-            </Link>
-          </div>
-          <Table columns={ENTRY_COLS} data={entries} emptyTitle="No entries" emptyDescription="No entries have been proposed for this meet yet." />
+          <EntryFileExport
+            meetId={meetId}
+            meetStatus={meet.status}
+            approvedEntryCount={approvedEntries + exportedEntries}
+            onExported={() => setReloadKey((k) => k + 1)}
+            actions={(
+              <>
+                <Link href={`/performance/relays?meet_id=${meetId}`} className="btn btn-secondary u-fs-fs-sm">Build relays</Link>
+                <Link href={`/entries?meet=${meetId}`} className="btn btn-secondary u-fs-fs-sm">Manage entries</Link>
+              </>
+            )}
+          />
+          <Table columns={ENTRY_COLS} data={entries} emptyTitle="No entries" />
         </div>
       ) : null}
       {activeTab === 'volunteers' ? <MeetVolunteersPanel meetId={meetId} meetStartDate={meet?.start_date} /> : null}
@@ -575,3 +582,13 @@ function MeetDetailPageContent() {
     </div>
   )
 }
+
+function FactRow({ label, value }: { label: string; value: string | null }) {
+  return (
+    <>
+      <dt>{label}</dt>
+      <dd data-empty={!value}>{value ?? 'Not set'}</dd>
+    </>
+  )
+}
+

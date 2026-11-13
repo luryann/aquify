@@ -1,6 +1,7 @@
 'use client'
 
 import { ApiError, rawRequestAuthHeaders, type ApiClient, orgHeaders } from '#lib/api'
+import { filenameFromContentDisposition } from './content-disposition.ts'
 
 export type HouseholdRecord = {
   id: string
@@ -43,6 +44,7 @@ export type SwimmerRecord = {
   first_name: string
   last_name: string
   preferred_name?: string
+  middle_initial?: string
   date_of_birth: string
   gender: string
   swimmer_external_id?: string
@@ -121,12 +123,15 @@ export type MeetRecord = {
   course: string
   start_date?: string
   end_date?: string
+  /** Date swimmer ages are computed on in entry files; the start date when absent. */
+  age_up_date?: string
   entry_deadline?: string
   commitment_deadline?: string
   host_org?: string
   location?: string
   self_signup_enabled?: boolean
   max_entries_per_swimmer?: number
+  swimmer_fee_cents?: number
   status: string
 }
 
@@ -205,11 +210,14 @@ export type ParsedMeetEventDraftRecord = {
   min_age?: number
   max_age?: number
   is_relay: boolean
+  entry_fee_cents?: number
+  /** Host's entry time standard in the meet course, in milliseconds. */
 }
 
 export type ParsedMeetSignupSettingsRecord = {
   self_signup_enabled: boolean
   max_entries_per_swimmer: number
+  swimmer_fee_cents?: number
 }
 
 export type ParsedMeetFileRecord = {
@@ -220,6 +228,7 @@ export type ParsedMeetFileRecord = {
   location?: string
   start_date?: string
   end_date?: string
+  age_up_date?: string
   sessions: ParsedMeetSessionDraft[]
   events: ParsedMeetEventDraftRecord[]
   signup_settings: ParsedMeetSignupSettingsRecord
@@ -1867,6 +1876,7 @@ export async function createSwimmer(
     first_name: string
     last_name: string
     preferred_name?: string
+    middle_initial?: string
     date_of_birth: string
     gender: string
     swimmer_external_id?: string
@@ -2038,6 +2048,7 @@ export async function updateSwimmer(
     first_name?: string
     last_name?: string
     preferred_name?: string
+    middle_initial?: string
     date_of_birth?: string
     gender?: string
     swimmer_external_id?: string
@@ -2092,6 +2103,7 @@ export type CreateMeetPayload = {
   course?: string
   start_date?: string
   end_date?: string
+  age_up_date?: string
   entry_deadline?: string
   commitment_deadline?: string
   host_org?: string
@@ -2119,6 +2131,7 @@ export type CreateMeetPayload = {
   signup_settings?: {
     self_signup_enabled: boolean
     max_entries_per_swimmer: number
+    swimmer_fee_cents?: number
   }
 }
 
@@ -2149,30 +2162,50 @@ async function postMultipartFile<T>(token: string | undefined, orgId: string, pa
   return await res.json() as T
 }
 
+/**
+ * Parses the meet event files a host publishes: the .hyv, the .ev3, both, or
+ * the .zip that holds them. When both formats are sent the backend compares
+ * them and reports any disagreement in `parse_warnings`.
+ */
 export async function parseMeetEntryFile(
   token: string | undefined,
   orgId: string,
-  file: File,
+  files: File[],
 ): Promise<ParsedMeetFileRecord> {
-  const payload = await postMultipartFile<{ parsed: ParsedMeetFileRecord }>(token, orgId, '/api/v1/meets/parse-entry-file', file)
+  const form = new FormData()
+  for (const file of files) form.append('file', file, file.name)
+  const res = await fetch('/api/v1/meets/parse-entry-file', {
+    method: 'POST',
+    body: form,
+    headers: { 'X-Org-Id': orgId, ...rawRequestAuthHeaders(token, 'POST') },
+    credentials: 'include',
+  })
+  if (!res.ok) throw await ApiError.fromResponse(res)
+  const payload = await res.json() as { parsed: ParsedMeetFileRecord }
   return payload.parsed
 }
 
-export type SD3ExportResult = {
+export type EntryBundleExportResult = {
   blob: Blob
   filename: string
   entryCount: number
+  athleteCount: number
   skippedRelays: number
+  /** Approved entries left out because their event or swimmer no longer exists. */
+  skippedOrphans: number
 }
 
-/** Generates the SD3 entry file for the host meet; approved entries become "exported". */
-export async function exportMeetEntriesSD3(
+/**
+ * Builds the entry bundle for the meet host (a ZIP with the .sd3 and .hy3
+ * entry files, both entry reports and the entry log); approved entries become
+ * "exported".
+ */
+export async function exportMeetEntryBundle(
   token: string | undefined,
   orgId: string,
   meetId: string,
-  variant: 'extended' | 'standard' = 'extended',
-): Promise<SD3ExportResult> {
-  const res = await fetch(`/api/v1/meets/${meetId}/entries/sd3?variant=${variant}`, {
+): Promise<EntryBundleExportResult> {
+  const res = await fetch(`/api/v1/meets/${meetId}/entries/export`, {
     method: 'POST',
     headers: { 'X-Org-Id': orgId, ...rawRequestAuthHeaders(token, 'POST') },
     credentials: 'include',
@@ -2181,12 +2214,14 @@ export async function exportMeetEntriesSD3(
     throw await ApiError.fromResponse(res)
   }
   const disposition = res.headers.get('content-disposition') ?? ''
-  const filename = /filename="?([^";]+)"?/.exec(disposition)?.[1] ?? 'meet-entries.sd3'
+  const filename = filenameFromContentDisposition(disposition, 'meet-entries.zip')
   return {
     blob: await res.blob(),
     filename,
     entryCount: Number(res.headers.get('x-entry-count') ?? 0),
+    athleteCount: Number(res.headers.get('x-athlete-count') ?? 0),
     skippedRelays: Number(res.headers.get('x-skipped-relays') ?? 0),
+    skippedOrphans: Number(res.headers.get('x-skipped-orphans') ?? 0),
   }
 }
 
@@ -2198,7 +2233,7 @@ export type ResultsImportSummary = {
   warnings: string[]
 }
 
-/** Uploads a meet results file (.sd3/.cl2/.hy3/.zip) and records matched swims. */
+/** Uploads a meet results file (.sd3, or a .zip holding one) and records matched swims. */
 export async function importMeetResults(
   token: string | undefined,
   orgId: string,
@@ -2332,6 +2367,11 @@ export type OrgSettingsRecord = {
   timezone?: string
   currency?: string
   legal_name?: string
+  address_line1?: string
+  address_line2?: string
+  address_city?: string
+  address_state?: string
+  address_postal_code?: string
   updated_at?: string
   updated_by?: string
 }
@@ -2348,7 +2388,7 @@ export async function fetchOrgSettings(api: ApiClient, orgId: string): Promise<O
 export async function updateOrgSettings(
   api: ApiClient,
   orgId: string,
-  input: { team_code?: string; team_name?: string; lsc_code?: string; email_sender_name?: string; email_sender_address?: string } & Partial<Pick<OrgSettingsRecord, 'public_slug' | 'public_site_enabled' | 'public_show_coaches' | 'public_about' | 'public_contact_email' | 'public_contact_phone' | 'swimmer_accounts_enabled' | 'timezone' | 'currency' | 'legal_name'>>,
+  input: { team_code?: string; team_name?: string; lsc_code?: string; email_sender_name?: string; email_sender_address?: string } & Partial<Pick<OrgSettingsRecord, 'public_slug' | 'public_site_enabled' | 'public_show_coaches' | 'public_about' | 'public_contact_email' | 'public_contact_phone' | 'swimmer_accounts_enabled' | 'timezone' | 'currency' | 'legal_name' | 'address_line1' | 'address_line2' | 'address_city' | 'address_state' | 'address_postal_code'>>,
 ): Promise<OrgSettingsRecord> {
   const res = await api.put<{ org_settings: OrgSettingsRecord }>(
     '/api/v1/org-settings',

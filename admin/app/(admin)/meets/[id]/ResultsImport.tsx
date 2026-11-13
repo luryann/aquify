@@ -29,24 +29,22 @@ export function ResultsImport({ meetId }: { meetId: string }) {
   }
 
   return (
-    <div className="card u-p-20px" style={{ gridColumn: '1 / -1' }}>
+    <div className="card">
       <div className="u-gap-16px" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap' }}>
-        <div style={{ flex: '1 1 300px' }}>
-          <h3 className="card-title u-mb-6px" >Results</h3>
-          <p className="u-fs-fs-sm u-lh-1_5" style={{ color: 'var(--text-subtle)' }}>
-            Import the host&apos;s results file (.sd3, .cl2, .hy3, .zip). Re-importing is safe.
-          </p>
+        <div style={{ flex: '1 1 200px' }}>
+          <h2 className="card-title">Results</h2>
+          <p className="u-fs-fs-sm u-mt-4px" style={{ color: 'var(--text-muted)' }}>.sd3 or .zip from the host</p>
         </div>
         <input
           ref={inputRef}
           type="file"
-          accept=".sd3,.cl2,.hy3,.zip"
+          accept=".sd3,.zip"
           aria-label="Results file"
           style={{ display: 'none' }}
           onChange={(e) => { void handleFile(e.target.files?.[0] ?? null) }}
         />
-        <button type="button" className="btn btn-primary" disabled={busy} onClick={() => inputRef.current?.click()}>
-          {busy ? 'Importing…' : 'Import Results File'}
+        <button type="button" className="btn btn-secondary" disabled={busy} onClick={() => inputRef.current?.click()}>
+          {busy ? 'Importing…' : 'Import results'}
         </button>
       </div>
       {error ? <p className="u-fs-fs-sm u-mt-12px" style={{ color: 'var(--danger)' }}>{error}</p> : null}

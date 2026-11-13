@@ -1,15 +1,24 @@
 'use client'
 
-import { useState, useRef, useEffect, useMemo } from 'react'
+import { useState, useRef, useEffect, useMemo, useId, type ReactNode } from 'react'
 import { useRouter } from 'next/navigation'
 import { Icon } from '@/components/ui/icons'
 import { useSession } from '@/lib/session'
 import { useApiClient } from '@/lib/api'
-import { createMeet, fetchMeets, parseMeetEntryFile, type MeetRecord, type ParsedMeetEventDraftRecord } from '@/lib/adminData'
+import {
+  createMeet,
+  fetchMeets,
+  fetchOrgSettings,
+  parseMeetEntryFile,
+  type MeetRecord,
+  type ParsedMeetEventDraftRecord,
+} from '@/lib/adminData'
 import {
   buildCreateMeetPayload,
   getNextSessionNumber,
+  isMeetEventFileName,
   mapParsedSessionsToDraftSessions,
+  MEET_EVENT_FILE_EXTENSIONS,
   maxEntriesPayloadValue,
   type Course,
   type MeetCreateDraftState,
@@ -19,302 +28,88 @@ import { formatDateOnly } from '@/lib/dates'
 import { uiErrorMessage } from '@/lib/frontend-telemetry'
 import { FIELD_INPUT_STYLE } from '@/lib/form-styles'
 import { COURSE_LABELS, formatStroke } from '@/lib/meet-events'
+import './meet-create.css'
 
 type MeetEventDraft = ParsedMeetEventDraftRecord
-
-type MeetDraft = MeetCreateDraftState & {
-  name: string
-  description: string
-  ageGroups: string[]
-}
-
-type PackageFile = { name: string; size: number; type: string; file?: File }
-
-const STEP_LABELS = ['Basic Info', 'Schedule', 'Entry Rules', 'Review']
-function formatReviewDateTime(value?: string | null) {
-  if (!value) return '—'
-  const parsed = new Date(value)
-  if (Number.isNaN(parsed.getTime())) return value
-  return parsed.toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' })
-}
+type MeetDraft = MeetCreateDraftState
 
 const COURSES: Course[] = ['SCY', 'SCM', 'LCM']
-const DEFAULT_AGE_GROUPS = ['8 & Under', '9-10', '11-12', '13-14', '15-16', '17-18', 'Open']
-const MEET_ENTRY_EXTS = ['.cl2', '.sd3', '.zip', '.hy3', '.hyv', '.ev3']
+const MAX_ENTRY_OPTIONS = ['2', '3', '4', '5', '6', 'Unlimited']
+const EVENT_PREVIEW_LIMIT = 8
 
-function FieldLabel({ children, required }: { children: React.ReactNode; required?: boolean }) {
-  return (
-    <label className="u-fs-fs-sm u-ff-font-body u-mb-8px" style={{ display: 'block', color: 'var(--text-muted)' }}>
-      {children}{required && <span className="u-ml-4px" style={{ color: 'var(--error)' }}>*</span>}
-    </label>
-  )
+function maxEntriesButtonValue(value: number): string {
+  return value >= 6 ? 'Unlimited' : String(value)
 }
 
-function InputField({
-  value, onChange, placeholder, type = 'text', hint,
-}: {
-  value: string; onChange: (v: string) => void; placeholder?: string; type?: string; hint?: string
-}) {
-  return (
-    <div>
-      <input
-        aria-label={placeholder ?? type} type={type} value={value}
-        onChange={(e) => onChange(e.target.value)}
-        placeholder={placeholder}
-        style={FIELD_INPUT_STYLE}
-      />
-      {hint && <p className="u-fs-fs-xs u-mt-4px" style={{ color: 'var(--text-muted)' }}>{hint}</p>}
-    </div>
-  )
-}
-
-function deriveAgeGroupLabel(event: MeetEventDraft): string | null {
-  const min = event.min_age
-  const max = event.max_age
+function ageLabel(event: MeetEventDraft): string | null {
+  const { min_age: min, max_age: max } = event
   if (min == null && max == null) return null
   if (min != null && max != null) return `${min}-${max}`
   if (min != null) return `${min}&O`
-  return `Under ${max}`
-}
-
-function deriveAgeGroupsFromEvents(events: MeetEventDraft[]): string[] {
-  const unique = new Set<string>()
-  for (const event of events) {
-    const label = deriveAgeGroupLabel(event)
-    if (label) unique.add(label)
-  }
-  return Array.from(unique)
-}
-
-function maxEntriesButtonValue(value: number): string {
-  if (value >= 6) return 'Unlimited'
-  return String(value)
+  return `${max}&U`
 }
 
 function formatEventAgeGroup(event: MeetEventDraft): string {
   const gender = event.gender === 'F' ? 'Girls' : event.gender === 'M' ? 'Boys' : event.gender === 'X' ? 'Mixed' : ''
-  const age = deriveAgeGroupLabel(event) ?? 'Open'
-  return [gender, age].filter(Boolean).join(' ')
+  return [gender, ageLabel(event) ?? 'Open'].filter(Boolean).join(' ')
 }
 
-// ── File upload zone ────────────────────────────────────────────────────────
+function formatBytes(b: number) {
+  if (b < 1024) return `${b} B`
+  if (b < 1024 * 1024) return `${(b / 1024).toFixed(0)} KB`
+  return `${(b / 1024 / 1024).toFixed(1)} MB`
+}
 
-function UploadZone({
-  label,
-  hint,
-  accept,
-  files,
-  onFiles,
-  accent,
-  multiple = true,
-}: {
-  label: string
-  hint: string
-  accept: string
-  files: PackageFile[]
-  onFiles: (files: PackageFile[]) => void
-  accent?: boolean
-  multiple?: boolean
-}) {
-  const inputRef = useRef<HTMLInputElement>(null)
-  const [dragging, setDragging] = useState(false)
-
-  function handleFileList(fileList: FileList | null) {
-    if (!fileList) return
-    const newFiles: PackageFile[] = Array.from(fileList).map((f) => ({
-      name: f.name,
-      size: f.size,
-      type: f.type || 'application/octet-stream',
-      file: f,
-    }))
-    onFiles(newFiles)
-  }
-
-  function formatBytes(b: number) {
-    if (b < 1024) return `${b} B`
-    if (b < 1024 * 1024) return `${(b / 1024).toFixed(0)} KB`
-    return `${(b / 1024 / 1024).toFixed(1)} MB`
-  }
-
-  const borderColor = dragging ? 'var(--accent)' : accent ? 'var(--accent-border)' : 'var(--border)'
-  const bgColor = dragging ? 'rgba(235,93,30,0.05)' : accent ? 'rgba(235,93,30,0.02)' : 'var(--bg-elevated)'
-
+function Field({ label, required, hint, children }: { label: string; required?: boolean; hint?: string; children: (id: string) => ReactNode }) {
+  const id = useId()
   return (
     <div>
-      <FieldLabel>{label}</FieldLabel>
-      <div
-        onClick={() => inputRef.current?.click()}
-        onDragOver={(e) => { e.preventDefault(); setDragging(true) }}
-        onDragLeave={() => setDragging(false)}
-        onDrop={(e) => {
-          e.preventDefault()
-          setDragging(false)
-          handleFileList(e.dataTransfer.files)
-        }}
-        className="u-p-20px" style={{ border: `2px dashed ${borderColor}`, borderRadius: '12px', background: bgColor, cursor: 'pointer', transition: 'all 0.15s', textAlign: 'center' }}
-      >
-        <Icon name="upload-cloud" size={22} style={{ color: accent ? 'var(--accent)' : 'var(--text-muted)', margin: '0 auto 8px', display: 'block' }} />
-        <p className="u-fs-fs-base u-mb-4px" style={{ color: 'var(--text-subtle)' }}>
-          Drop files or <span className="u-fw-600" style={{ color: accent ? 'var(--accent)' : 'var(--info)' }}>browse</span>
-        </p>
-        <p className="u-fs-fs-xs u-ff-font-body" style={{ color: 'var(--text-muted)' }}>{hint}</p>
-        <input
-          ref={inputRef}
-          type="file"
-          accept={accept}
-          multiple={multiple}
-          style={{ display: 'none' }}
-          onChange={(e) => handleFileList(e.target.files)}
-        />
-      </div>
-
-      {files.length > 0 && (
-        <div className="u-mt-12px u-gap-6px" style={{ display: 'flex', flexDirection: 'column' }}>
-          {files.map((f, i) => (
-            <div key={i} className="u-p-8px-12px" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderRadius: '8px', background: 'var(--bg-surface)', border: '1px solid var(--border)' }}>
-              <div className="u-gap-8px" style={{ display: 'flex', alignItems: 'center', minWidth: 0 }}>
-                <Icon name="file-text" size={13} style={{ color: accent ? 'var(--accent)' : 'var(--info)', flexShrink: 0 }} />
-                <span className="u-fs-fs-sm" style={{ color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{f.name}</span>
-              </div>
-              <div className="u-gap-8px" style={{ display: 'flex', alignItems: 'center', flexShrink: 0 }}>
-                <span className="u-fs-fs-xs u-ff-font-body" style={{ color: 'var(--text-muted)' }}>{formatBytes(f.size)}</span>
-                <button type="button"
-                  onClick={(e) => { e.stopPropagation(); onFiles(files.filter((_, j) => j !== i)) }}
-                  className="btn-icon"
-                  style={{ color: 'var(--text-muted)' }}
-                  onMouseEnter={(ev) => { ev.currentTarget.style.color = 'var(--error)' }}
-                  onMouseLeave={(ev) => { ev.currentTarget.style.color = 'var(--text-muted)' }}
-                >
-                  <Icon name="x" size={12} />
-                </button>
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
+      <label className="mc-label" htmlFor={id}>
+        {label}
+        {required && <span className="mc-req" aria-hidden>*</span>}
+      </label>
+      {children(id)}
+      {hint && <p className="field-hint">{hint}</p>}
     </div>
   )
 }
 
-// ── Session card ─────────────────────────────────────────────────────────────
-
-function SessionCard({
-  session,
-  canRemove,
-  onChange,
-  onRemove,
-}: {
-  session: MeetSessionDraft
-  canRemove: boolean
-  onChange: (key: keyof MeetSessionDraft, value: string) => void
-  onRemove: () => void
-}) {
+function SectionHead({ id, title, hint, action }: { id: string; title: string; hint?: string; action?: ReactNode }) {
   return (
-    <div className="u-p-16px" style={{ border: '1px solid var(--border)', borderRadius: '12px', background: 'var(--bg-surface)' }}>
-      {/* Card header */}
-      <div className="u-mb-16px" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-        <span className="u-fs-fs-base u-fw-600 u-ff-font-body" style={{ color: 'var(--accent-text, var(--accent))' }}>
-          Session {session.sessionNumber}
-        </span>
-        {canRemove && (
-          <button type="button"
-            onClick={onRemove}
-            className="btn btn-ghost u-fs-fs-xs u-gap-4px u-p-4px-8px"
-            style={{ color: 'var(--text-muted)' }}
-            onMouseEnter={(e) => { e.currentTarget.style.color = 'var(--error)' }}
-            onMouseLeave={(e) => { e.currentTarget.style.color = 'var(--text-muted)' }}
-          >
-            <Icon name="trash-2" size={12} /> Remove
-          </button>
-        )}
+    <div className="mc-section-head">
+      <div>
+        <h2 className="card-title" id={id}>{title}</h2>
+        {hint && <p>{hint}</p>}
       </div>
-
-      {/* Top row: Day Label + Session Name */}
-      <div className="cols-2 u-gap-12px u-mb-12px" >
-        <div>
-          <FieldLabel>Day label</FieldLabel>
-          <input aria-label="e.g. Day 1"
-            className="input"
-            value={session.section}
-            onChange={(e) => onChange('section', e.target.value)}
-            placeholder="e.g. Day 1"
-            style={FIELD_INPUT_STYLE}
-          />
-        </div>
-        <div>
-          <FieldLabel>Session name</FieldLabel>
-          <input aria-label="e.g. Morning Session"
-            className="input"
-            value={session.name}
-            onChange={(e) => onChange('name', e.target.value)}
-            placeholder="e.g. Morning Session"
-            style={FIELD_INPUT_STYLE}
-          />
-        </div>
-      </div>
-
-      {/* Bottom row: Date + Warm-up + Start Time */}
-      <div className="cols-3 u-gap-12px" >
-        <div>
-          <FieldLabel>Date</FieldLabel>
-          <input
-            type="date"
-            value={session.date}
-            onChange={(e) => onChange('date', e.target.value)}
-            style={FIELD_INPUT_STYLE}
-          />
-        </div>
-        <div>
-          <FieldLabel>Warm-up time</FieldLabel>
-          <input
-            type="time"
-            value={session.warmupTime}
-            onChange={(e) => onChange('warmupTime', e.target.value)}
-            style={FIELD_INPUT_STYLE}
-          />
-        </div>
-        <div>
-          <FieldLabel>Start time</FieldLabel>
-          <input
-            type="time"
-            value={session.startTime}
-            onChange={(e) => onChange('startTime', e.target.value)}
-            style={FIELD_INPUT_STYLE}
-          />
-        </div>
-      </div>
+      {action}
     </div>
   )
 }
 
-// ── Main page ────────────────────────────────────────────────────────────────
+function emptySession(): MeetSessionDraft {
+  return { id: 'session-1', sessionNumber: 1, section: 'Day 1', name: 'Session 1', date: '', warmupTime: '', startTime: '' }
+}
 
 export default function NewMeetPage() {
   const router = useRouter()
   const { session } = useSession()
   const api = useApiClient(session?.token)
-  const [step, setStep] = useState(0)
+  const orgId = session?.user.orgId
+
   const [saving, setSaving] = useState(false)
   const [saveError, setSaveError] = useState<string | null>(null)
   const [existingMeets, setExistingMeets] = useState<MeetRecord[]>([])
 
-  useEffect(() => {
-    if (!session?.user.orgId) return
-    let cancelled = false
-    fetchMeets(api, session.user.orgId)
-      .then((meets) => { if (!cancelled) setExistingMeets(meets) })
-      .catch(() => { /* duplicate-name check is a soft nicety, not worth failing the page over */ })
-    return () => { cancelled = true }
-  }, [api, session?.user.orgId])
-
-  // File upload state
-  const [packageFiles, setPackageFiles] = useState<PackageFile[]>([])
-  const [entryFiles, setEntryFiles] = useState<PackageFile[]>([])
-  const [entryFileParsing, setEntryFileParsing] = useState(false)
-  const [entryFileParsed, setEntryFileParsed] = useState(false)
-  const [entryFileParseError, setEntryFileParseError] = useState<string | null>(null)
-  const [entryFileParseSummary, setEntryFileParseSummary] = useState<string | null>(null)
+  const [eventFiles, setEventFiles] = useState<File[]>([])
+  const [parsing, setParsing] = useState(false)
+  const [parseError, setParseError] = useState<string | null>(null)
+  const [parseWarning, setParseWarning] = useState<string | null>(null)
+  const [parseSummary, setParseSummary] = useState<string | null>(null)
   const [parsedEvents, setParsedEvents] = useState<MeetEventDraft[]>([])
+  const [showAllEvents, setShowAllEvents] = useState(false)
+  const [dragging, setDragging] = useState(false)
+  const fileInputRef = useRef<HTMLInputElement>(null)
+  const hostTouched = useRef(false)
 
   const [draft, setDraft] = useState<MeetDraft>({
     name: '',
@@ -323,16 +118,29 @@ export default function NewMeetPage() {
     location: '',
     startDate: '',
     endDate: '',
+    ageUpDate: '',
     commitmentDeadline: '',
     entryDeadline: '',
-    description: '',
-    ageGroups: ['9-10', '11-12', '13-14', '15-16', '17-18'],
     maxEntriesPerSwimmer: '3',
+    swimmerFee: '',
     swimmerSelfSignup: true,
-    sessions: [
-      { id: 'session-1', sessionNumber: 1, section: 'Day 1', name: 'Morning session', date: '', warmupTime: '', startTime: '' },
-    ],
+    sessions: [emptySession()],
   })
+
+  useEffect(() => {
+    if (!orgId) return
+    let cancelled = false
+    fetchMeets(api, orgId)
+      .then((meets) => { if (!cancelled) setExistingMeets(meets) })
+      .catch(() => { /* duplicate-name check is a soft nicety */ })
+    fetchOrgSettings(api, orgId)
+      .then((s) => {
+        if (cancelled || hostTouched.current || !s.team_name) return
+        setDraft((d) => (d.hostClub ? d : { ...d, hostClub: s.team_name }))
+      })
+      .catch(() => { /* host club stays editable */ })
+    return () => { cancelled = true }
+  }, [api, orgId])
 
   const duplicateMeet = useMemo(() => {
     const name = draft.name.trim().toLowerCase()
@@ -344,518 +152,432 @@ export default function NewMeetPage() {
     setDraft((d) => ({ ...d, [key]: value }))
   }
 
-  function toggleAgeGroup(ag: string) {
+  /** Picking a start date seeds the end date and any session that has no date yet. */
+  function setStartDate(value: string) {
     setDraft((d) => ({
       ...d,
-      ageGroups: d.ageGroups.includes(ag) ? d.ageGroups.filter((a) => a !== ag) : [...d.ageGroups, ag],
+      startDate: value,
+      endDate: !d.endDate || d.endDate < value ? value : d.endDate,
+      sessions: d.sessions.map((s) => (s.date ? s : { ...s, date: value })),
     }))
   }
 
-  function canProceed(): boolean {
-    if (step === 0) return !!draft.name && !!draft.course && !!draft.hostClub
-    if (step === 1) return !!draft.startDate && !!draft.endDate && draft.sessions.every((s) => s.section && s.name && s.date)
-    if (step === 2) return draft.ageGroups.length > 0
-    return true
+  function updateSession(id: string, key: keyof MeetSessionDraft, value: string) {
+    setDraft((d) => ({ ...d, sessions: d.sessions.map((s) => (s.id === id ? { ...s, [key]: value } : s)) }))
   }
 
-  async function handleEntryFileUpload(files: PackageFile[]) {
-    setEntryFiles(files)
-    setEntryFileParseError(null)
-    setEntryFileParseSummary(null)
-    if (files.length === 0) {
-      setEntryFileParsed(false)
-      setParsedEvents([])
-      return
-    }
-    const f = files[0]
-    const ext = f.name.toLowerCase().split('.').pop() ?? ''
-    if (!MEET_ENTRY_EXTS.includes('.' + ext) || !f.file || !session?.user.orgId) {
-      setEntryFileParsed(false)
-      return
-    }
+  function addSession() {
+    setDraft((d) => {
+      const last = d.sessions[d.sessions.length - 1]
+      const number = getNextSessionNumber(d.sessions)
+      return {
+        ...d,
+        sessions: [
+          ...d.sessions,
+          {
+            id: `session-${Date.now()}`,
+            sessionNumber: number,
+            section: `Day ${d.sessions.length + 1}`,
+            name: `Session ${number}`,
+            date: last?.date || d.startDate,
+            warmupTime: last?.warmupTime ?? '',
+            startTime: '',
+          },
+        ],
+      }
+    })
+  }
 
-    setEntryFileParsing(true)
-    setEntryFileParsed(false)
+  function removeSession(id: string) {
+    setDraft((d) => (d.sessions.length === 1 ? d : { ...d, sessions: d.sessions.filter((s) => s.id !== id) }))
+  }
+
+  function clearParsed() {
+    setParsedEvents([])
+    setParseSummary(null)
+    setParseWarning(null)
+  }
+
+  async function handleEventFiles(list: FileList | File[] | null) {
+    const files = list ? Array.from(list) : []
+    if (files.length === 0) return
+    setEventFiles(files)
+    setParseError(null)
+    clearParsed()
+
+    const rejected = files.filter((f) => !isMeetEventFileName(f.name))
+    if (rejected.length > 0) {
+      setParseError(`${rejected.map((f) => f.name).join(', ')} is not a meet events file. Add the host’s .hyv and .ev3 files, or the .zip they came in.`)
+      return
+    }
+    if (!session?.user.orgId) return
+
+    setParsing(true)
     try {
-      const parsed = await parseMeetEntryFile(session.token, session.user.orgId, f.file)
-      setEntryFileParsing(false)
-      setEntryFileParsed(true)
+      const parsed = await parseMeetEntryFile(session.token, session.user.orgId, files)
       const events = parsed.events ?? []
       setParsedEvents(events)
-      const parsedAgeGroups = deriveAgeGroupsFromEvents(events)
       setDraft((d) => ({
         ...d,
         name: d.name || parsed.meet_name || d.name,
         course: parsed.course === 'SCY' || parsed.course === 'SCM' || parsed.course === 'LCM' ? parsed.course : d.course,
         startDate: d.startDate || parsed.start_date || d.startDate,
         endDate: d.endDate || parsed.end_date || d.endDate,
+        ageUpDate: d.ageUpDate || parsed.age_up_date || d.ageUpDate,
         location: d.location || parsed.location || d.location,
-        ageGroups: parsedAgeGroups.length > 0 ? parsedAgeGroups : d.ageGroups,
         maxEntriesPerSwimmer: maxEntriesButtonValue(parsed.signup_settings?.max_entries_per_swimmer ?? maxEntriesPayloadValue(d.maxEntriesPerSwimmer)),
         swimmerSelfSignup: parsed.signup_settings?.self_signup_enabled ?? d.swimmerSelfSignup,
-        sessions: parsed.sessions.length > 0
-          ? mapParsedSessionsToDraftSessions(parsed.sessions)
-          : d.sessions,
+        sessions: parsed.sessions.length > 0 ? mapParsedSessionsToDraftSessions(parsed.sessions) : d.sessions,
       }))
-      setEntryFileParseSummary(
-        parsed.parse_warnings && parsed.parse_warnings.length > 0
-          ? `${parsed.sessions.length} session${parsed.sessions.length === 1 ? '' : 's'} and ${parsed.events.length} event${parsed.events.length === 1 ? '' : 's'} derived. Review parse warnings before saving.`
-          : `${parsed.sessions.length} session${parsed.sessions.length === 1 ? '' : 's'} and ${parsed.events.length} event${parsed.events.length === 1 ? '' : 's'} derived from ${parsed.source_file}.`,
+      const counts = `${parsed.sessions.length} session${parsed.sessions.length === 1 ? '' : 's'} and ${events.length} event${events.length === 1 ? '' : 's'}`
+      const warnings = parsed.parse_warnings ?? []
+      setParseSummary(
+        warnings.length > 0
+          ? `${counts} read from ${parsed.source_file}. Check the note below before creating.`
+          : files.length > 1 || parsed.source_file.toLowerCase().endsWith('.zip')
+            ? `${counts} read. The files agree with each other.`
+            : `${counts} read from ${parsed.source_file}.`,
       )
-      if (parsed.parse_warnings && parsed.parse_warnings.length > 0) {
-        setEntryFileParseError(parsed.parse_warnings[0] ?? null)
+      if (warnings.length > 0) {
+        setParseWarning(warnings.length === 1 ? warnings[0] : `${warnings[0]} (and ${warnings.length - 1} more)`)
       }
     } catch (err) {
-      setEntryFileParsing(false)
-      setEntryFileParsed(false)
-      setParsedEvents([])
-      setEntryFileParseError(uiErrorMessage(err, 'Couldn’t parse meet file. Try again.'))
+      setParseError(uiErrorMessage(err, 'Couldn’t read the meet events file. Try again.'))
+    } finally {
+      setParsing(false)
     }
   }
 
-  function updateSession(sessionId: string, key: keyof MeetSessionDraft, value: string) {
-    setDraft((current) => ({
-      ...current,
-      sessions: current.sessions.map((s) => s.id === sessionId ? { ...s, [key]: value } : s),
-    }))
+  function removeEventFiles() {
+    setEventFiles([])
+    setParseError(null)
+    clearParsed()
   }
 
-  function addSession() {
-    setDraft((current) => ({
-      ...current,
-      sessions: [
-        ...current.sessions,
-        {
-          id: `session-${Date.now()}`,
-          sessionNumber: getNextSessionNumber(current.sessions),
-          section: `Day ${current.sessions.length + 1}`,
-          name: 'Session',
-          date: current.startDate,
-          warmupTime: '',
-          startTime: '',
-        },
-      ],
-    }))
-  }
+  // ── Readiness ──────────────────────────────────────────────────────────────
+  const datesOk = !!draft.startDate && !!draft.endDate && draft.endDate >= draft.startDate
+  const sessionsOk = draft.sessions.every((s) => s.name.trim() && s.date)
+  const checks = [
+    { key: 'details', label: 'Name and host club', done: !!draft.name.trim() && !!draft.hostClub.trim(), target: 'mc-details' },
+    { key: 'dates', label: 'Start and end dates', done: datesOk, target: 'mc-dates' },
+    { key: 'sessions', label: 'Every session has a name and date', done: sessionsOk, target: 'mc-sessions' },
+  ]
+  const ready = checks.every((c) => c.done) && !parsing
+  const remaining = checks.filter((c) => !c.done).length
 
-  function removeSession(sessionId: string) {
-    setDraft((current) => ({
-      ...current,
-      sessions: current.sessions.length === 1
-        ? current.sessions
-        : current.sessions.filter((s) => s.id !== sessionId),
-    }))
+  function jumpTo(id: string) {
+    const el = document.getElementById(id)
+    el?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    el?.querySelector<HTMLElement>('input, button')?.focus({ preventScroll: true })
   }
 
   async function handleSave() {
-    if (!session?.user.orgId) return
+    if (!orgId || !ready || saving) return
     setSaving(true)
     setSaveError(null)
     try {
-      await createMeet(api, session.user.orgId, buildCreateMeetPayload(draft, parsedEvents))
-
+      await createMeet(api, orgId, buildCreateMeetPayload({ ...draft, name: draft.name.trim() }, parsedEvents))
       router.push('/meets?created=1')
     } catch (err) {
-      const msg = uiErrorMessage(err, 'An error occurred.')
-      setSaveError(`Failed to create meet: ${msg}`)
+      setSaveError(`Failed to create meet: ${uiErrorMessage(err, 'An error occurred.')}`)
       setSaving(false)
     }
   }
 
+  const visibleEvents = showAllEvents ? parsedEvents : parsedEvents.slice(0, EVENT_PREVIEW_LIMIT)
+
   return (
-    <div className="page">
-      {/* Header */}
-      <div className="u-mb-32px" >
-        <button type="button"
-          onClick={() => router.push('/meets')}
-          className="u-fs-fs-sm u-ff-font-body u-gap-6px u-mb-16px u-p-0" style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', display: 'flex', alignItems: 'center' }}
-          onMouseEnter={(e) => { e.currentTarget.style.color = 'var(--text)' }}
-          onMouseLeave={(e) => { e.currentTarget.style.color = 'var(--text-muted)' }}
-        >
-          <Icon name="arrow-left" size={13} />
-          Back to Meets
-        </button>
-        <h1 className="page-title">
-          Create meet
-        </h1>
+    <form className="page" onSubmit={(e) => { e.preventDefault(); void handleSave() }} noValidate>
+      <div className="page-header">
+        <div>
+          <button
+            type="button"
+            onClick={() => router.push('/meets')}
+            className="btn btn-ghost u-fs-fs-sm u-gap-6px u-mb-8px"
+            style={{ marginLeft: 'calc(var(--space-2) * -1)' }}
+          >
+            <Icon name="arrow-left" size={13} /> Meets
+          </button>
+          <h1 className="page-title">Create meet</h1>
+          <p className="page-subtitle">Start from the host’s events file to fill most of this in, or enter the details by hand.</p>
+        </div>
       </div>
 
-      {/* Step indicator */}
-      <div className="u-gap-0 u-mb-32px" style={{ display: 'flex' }}>
-        {STEP_LABELS.map((label, idx) => (
-          <div key={label} style={{ display: 'flex', alignItems: 'center', flex: idx < STEP_LABELS.length - 1 ? '1' : undefined }}>
-            <div
-              onClick={() => idx < step && setStep(idx)}
-              className="u-gap-8px" style={{ display: 'flex', alignItems: 'center', cursor: idx < step ? 'pointer' : 'default' }}
-            >
-              <div className="u-fs-fs-xs u-ff-font-body u-fw-700" style={{ width: '28px', height: '28px', borderRadius: '50%', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', background: idx < step ? 'var(--accent)' : idx === step ? 'var(--bg-elevated)' : 'var(--bg-surface)', border: `2px solid ${idx < step ? 'var(--accent)' : idx === step ? 'var(--accent-border)' : 'var(--border)'}`, color: idx < step ? '#fff' : idx === step ? 'var(--accent)' : 'var(--text-muted)', transition: 'all 0.2s ease' }}>
-                {idx < step ? (
-                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round">
-                    <polyline points="20 6 9 17 4 12" />
-                  </svg>
-                ) : idx + 1}
-              </div>
-              <span className={idx === step ? 'step-label is-current' : 'step-label'} style={{ fontSize: 'var(--fs-sm)', fontWeight: idx === step ? 600 : 400, color: idx === step ? 'var(--text)' : 'var(--text-muted)', whiteSpace: 'nowrap' }}>
-                {label}
-              </span>
-            </div>
-            {idx < STEP_LABELS.length - 1 && (
-              <div style={{ flex: 1, height: '2px', margin: '0 12px', background: idx < step ? 'var(--accent)' : 'var(--border)', transition: 'background 0.3s ease', minWidth: '24px' }} />
-            )}
-          </div>
-        ))}
-      </div>
-
-      {/* Step content */}
-      <div className="card u-p-32px" >
-
-        {/* ── Step 0: Basic Info ───────────────────────────────── */}
-        {step === 0 && (
-          <div>
-            <h2 className="section-title u-mb-24px" >
-              Basic Information
-            </h2>
-            <div className="u-gap-20px" style={{ display: 'flex', flexDirection: 'column' }}>
-              <div>
-                <FieldLabel required>Meet name</FieldLabel>
-                <InputField
-                  value={draft.name}
-                  onChange={(v) => update('name', v)}
-                  placeholder="e.g. Spring Invitational 2026"
-                />
-              </div>
-
-              <div className="cols-2 u-gap-16px" >
+      <div className="split-aside u-gap-24px">
+        {/* ── Main column ───────────────────────────────────────────── */}
+        <div className="mc-main">
+          {/* Events file */}
+          <section className="card" aria-labelledby="mc-file">
+            <SectionHead id="mc-file" title="Host’s events file" hint="Optional. Fills in the name, dates, sessions and event list for you." />
+            {eventFiles.length === 0 ? (
+              <button
+                type="button"
+                className="mc-drop"
+                data-dragging={dragging}
+                onClick={() => fileInputRef.current?.click()}
+                onDragOver={(e) => { e.preventDefault(); setDragging(true) }}
+                onDragLeave={() => setDragging(false)}
+                onDrop={(e) => { e.preventDefault(); setDragging(false); void handleEventFiles(e.dataTransfer.files) }}
+              >
+                <Icon name="upload-cloud" size={24} className="mc-drop-icon" />
                 <div>
-                  <FieldLabel required>Course</FieldLabel>
-                  <div className="u-gap-4px u-p-4px" style={{ display: 'flex', background: 'var(--bg-elevated)', border: '1px solid var(--border)', borderRadius: '8px' }}>
-                    {COURSES.map((c) => (
-                      <button type="button" key={c} onClick={() => update('course', c)} title={COURSE_LABELS[c]}
-                        className="u-p-8px u-fs-fs-sm u-fw-700 u-ff-font-body" style={{ flex: 1, borderRadius: '6px', border: 'none', cursor: 'pointer', background: draft.course === c ? 'var(--accent)' : 'transparent', color: draft.course === c ? '#fff' : 'var(--text-muted)', transition: 'all 0.15s' }}>{c}</button>
-                    ))}
-                  </div>
-                  <div className="u-fs-fs-xs u-mt-4px" style={{ color: 'var(--text-muted)' }}>{COURSE_LABELS[draft.course as Course]}</div>
+                  <strong>Drop the .hyv, .ev3 or .zip here, or browse</strong>
+                  <span>Add both formats and we’ll check that they agree.</span>
                 </div>
-                <div>
-                  <FieldLabel required>Host club</FieldLabel>
-                  <InputField
-                    value={draft.hostClub}
-                    onChange={(v) => update('hostClub', v)}
-                    placeholder="e.g. Aquify Aquatics"
-                  />
-                </div>
-              </div>
-
-              <div>
-                <FieldLabel>Venue / Location</FieldLabel>
-                <InputField
-                  value={draft.location}
-                  onChange={(v) => update('location', v)}
-                  placeholder="e.g. Aquatic Center, 123 Pool Rd, City, ST"
-                />
-              </div>
-
-              <div>
-                <FieldLabel>Description</FieldLabel>
-                <textarea aria-label="Optional notes, special rules, travel info"
-                  value={draft.description}
-                  onChange={(e) => update('description', e.target.value)}
-                  placeholder="Optional notes, special rules, travel info…"
-                  rows={3}
-                  style={{ ...FIELD_INPUT_STYLE, resize: 'vertical' }}
-                />
-              </div>
-
-              {/* Divider */}
-              <div style={{ borderTop: '1px solid var(--border)', paddingTop: '20px' }}>
-                <h2 className="card-title u-mb-16px" >
-                  Files
-                </h2>
-                <div className="u-gap-20px" style={{ display: 'flex', flexDirection: 'column' }}>
-                  <UploadZone
-                    label="Meet package files"
-                    hint="Accepts PDF, PNG, JPG"
-                    accept=".pdf,.png,.jpg,.jpeg,.doc,.docx"
-                    files={packageFiles}
-                    onFiles={setPackageFiles}
-                  />
-
-                  <div>
-                    <UploadZone
-                      label="Meet entry file (optional)"
-                      hint="Export this from your meet timing software (e.g. Meet Manager, TouchPad). Skip this if you don't have one yet."
-                      accept=".cl2,.sd3,.zip,.hy3,.hyv,.ev3"
-                      files={entryFiles}
-                      onFiles={handleEntryFileUpload}
-                      accent
-                      multiple={false}
-                    />
-                    {entryFileParsing && (
-                      <div className="u-mt-12px u-gap-8px u-p-12px-16px" style={{ display: 'flex', alignItems: 'center', borderRadius: '8px', background: 'var(--info-bg)', border: '1px solid var(--info-border)' }}>
-                        <div style={{ width: '12px', height: '12px', borderRadius: '50%', border: '2px solid rgba(96,165,250,0.3)', borderTopColor: 'var(--info)', animation: 'spin 0.8s linear infinite', flexShrink: 0 }} />
-                        <span className="u-fs-fs-sm u-ff-font-body" style={{ color: 'var(--info)' }}>Parsing meet file…</span>
-                      </div>
-                    )}
-                    {entryFileParseError && !entryFileParsing && (
-                      <div className="u-mt-12px u-gap-8px u-p-12px-16px" style={{ display: 'flex', alignItems: 'center', borderRadius: '8px', background: 'var(--error-bg)', border: '1px solid var(--error)' }}>
-                        <Icon name="alert-circle" size={14} style={{ color: 'var(--error)', flexShrink: 0 }} />
-                        <span className="u-fs-fs-sm u-ff-font-body" style={{ color: 'var(--error)' }}>{entryFileParseError}</span>
-                      </div>
-                    )}
-                    {entryFileParsed && (
-                      <div className="u-mt-12px u-gap-8px u-p-12px-16px" style={{ display: 'flex', alignItems: 'center', borderRadius: '8px', background: 'var(--success-bg)', border: '1px solid var(--success-border)' }}>
-                        <Icon name="check-circle" size={14} style={{ color: 'var(--success)', flexShrink: 0 }} />
-                        <span className="u-fs-fs-sm u-ff-font-body" style={{ color: 'var(--success)' }}>
-                          {entryFileParseSummary ?? 'Meet setup auto-populated from meet file — review schedule and signup details before saving.'}
-                        </span>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* ── Step 1: Schedule & Deadlines ─────────────────────── */}
-        {step === 1 && (
-          <div>
-            <h2 className="section-title u-mb-24px" >
-              Schedule & Deadlines
-            </h2>
-            <div className="u-gap-20px" style={{ display: 'flex', flexDirection: 'column' }}>
-              <div className="cols-2 u-gap-16px" >
-                <div>
-                  <FieldLabel required>Start date</FieldLabel>
-                  <InputField type="date" value={draft.startDate} onChange={(v) => update('startDate', v)} />
-                </div>
-                <div>
-                  <FieldLabel required>End date</FieldLabel>
-                  <InputField type="date" value={draft.endDate} onChange={(v) => update('endDate', v)} />
-                </div>
-              </div>
-              <div className="cols-2 u-gap-16px" >
-                <div>
-                  <FieldLabel>Commitment deadline</FieldLabel>
-                  <InputField type="datetime-local" value={draft.commitmentDeadline} onChange={(v) => update('commitmentDeadline', v)} hint="When parents must respond yes/no by" />
-                </div>
-                <div>
-                  <FieldLabel>Entry deadline</FieldLabel>
-                  <InputField type="datetime-local" value={draft.entryDeadline} onChange={(v) => update('entryDeadline', v)} hint="Submission deadline to meet host" />
-                </div>
-              </div>
-
-              {/* Session builder */}
-              <div style={{ paddingTop: '8px', borderTop: '1px solid var(--border)' }}>
-                <div className="u-mb-16px" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                  <div>
-                    <h2 className="card-title u-mb-4px" >
-                      Sessions
-                    </h2>
-                  </div>
-                  <button className="btn btn-secondary u-gap-6px u-fs-fs-sm" type="button" onClick={addSession} style={{ flexShrink: 0 }}>
-                    <Icon name="plus" size={13} /> Add session
-                  </button>
-                </div>
-
-                <div className="u-gap-12px" style={{ display: 'flex', flexDirection: 'column' }}>
-                  {draft.sessions.map((s) => (
-                    <SessionCard
-                      key={s.id}
-                      session={s}
-                      canRemove={draft.sessions.length > 1}
-                      onChange={(key, value) => updateSession(s.id, key, value)}
-                      onRemove={() => removeSession(s.id)}
-                    />
-                  ))}
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* ── Step 2: Entry Rules ──────────────────────────────── */}
-        {step === 2 && (
-          <div>
-            <h2 className="section-title u-mb-24px" >
-              Entry Rules
-            </h2>
-            <div className="u-gap-20px" style={{ display: 'flex', flexDirection: 'column' }}>
-              <div>
-                <FieldLabel required>Age groups</FieldLabel>
-                <div className="u-gap-8px" style={{ display: 'flex', flexWrap: 'wrap' }}>
-                  {DEFAULT_AGE_GROUPS.map((ag) => (
-                    <button type="button"
-                      key={ag}
-                      onClick={() => toggleAgeGroup(ag)}
-                      className="u-p-6px-16px u-fs-fs-sm u-ff-font-body" style={{ borderRadius: '16px', background: draft.ageGroups.includes(ag) ? 'var(--accent-subtle)' : 'var(--bg-elevated)', border: `1px solid ${draft.ageGroups.includes(ag) ? 'var(--accent-border)' : 'var(--border)'}`, color: draft.ageGroups.includes(ag) ? 'var(--accent)' : 'var(--text-muted)', fontWeight: draft.ageGroups.includes(ag) ? 600 : 400, cursor: 'pointer', transition: 'all 0.15s' }}
-                    >{ag}</button>
-                  ))}
-                </div>
-              </div>
-              <div>
-                <FieldLabel>Max individual events per swimmer</FieldLabel>
-                <div className="u-gap-4px" style={{ display: 'flex', width: 'fit-content' }}>
-                  {['2', '3', '4', '5', '6', 'Unlimited'].map((n) => (
-                    <button type="button" key={n} onClick={() => update('maxEntriesPerSwimmer', n)}
-                      className="u-p-8px-16px u-fs-fs-sm u-ff-font-body" style={{ borderRadius: '6px', border: `1px solid ${draft.maxEntriesPerSwimmer === n ? 'var(--accent-border)' : 'var(--border)'}`, background: draft.maxEntriesPerSwimmer === n ? 'var(--accent-subtle)' : 'var(--bg-elevated)', color: draft.maxEntriesPerSwimmer === n ? 'var(--accent)' : 'var(--text-muted)', cursor: 'pointer', transition: 'all 0.15s', fontWeight: draft.maxEntriesPerSwimmer === n ? 600 : 400 }}>{n}</button>
-                  ))}
-                </div>
-              </div>
-
-              <div>
-                <FieldLabel>Swimmer self-signup</FieldLabel>
-                <button
-                  type="button"
-                  onClick={() => update('swimmerSelfSignup', !draft.swimmerSelfSignup)}
-                  className="u-p-12px-16px" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%', borderRadius: '12px', border: `1px solid ${draft.swimmerSelfSignup ? 'var(--accent-border)' : 'var(--border)'}`, background: draft.swimmerSelfSignup ? 'var(--accent-subtle)' : 'var(--bg-elevated)', color: 'var(--text)', cursor: 'pointer' }}
-                >
-                  <span className="u-fs-fs-base" >
-                    {draft.swimmerSelfSignup ? 'Enabled for swimmer portal event selection' : 'Disabled — parent-only commitment flow'}
-                  </span>
-                  <span className="u-ff-font-body u-fs-fs-xs" style={{ color: draft.swimmerSelfSignup ? 'var(--accent)' : 'var(--text-muted)' }}>
-                    {draft.swimmerSelfSignup ? 'ON' : 'OFF'}
-                  </span>
-                </button>
-              </div>
-
-              <div>
-                <FieldLabel>Imported event catalog</FieldLabel>
-                <div className="u-p-12px-16px" style={{ borderRadius: '12px', background: 'var(--bg-surface)', border: '1px solid var(--border)' }}>
-                  <div className="u-fs-fs-base u-fw-600" style={{ color: 'var(--text)', marginBottom: parsedEvents.length > 0 ? '12px' : 0 }}>
-                    {parsedEvents.length > 0 ? `${parsedEvents.length} signup event${parsedEvents.length === 1 ? '' : 's'} ready to create` : 'No parsed event catalog yet'}
-                  </div>
-                  {parsedEvents.length > 0 ? (
-                    <div className="u-gap-8px" style={{ display: 'flex', flexDirection: 'column' }}>
-                      {parsedEvents.slice(0, 8).map((event) => (
-                        <div key={`${event.event_number}-${event.session_number ?? 0}`} className="u-gap-12px u-fs-fs-sm" style={{ display: 'flex', justifyContent: 'space-between' }}>
-                          <span style={{ color: 'var(--text)' }}>#{event.event_number} · {event.distance} {(formatStroke(event.stroke) || 'Event')}</span>
-                          <span className="u-ff-font-body" style={{ color: 'var(--text-muted)' }}>{formatEventAgeGroup(event)}</span>
-                        </div>
-                      ))}
-                      {parsedEvents.length > 8 && (
-                        <div className="u-fs-fs-xs u-ff-font-body" style={{ color: 'var(--text-muted)' }}>
-                          +{parsedEvents.length - 8} more events
-                        </div>
-                      )}
+              </button>
+            ) : (
+              <div className="mc-filelist">
+                {eventFiles.map((f, i) => (
+                  <div key={`${f.name}-${i}`} className="mc-file">
+                    <div className="mc-file-name">
+                      <Icon name="file-text" size={13} style={{ color: 'var(--accent-text, var(--accent))', flexShrink: 0 }} />
+                      <span>{f.name}</span>
                     </div>
-                  ) : (
-                    <div className="u-fs-fs-sm" style={{ color: 'var(--text-muted)' }}>
-                      Upload a meet entry file to auto-build the event list used by swimmer signup.
-                    </div>
-                  )}
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* ── Step 3: Review ───────────────────────────────────── */}
-        {step === 3 && (
-          <div>
-            <h2 className="section-title u-mb-20px" >
-              Review & Create
-            </h2>
-            {duplicateMeet && (
-              <div className="u-mb-16px u-gap-12px u-p-12px-16px" style={{ display: 'flex', alignItems: 'flex-start', borderRadius: '8px', background: 'var(--warning-bg)', border: '1px solid var(--warning-border)' }}>
-                <Icon name="alert-triangle" size={15} style={{ color: 'var(--warning)', marginTop: '1px', flexShrink: 0 }} />
-                <p className="u-m-0 u-fs-fs-sm u-lh-1_5" style={{ color: 'var(--text)' }}>
-                  A meet named &quot;{duplicateMeet.name}&quot; on {duplicateMeet.start_date} already exists. Check you&apos;re not creating a duplicate before continuing.
-                </p>
-              </div>
-            )}
-            <div className="u-gap-16px" style={{ display: 'flex', flexDirection: 'column' }}>
-              {[
-                { label: 'Name',         value: draft.name || '—' },
-                { label: 'Course',       value: draft.course },
-                { label: 'Host club',    value: draft.hostClub || '—' },
-                { label: 'Location',     value: draft.location || '—' },
-                { label: 'Dates',        value: draft.startDate && draft.endDate ? `${formatDateOnly(draft.startDate)} to ${formatDateOnly(draft.endDate)}` : '—' },
-                { label: 'Commit by',    value: formatReviewDateTime(draft.commitmentDeadline) },
-                { label: 'Entry by',     value: formatReviewDateTime(draft.entryDeadline) },
-                { label: 'Age groups',   value: draft.ageGroups.join(', ') || '—' },
-                { label: 'Max events',   value: draft.maxEntriesPerSwimmer },
-                { label: 'Self-Signup',  value: draft.swimmerSelfSignup ? 'Enabled' : 'Disabled' },
-                { label: 'Sessions',     value: `${draft.sessions.length} configured across ${new Set(draft.sessions.map((s) => s.section)).size} section(s)` },
-                { label: 'Events',       value: parsedEvents.length > 0 ? `${parsedEvents.length} parsed for signup` : '—' },
-                { label: 'Package files', value: packageFiles.length > 0 ? packageFiles.map((f) => f.name).join(', ') : '—' },
-                { label: 'Entry file',   value: entryFiles.length > 0 ? entryFiles.map((f) => f.name).join(', ') : '—' },
-              ].map((r) => (
-                <div key={r.label} className="u-gap-16px u-p-12px-0" style={{ display: 'flex', borderBottom: '1px solid var(--border)' }}>
-                  <span className="u-ff-font-body u-fs-fs-sm" style={{ color: 'var(--text-muted)', minWidth: '110px', flexShrink: 0, paddingTop: '1px' }}>{r.label}</span>
-                  <span className="u-fs-fs-base u-fw-500" style={{ color: 'var(--text)' }}>{r.value}</span>
-                </div>
-              ))}
-            </div>
-            <div className="u-mt-16px u-gap-8px" style={{ display: 'flex', flexDirection: 'column' }}>
-              {draft.sessions.map((s) => (
-                <div key={s.id} className="u-p-12px-16px" style={{ borderRadius: '12px', background: 'var(--bg-surface)', border: '1px solid var(--border)' }}>
-                  <div className="u-fs-fs-sm u-fw-600" style={{ color: 'var(--text)' }}>{s.section} · {s.name}</div>
-                  <div className="u-fs-fs-xs u-ff-font-body u-mt-4px" style={{ color: 'var(--text-muted)' }}>
-                    {s.date || 'Date TBD'} · Warm-up {s.warmupTime || 'TBD'} · Start {s.startTime || 'TBD'}
-                  </div>
-                </div>
-              ))}
-            </div>
-            {parsedEvents.length > 0 && (
-              <div className="u-mt-16px u-gap-8px" style={{ display: 'flex', flexDirection: 'column' }}>
-                {parsedEvents.slice(0, 10).map((event) => (
-                  <div key={`${event.event_number}-${event.session_number ?? 0}`} className="u-p-12px-16px" style={{ borderRadius: '12px', background: 'var(--bg-surface)', border: '1px solid var(--border)' }}>
-                    <div className="u-fs-fs-sm u-fw-600" style={{ color: 'var(--text)' }}>
-                      #{event.event_number} · {event.distance} {(formatStroke(event.stroke) || 'Event')}
-                    </div>
-                    <div className="u-fs-fs-xs u-ff-font-body u-mt-4px" style={{ color: 'var(--text-muted)' }}>
-                      {formatEventAgeGroup(event)} · Session {event.session_number || 'Unassigned'}
-                    </div>
+                    <span style={{ color: 'var(--text-muted)', flexShrink: 0 }}>{formatBytes(f.size)}</span>
                   </div>
                 ))}
-                {parsedEvents.length > 10 && (
-                  <p className="u-fs-fs-xs u-ff-font-body u-m-0" style={{ color: 'var(--text-muted)' }}>
-                    +{parsedEvents.length - 10} additional events will also be created.
-                  </p>
-                )}
+                <div style={{ display: 'flex', gap: 'var(--space-2)' }}>
+                  <button type="button" className="btn btn-secondary u-fs-fs-sm" onClick={() => fileInputRef.current?.click()}>Replace files</button>
+                  <button type="button" className="btn btn-ghost u-fs-fs-sm" onClick={removeEventFiles}>Remove</button>
+                </div>
               </div>
             )}
-            <p className="u-fs-fs-sm u-mt-16px" style={{ color: 'var(--text-muted)' }}>
-              The meet will be created in <strong style={{ color: 'var(--text)' }}>draft</strong> state. Publish it when you&apos;re ready to open commitments.
-            </p>
-          </div>
-        )}
-      </div>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept={MEET_EVENT_FILE_EXTENSIONS.join(',')}
+              multiple
+              hidden
+              onChange={(e) => { void handleEventFiles(e.target.files); e.target.value = '' }}
+            />
+            <div aria-live="polite">
+              {parsing && (
+                <div className="mc-banner mc-banner-info"><span className="spinner spinner-sm" aria-hidden /> Reading meet events…</div>
+              )}
+              {parseSummary && !parsing && (
+                <div className="mc-banner mc-banner-ok"><Icon name="check-circle" size={14} /> {parseSummary}</div>
+              )}
+              {parseWarning && !parsing && (
+                <div className="mc-banner mc-banner-warn"><Icon name="alert-triangle" size={14} /> {parseWarning}</div>
+              )}
+              {parseError && !parsing && (
+                <div className="mc-banner mc-banner-err" role="alert"><Icon name="alert-circle" size={14} /> {parseError}</div>
+              )}
+            </div>
+          </section>
 
-      {saveError && (
-        <div className="u-mt-16px u-p-12px-16px u-fs-fs-base" style={{ background: 'var(--error-bg)', color: 'var(--error)', border: '1px solid var(--error-border)', borderRadius: '8px' }}>
-          {saveError}
-        </div>
-      )}
+          {/* Details */}
+          <section className="card" id="mc-details" aria-labelledby="mc-details-h">
+            <SectionHead id="mc-details-h" title="Details" />
+            <div className="mc-fields">
+              <Field label="Meet name" required>
+                {(id) => <input id={id} className="input" value={draft.name} onChange={(e) => update('name', e.target.value)} placeholder="e.g. Spring Invitational 2026" style={FIELD_INPUT_STYLE} autoComplete="off" />}
+              </Field>
+              <div className="cols-2 u-gap-16px">
+                <Field label="Host club" required>
+                  {(id) => <input id={id} className="input" value={draft.hostClub} onChange={(e) => { hostTouched.current = true; update('hostClub', e.target.value) }} placeholder="e.g. Aquify Aquatics" style={FIELD_INPUT_STYLE} autoComplete="off" />}
+                </Field>
+                <Field label="Course" required hint={COURSE_LABELS[draft.course]}>
+                  {() => (
+                    <div className="seg" role="radiogroup" aria-label="Course" style={{ display: 'flex' }}>
+                      {COURSES.map((c) => (
+                        <button
+                          key={c}
+                          type="button"
+                          role="radio"
+                          aria-checked={draft.course === c}
+                          title={COURSE_LABELS[c]}
+                          className="seg-item"
+                          style={{ flex: 1, justifyContent: 'center' }}
+                          onClick={() => update('course', c)}
+                        >
+                          {c}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </Field>
+              </div>
+              <Field label="Venue">
+                {(id) => <input id={id} className="input" value={draft.location} onChange={(e) => update('location', e.target.value)} placeholder="e.g. Aquatic Center, 123 Pool Rd, City, ST" style={FIELD_INPUT_STYLE} autoComplete="off" />}
+              </Field>
+            </div>
+          </section>
 
-      {/* Nav buttons */}
-      <div className="u-mt-20px" style={{ display: 'flex', justifyContent: 'space-between' }}>
-        <button type="button"
-          onClick={() => step > 0 ? setStep(step - 1) : router.push('/meets')}
-          className="u-p-12px-24px u-fs-fs-base u-ff-font-body u-gap-8px" style={{ background: 'var(--bg-surface)', border: '1px solid var(--border)', borderRadius: '8px', color: 'var(--text-subtle)', cursor: 'pointer', display: 'flex', alignItems: 'center', transition: 'all 0.15s' }}
-          onMouseEnter={(e) => { e.currentTarget.style.borderColor = 'var(--border-strong)'; e.currentTarget.style.color = 'var(--text)' }}
-          onMouseLeave={(e) => { e.currentTarget.style.borderColor = 'var(--border)'; e.currentTarget.style.color = 'var(--text-subtle)' }}
-        >
-          <Icon name="arrow-left" size={13} />
-          {step === 0 ? 'Cancel' : 'Back'}
-        </button>
-        <button type="button"
-          onClick={() => step < 3 ? setStep(step + 1) : handleSave()}
-          disabled={!canProceed() || saving}
-          className="u-p-12px-24px u-fs-fs-base u-fw-600 u-ff-font-body u-gap-8px" style={{ borderRadius: '8px', border: 'none', background: canProceed() && !saving ? 'var(--accent)' : 'var(--bg-elevated)', color: canProceed() && !saving ? '#fff' : 'var(--text-muted)', cursor: canProceed() && !saving ? 'pointer' : 'not-allowed', display: 'flex', alignItems: 'center', transition: 'background 0.15s' }}
-          onMouseEnter={(e) => { if (canProceed() && !saving) e.currentTarget.style.background = 'var(--accent-hover)' }}
-          onMouseLeave={(e) => { if (canProceed() && !saving) e.currentTarget.style.background = 'var(--accent)' }}
-        >
-          {saving ? (
-            <><span className="spinner spinner-sm" aria-hidden />Creating…</>
-          ) : step < 3 ? (
-            <>Next <Icon name="arrow-right" size={13} /></>
-          ) : (
-            <>Create meet <Icon name="check" size={13} /></>
+          {/* Dates */}
+          <section className="card" id="mc-dates" aria-labelledby="mc-dates-h">
+            <SectionHead id="mc-dates-h" title="Dates and deadlines" />
+            <div className="mc-fields">
+              <div className="cols-2 u-gap-16px">
+                <Field label="Start date" required>
+                  {(id) => <input id={id} className="input" type="date" value={draft.startDate} onChange={(e) => setStartDate(e.target.value)} style={FIELD_INPUT_STYLE} />}
+                </Field>
+                <Field label="End date" required>
+                  {(id) => <input id={id} className="input" type="date" value={draft.endDate} min={draft.startDate || undefined} onChange={(e) => update('endDate', e.target.value)} style={FIELD_INPUT_STYLE} aria-invalid={!!draft.startDate && !!draft.endDate && draft.endDate < draft.startDate} />}
+                </Field>
+              </div>
+              {!!draft.startDate && !!draft.endDate && draft.endDate < draft.startDate && (
+                <p className="field-error" role="alert">The end date is before the start date.</p>
+              )}
+              <Field label="Age-up date" hint="Swimmer ages in the entry files are worked out on this date. Leave blank to use the start date.">
+                {(id) => <input id={id} className="input" type="date" value={draft.ageUpDate ?? ''} onChange={(e) => update('ageUpDate', e.target.value)} style={FIELD_INPUT_STYLE} />}
+              </Field>
+              <div className="cols-2 u-gap-16px">
+                <Field label="Commitment deadline" hint="When parents must answer yes or no by.">
+                  {(id) => <input id={id} className="input" type="datetime-local" value={draft.commitmentDeadline} onChange={(e) => update('commitmentDeadline', e.target.value)} style={FIELD_INPUT_STYLE} />}
+                </Field>
+                <Field label="Entry deadline" hint="When entries are due to the host.">
+                  {(id) => <input id={id} className="input" type="datetime-local" value={draft.entryDeadline} onChange={(e) => update('entryDeadline', e.target.value)} style={FIELD_INPUT_STYLE} />}
+                </Field>
+              </div>
+            </div>
+          </section>
+
+          {/* Sessions */}
+          <section className="card" id="mc-sessions" aria-labelledby="mc-sessions-h">
+            <SectionHead
+              id="mc-sessions-h"
+              title="Sessions"
+              hint="Warm-up and start times can be filled in later."
+              action={<button type="button" className="btn btn-secondary u-gap-6px u-fs-fs-sm" onClick={addSession}><Icon name="plus" size={13} /> Add session</button>}
+            />
+            <div className="mc-fields" style={{ gap: 'var(--space-3)' }}>
+              {draft.sessions.map((s, idx) => (
+                <div key={s.id} className="mc-session">
+                  <span className="mc-session-num">{idx + 1}</span>
+                  <Field label="Name" required>
+                    {(id) => <input id={id} className="input" value={s.name} onChange={(e) => updateSession(s.id, 'name', e.target.value)} placeholder="e.g. Saturday morning" style={FIELD_INPUT_STYLE} />}
+                  </Field>
+                  <Field label="Date" required>
+                    {(id) => <input id={id} className="input" type="date" value={s.date} onChange={(e) => updateSession(s.id, 'date', e.target.value)} style={FIELD_INPUT_STYLE} />}
+                  </Field>
+                  <Field label="Warm-up">
+                    {(id) => <input id={id} className="input" type="time" value={s.warmupTime} onChange={(e) => updateSession(s.id, 'warmupTime', e.target.value)} style={FIELD_INPUT_STYLE} />}
+                  </Field>
+                  <Field label="Start">
+                    {(id) => <input id={id} className="input" type="time" value={s.startTime} onChange={(e) => updateSession(s.id, 'startTime', e.target.value)} style={FIELD_INPUT_STYLE} />}
+                  </Field>
+                  <button
+                    type="button"
+                    className="btn-icon"
+                    aria-label={`Remove session ${idx + 1}`}
+                    disabled={draft.sessions.length === 1}
+                    onClick={() => removeSession(s.id)}
+                    style={{ color: 'var(--text-muted)' }}
+                  >
+                    <Icon name="trash-2" size={14} />
+                  </button>
+                </div>
+              ))}
+            </div>
+          </section>
+
+          {/* Signup rules */}
+          <section className="card" aria-labelledby="mc-rules-h">
+            <SectionHead id="mc-rules-h" title="Signup rules" />
+            <div className="mc-fields">
+              <Field label="Max individual events per swimmer">
+                {() => (
+                  <div className="seg" role="radiogroup" aria-label="Max individual events per swimmer" style={{ display: 'inline-flex' }}>
+                    {MAX_ENTRY_OPTIONS.map((n) => (
+                      <button
+                        key={n}
+                        type="button"
+                        role="radio"
+                        aria-checked={draft.maxEntriesPerSwimmer === n}
+                        className="seg-item"
+                        onClick={() => update('maxEntriesPerSwimmer', n)}
+                      >
+                        {n}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </Field>
+              <Field label="Per-swimmer fee from the host" hint="The surcharge the host bills for each swimmer you enter. It appears in the cost summary of your entry reports.">
+                {(id) => (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)', maxWidth: 200 }}>
+                    <span style={{ color: 'var(--text-muted)' }}>$</span>
+                    <input id={id} className="input" inputMode="decimal" value={draft.swimmerFee ?? ''} onChange={(e) => update('swimmerFee', e.target.value.replace(/[^0-9.]/g, ''))} placeholder="0.00" style={FIELD_INPUT_STYLE} />
+                  </div>
+                )}
+              </Field>
+              <button
+                type="button"
+                role="switch"
+                aria-checked={draft.swimmerSelfSignup}
+                className="mc-switch"
+                onClick={() => update('swimmerSelfSignup', !draft.swimmerSelfSignup)}
+              >
+                <span>
+                  Swimmers can pick their own events
+                  <small>{draft.swimmerSelfSignup ? 'Event selection is open in the swimmer portal.' : 'Off: parents handle the whole commitment flow.'}</small>
+                </span>
+                <span className="mc-switch-track" aria-hidden />
+              </button>
+            </div>
+          </section>
+
+          {/* Events */}
+          {parsedEvents.length > 0 && (
+            <section className="card" aria-labelledby="mc-events-h">
+              <SectionHead id="mc-events-h" title={`${parsedEvents.length} event${parsedEvents.length === 1 ? '' : 's'} from the file`} hint="These become the signup list when you create the meet. Edit them from the meet’s Events tab." />
+              <div className="mc-events">
+                {visibleEvents.map((event) => (
+                  <div key={`${event.event_number}-${event.session_number ?? 0}`} className="mc-event">
+                    <span>#{event.event_number} · {event.distance} {formatStroke(event.stroke) || 'Event'}</span>
+                    <span className="mc-event-meta">{formatEventAgeGroup(event)}{event.session_number ? ` · S${event.session_number}` : ''}</span>
+                  </div>
+                ))}
+              </div>
+              {parsedEvents.length > EVENT_PREVIEW_LIMIT && (
+                <button type="button" className="btn btn-ghost u-fs-fs-sm u-mt-8px" onClick={() => setShowAllEvents((v) => !v)}>
+                  {showAllEvents ? 'Show fewer' : `Show all ${parsedEvents.length}`}
+                </button>
+              )}
+            </section>
           )}
-        </button>
-      </div>
+        </div>
+
+        {/* ── Summary rail ──────────────────────────────────────────── */}
+        <aside className="mc-rail" aria-label="Meet summary">
+          <div className="card">
+            <h2 className="card-title u-mb-8px">{ready ? 'Ready to create' : `${remaining} thing${remaining === 1 ? '' : 's'} left`}</h2>
+            <div className="mc-check">
+              {checks.map((c) => (
+                <button key={c.key} type="button" className="mc-check-item" data-done={c.done} onClick={() => jumpTo(c.target)}>
+                  <span className="mc-check-dot" aria-hidden>{c.done && <Icon name="check" size={11} />}</span>
+                  {c.label}
+                </button>
+              ))}
+            </div>
           </div>
+
+          <div className="card">
+            <dl className="mc-facts">
+              <dt>Meet</dt><dd>{draft.name.trim() || '—'}</dd>
+              <dt>Course</dt><dd>{draft.course}</dd>
+              <dt>Dates</dt><dd>{datesOk ? (draft.startDate === draft.endDate ? formatDateOnly(draft.startDate) : `${formatDateOnly(draft.startDate)} – ${formatDateOnly(draft.endDate)}`) : '—'}</dd>
+              <dt>Sessions</dt><dd>{draft.sessions.length}</dd>
+              <dt>Events</dt><dd>{parsedEvents.length > 0 ? parsedEvents.length : 'Add later'}</dd>
+              <dt>Max events</dt><dd>{draft.maxEntriesPerSwimmer}</dd>
+            </dl>
+          </div>
+
+          {duplicateMeet && (
+            <div className="mc-banner mc-banner-warn" style={{ marginTop: 0 }}>
+              <Icon name="alert-triangle" size={14} />
+              <span>A meet named “{duplicateMeet.name}” already starts on {formatDateOnly(duplicateMeet.start_date)}. Check this isn’t a duplicate.</span>
+            </div>
+          )}
+          {saveError && <div className="mc-banner mc-banner-err" role="alert" style={{ marginTop: 0 }}><Icon name="alert-circle" size={14} /> {saveError}</div>}
+
+          <button type="submit" className="btn btn-primary" disabled={!ready || saving} style={{ width: '100%' }}>
+            {saving ? <><span className="spinner spinner-sm" aria-hidden />Creating…</> : <>Create meet</>}
+          </button>
+          <p className="field-hint" style={{ margin: 0 }}>Saved as a draft. Publish it when you’re ready to open commitments.</p>
+        </aside>
+      </div>
+    </form>
   )
 }

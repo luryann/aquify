@@ -1,0 +1,71 @@
+/* Meet detail: header actions, stage stepper, overview. */
+
+.md-meta { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-1) var(--space-3); margin-top: var(--space-2); color: var(--text-subtle); font-size: var(--fs-base); }
+.md-meta > span + span::before { content: '·'; margin-right: var(--space-3); color: var(--text-muted); }
+
+.md-actions { display: flex; align-items: center; gap: var(--space-2); flex-wrap: wrap; }
+
+/* Stepper: every stage named, current one lifted */
+.md-steps { display: flex; list-style: none; margin: 0 0 var(--section-gap); padding: 0; gap: 0; overflow-x: auto; scrollbar-width: none; }
+.md-step { position: relative; flex: 1 1 0; min-width: 0; padding-top: var(--space-3); font-size: var(--fs-sm); color: var(--text-muted); white-space: nowrap; }
+.md-step::before { content: ''; position: absolute; top: 0; left: 0; right: var(--space-1); height: 3px; border-radius: 2px; background: var(--border); }
+.md-step[data-state="done"] { color: var(--text-subtle); }
+.md-step[data-state="done"]::before { background: var(--success); }
+.md-step[data-state="current"] { color: var(--text); font-weight: 600; }
+.md-step[data-state="current"]::before { background: var(--accent); }
+@media (max-width: 640px) {
+  .md-step[data-state="todo"], .md-step[data-state="done"] { font-size: 0; }
+  .md-step { flex: 1 1 0; }
+  .md-step[data-state="current"] { flex: 3 1 0; font-size: var(--fs-sm); }
+}
+
+.md-panel-head { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); margin-bottom: var(--space-3); }
+
+/* Attention list */
+.md-todo { display: flex; flex-direction: column; margin: 0; padding: 0; list-style: none; }
+.md-todo-item {
+  display: flex; align-items: center; gap: var(--space-3); width: 100%;
+  padding: var(--space-3) 0; border: 0; border-top: 1px solid var(--border); background: none;
+  font: inherit; font-size: var(--fs-base); color: var(--text); text-align: left; cursor: pointer;
+}
+.md-todo li:first-child .md-todo-item { border-top: 0; padding-top: 0; }
+.md-todo-item:hover .md-todo-go { color: var(--accent-text, var(--accent)); transform: translateX(2px); }
+.md-todo-count { min-width: 28px; font-family: var(--font-mono, inherit); font-weight: 700; color: var(--warning); }
+.md-todo-text { flex: 1; min-width: 0; }
+.md-todo-go { color: var(--text-muted); transition: transform var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease); }
+.md-clear { display: flex; align-items: center; gap: var(--space-2); color: var(--success); font-size: var(--fs-base); }
+
+/* Stacked progress bars */
+.md-bar { display: flex; height: 8px; border-radius: 999px; overflow: hidden; background: var(--bg-elevated); gap: 2px; }
+.md-bar > span { min-width: 4px; }
+.md-legend { display: flex; flex-wrap: wrap; gap: var(--space-1) var(--space-4); margin-top: var(--space-2); font-size: var(--fs-sm); color: var(--text-subtle); }
+.md-legend i { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; }
+.md-legend b { color: var(--text); font-weight: 600; font-family: var(--font-mono, inherit); margin-right: 4px; }
+
+/* Facts */
+.md-facts { margin: 0; display: grid; grid-template-columns: auto 1fr; gap: 0; }
+.md-facts dt, .md-facts dd { margin: 0; padding: var(--space-3) 0; border-top: 1px solid var(--border); font-size: var(--fs-base); }
+.md-facts dt:first-of-type, .md-facts dd:first-of-type { border-top: 0; padding-top: 0; }
+.md-facts dt { color: var(--text-muted); padding-right: var(--space-4); }
+.md-facts dd { text-align: right; color: var(--text); font-weight: 500; }
+.md-facts dd[data-empty="true"] { color: var(--text-muted); font-weight: 400; }
+
+.md-toolbar { display: flex; align-items: center; justify-content: flex-end; gap: var(--space-2); flex-wrap: wrap; margin-bottom: var(--space-3); }
+
+/* Collapsible session groups */
+.md-group { border: 1px solid var(--border); border-radius: var(--r-lg); background: var(--bg-surface); overflow: hidden; }
+.md-group-head {
+  display: flex; align-items: center; gap: var(--space-3); width: 100%;
+  padding: var(--space-3) var(--space-4); background: none; border: 0; cursor: pointer;
+  font: inherit; text-align: left; color: var(--text);
+}
+.md-group-head:hover { background: var(--bg-elevated); }
+.md-group-chevron { color: var(--text-muted); transition: transform var(--dur-fast) var(--ease); flex-shrink: 0; }
+.md-group[data-open="true"] .md-group-chevron { transform: rotate(90deg); }
+.md-group-title { font-weight: 600; font-size: var(--fs-base); }
+.md-group-sub { color: var(--text-muted); font-size: var(--fs-sm); }
+.md-group-count { margin-left: auto; color: var(--text-subtle); font-size: var(--fs-sm); white-space: nowrap; }
+.md-group[data-open="true"] .md-group-head { border-bottom: 1px solid var(--border); }
+
+/* Atkinson's zero is slashed; clock times read better with a plain zero. */
+.plain-digits { font-family: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif; font-variant-numeric: tabular-nums; }

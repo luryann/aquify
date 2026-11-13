@@ -26,32 +26,19 @@ import (
 	"strings"
 )
 
-// DetectFileType infers a FileType from the filename extension and, optionally,
-// the first few bytes of file content (magic-byte sniff).
+// DetectFileType infers a FileType from the filename extension and, when the
+// extension is missing or unknown, from the first bytes of the content.
 //
-// Priority:
-//  1. ".sd3" extension → FileTypeSD3
-//  2. ".cl2" extension → FileTypeCL2
-//  3. ".zip" extension → FileTypeZIP
-//  4. ".hy3" extension → FileTypeHY3
-//  5. ".hyv" extension → FileTypeHYV
-//  6. ".ev3" extension → FileTypeEV3
-//  7. ZIP magic bytes (PK\x03\x04) → FileTypeZIP
-//  8. SDIF A0 leader ("A0") at offset 0 → FileTypeSD3
-//
-// Note: .hy3 files are ZIP containers with a proprietary extension.  The
-// extension check must appear before the magic-byte ZIP fallback so that
-// .hy3 files are routed to the HY3 ingest path rather than treated as
-// generic ZIPs.
+// Recognised extensions: .hyv and .ev3 (meet event files a host publishes),
+// .sd3 and .hy3 (entry and results files) and .zip. Without a known
+// extension, ZIP magic bytes mean FileTypeZIP, an SDIF "A0" leader means
+// FileTypeSD3 and a Hy-Tek "A1" leader means FileTypeHY3.
 //
 // Returns an empty FileType if the format cannot be determined.
 func DetectFileType(filename string, header []byte) FileType {
-	ext := strings.ToLower(filepath.Ext(filename))
-	switch ext {
+	switch strings.ToLower(filepath.Ext(filename)) {
 	case ".sd3":
 		return FileTypeSD3
-	case ".cl2":
-		return FileTypeCL2
 	case ".zip":
 		return FileTypeZIP
 	case ".hy3":
@@ -61,15 +48,14 @@ func DetectFileType(filename string, header []byte) FileType {
 	case ".ev3":
 		return FileTypeEV3
 	}
-
-	// Magic-byte sniff when extension is missing or unrecognised.
-	if len(header) >= 4 &&
-		header[0] == 'P' && header[1] == 'K' &&
-		header[2] == 0x03 && header[3] == 0x04 {
+	if len(header) >= 4 && header[0] == 'P' && header[1] == 'K' && header[2] == 0x03 && header[3] == 0x04 {
 		return FileTypeZIP
 	}
 	if len(header) >= 2 && header[0] == 'A' && header[1] == '0' {
 		return FileTypeSD3
+	}
+	if len(header) >= 2 && header[0] == 'A' && header[1] == '1' {
+		return FileTypeHY3
 	}
 	return ""
 }

@@ -19,9 +19,13 @@ export type MeetCreateDraftState = {
   location: string
   startDate: string
   endDate: string
+  /** Host's age-up date (YYYY-MM-DD); blank = ages are computed on the start date. */
+  ageUpDate?: string
   commitmentDeadline: string
   entryDeadline: string
   maxEntriesPerSwimmer: string
+  /** Host's per-swimmer surcharge in dollars, as typed ("" = none). */
+  swimmerFee?: string
   swimmerSelfSignup: boolean
   sessions: MeetSessionDraft[]
 }
@@ -30,6 +34,24 @@ export function maxEntriesPayloadValue(value: string): number {
   if (value === 'Unlimited') return 6
   const n = Number(value || '3')
   return Number.isFinite(n) ? n : 3
+}
+
+/** Parses a typed dollar amount ("35", "15.50", "$6") into cents; 0 when blank or invalid. */
+export function dollarsToCents(value: string): number {
+  const amount = Number(value.replace(/[$,\s]/g, ''))
+  if (!Number.isFinite(amount) || amount <= 0) return 0
+  return Math.round(amount * 100)
+}
+
+/**
+ * Which uploaded files are meet event files (.hyv, .ev3 or a .zip of them).
+ * Hosts publish the same event list in both formats, so any mix is accepted.
+ */
+export const MEET_EVENT_FILE_EXTENSIONS = ['.hyv', '.ev3', '.zip']
+
+export function isMeetEventFileName(name: string): boolean {
+  const lower = name.toLowerCase()
+  return MEET_EVENT_FILE_EXTENSIONS.some((ext) => lower.endsWith(ext))
 }
 
 export function mapParsedSessionsToDraftSessions(parsedSessions: ParsedMeetSessionDraft[]): MeetSessionDraft[] {
@@ -59,6 +81,7 @@ export function buildCreateMeetPayload(
     location: draft.location,
     start_date: draft.startDate || undefined,
     end_date: draft.endDate || undefined,
+    age_up_date: draft.ageUpDate || undefined,
     commitment_deadline: draft.commitmentDeadline || undefined,
     entry_deadline: draft.entryDeadline || undefined,
     sessions: draft.sessions.map((session) => ({
@@ -77,12 +100,13 @@ export function buildCreateMeetPayload(
       gender: event.gender || undefined,
       min_age: event.min_age,
       max_age: event.max_age,
-      entry_fee_cents: 0,
+      entry_fee_cents: event.entry_fee_cents ?? 0,
       is_relay: event.is_relay,
     })),
     signup_settings: {
       self_signup_enabled: draft.swimmerSelfSignup,
       max_entries_per_swimmer: maxEntriesPayloadValue(draft.maxEntriesPerSwimmer),
+      swimmer_fee_cents: dollarsToCents(draft.swimmerFee ?? ''),
     },
   }
 }

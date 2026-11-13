@@ -2635,15 +2635,19 @@ func (s *Service) HandleStripePaymentIntentFailedFor(orgID, paymentIntentID stri
 		return nil
 	}
 
+	// Persist a copy first so a failed write leaves the cached payment untouched
+	// (memory never runs ahead of the database).
 	now := time.Now().UTC()
-	payment.Status = "failed"
-	payment.FailedAt = &now
-	payment.UpdatedAt = now
+	failed := *payment
+	failed.Status = "failed"
+	failed.FailedAt = &now
+	failed.UpdatedAt = now
 	if s.repo != nil {
-		if err := s.repo.UpsertPayment(context.Background(), payment); err != nil {
+		if err := s.repo.UpsertPayment(context.Background(), &failed); err != nil {
 			return fmt.Errorf("persist failed stripe payment: %w", err)
 		}
 	}
+	*payment = failed
 	return nil
 }
 

@@ -1,6 +1,6 @@
 # ADR: HY3 Format Handling Strategy
 
-- Status: Accepted
+- Status: Superseded by `2026-11-10-meet-file-model.md` (HY3 is fixed-width text, not a ZIP container)
 - Date: 2026-03-15
 
 ## Context

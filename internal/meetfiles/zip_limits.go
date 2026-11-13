@@ -9,9 +9,9 @@ import (
 	"strings"
 )
 
-// Meet entry files (SD3/CL2/EV3/HYV) are line-oriented text; these caps are
+// Meet entry files (SD3/EV3/HYV) are line-oriented text; these caps are
 // generous for legitimate files while bounding decompression-bomb exposure
-// from a hostile ZIP/HY3 upload.
+// from a hostile ZIP upload.
 const (
 	maxZipEntryUncompressedBytes = 100 << 20 // 100 MiB per entry
 	maxZipTotalUncompressedBytes = 250 << 20 // 250 MiB per archive

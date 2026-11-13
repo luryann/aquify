@@ -19,6 +19,7 @@ var (
 	ErrInvalidTimezone  = errors.New("timezone must be an IANA name such as America/Los_Angeles")
 	ErrInvalidCurrency  = errors.New("currency must be a 3-letter ISO 4217 code such as usd")
 	ErrInvalidLegalName = errors.New("legal name must be at most 120 characters")
+	ErrInvalidAddress   = errors.New("address fields are too long (lines 60, city 40, state 3, postal code 10 characters)")
 	currencyPattern     = regexp.MustCompile(`^[a-z]{3}$`)
 	// ErrInvalidSlug means the public slug is malformed or required but empty.
 	ErrInvalidSlug = errors.New("public slug must be 3-40 lowercase letters, digits or hyphens")
@@ -67,9 +68,15 @@ type OrgSettings struct {
 	PublicSlug         string `json:"public_slug"`
 	// Timezone is an IANA zone name ("" = UTC); Currency an ISO 4217 code in lower case
 	// ("" = the deployment default); LegalName the entity name shown on invoices.
-	Timezone           string `json:"timezone"`
-	Currency           string `json:"currency"`
-	LegalName          string `json:"legal_name"`
+	Timezone  string `json:"timezone"`
+	Currency  string `json:"currency"`
+	LegalName string `json:"legal_name"`
+	// Mailing address, written to meet entry files and the entry log.
+	AddressLine1       string `json:"address_line1"`
+	AddressLine2       string `json:"address_line2"`
+	AddressCity        string `json:"address_city"`
+	AddressState       string `json:"address_state"`
+	AddressPostalCode  string `json:"address_postal_code"`
 	PublicSiteEnabled  bool   `json:"public_site_enabled"`
 	PublicShowCoaches  bool   `json:"public_show_coaches"`
 	PublicAbout        string `json:"public_about"`
@@ -94,6 +101,11 @@ type Updates struct {
 	Timezone           *string `json:"timezone,omitempty"`
 	Currency           *string `json:"currency,omitempty"`
 	LegalName          *string `json:"legal_name,omitempty"`
+	AddressLine1       *string `json:"address_line1,omitempty"`
+	AddressLine2       *string `json:"address_line2,omitempty"`
+	AddressCity        *string `json:"address_city,omitempty"`
+	AddressState       *string `json:"address_state,omitempty"`
+	AddressPostalCode  *string `json:"address_postal_code,omitempty"`
 	PublicSiteEnabled  *bool   `json:"public_site_enabled,omitempty"`
 	PublicShowCoaches  *bool   `json:"public_show_coaches,omitempty"`
 	PublicAbout        *string `json:"public_about,omitempty"`
@@ -207,6 +219,30 @@ func (s *Service) Update(orgID string, updates Updates, updatedBy string) (*OrgS
 			return nil, ErrInvalidLegalName
 		}
 		current.LegalName = name
+	}
+	for _, field := range []struct {
+		update *string
+		target *string
+		max    int
+		upper  bool
+	}{
+		{updates.AddressLine1, &current.AddressLine1, 60, false},
+		{updates.AddressLine2, &current.AddressLine2, 60, false},
+		{updates.AddressCity, &current.AddressCity, 40, false},
+		{updates.AddressState, &current.AddressState, 3, true},
+		{updates.AddressPostalCode, &current.AddressPostalCode, 10, false},
+	} {
+		if field.update == nil {
+			continue
+		}
+		value := strings.TrimSpace(*field.update)
+		if field.upper {
+			value = strings.ToUpper(value)
+		}
+		if len([]rune(value)) > field.max {
+			return nil, ErrInvalidAddress
+		}
+		*field.target = value
 	}
 	if updates.PublicSlug != nil {
 		slug := strings.ToLower(strings.TrimSpace(*updates.PublicSlug))

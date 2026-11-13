@@ -3,7 +3,7 @@ info:
   title: aquify Platform API
   description: |
     Full-stack swim club operations platform covering member/household management,
-    meet scheduling and entries, file interoperability (CL2/SD3/ZIP/HY3/HYV/EV3),
+    meet scheduling and entries, file interoperability (HYV/EV3 meet events in; SD3/HY3 entry bundle out),
     performance tracking, billing (Stripe), communications, and admin reporting.
   version: "1.0.0"
   contact:
@@ -1547,7 +1547,14 @@ paths:
   /meets/parse-entry-file:
     post:
       tags: [Meets]
-      summary: Parse meet entry/setup file
+      summary: Parse the host's meet event files
+      description: >-
+        Reads the event files a meet host publishes and returns a draft meet
+        (header, sessions, events with entry fees and time standards). Send
+        the `.hyv`, the `.ev3`, both, or the `.zip` that holds them as
+        repeated `file` parts (25 MB total, at most 4 parts). The `.ev3` is
+        preferred because it carries sessions; when both formats are sent they
+        are compared and every disagreement is returned in `parse_warnings`.
       operationId: parseMeetEntryFile
       requestBody:
         required: true
@@ -1558,8 +1565,10 @@ paths:
               required: [file]
               properties:
                 file:
-                  type: string
-                  format: binary
+                  type: array
+                  items:
+                    type: string
+                    format: binary
       responses:
         "200":
           description: Parsed meet setup data
@@ -1994,36 +2003,39 @@ paths:
         "409":
           $ref: "#/components/responses/Conflict"
 
-  /meets/{meetID}/entries/sd3:
+  /meets/{meetID}/entries/export:
     post:
       tags: [Entries]
-      summary: Export SD3 entry file (coach/admin)
+      summary: Export the entry bundle for the meet host (coach/admin)
       description: >-
-        Generates an SDIF (.sd3) entry file for the host meet from approved and
-        previously exported individual entries, then marks approved entries as
-        `exported`. Requires meet status `entry_finalized` or `completed` and a
-        club team code in org settings (422 `team_code_required` otherwise).
-        Relay entries are not included (count returned in `X-Skipped-Relays`).
-      operationId: exportEntriesSD3
+        Builds everything the meet host needs from approved and previously
+        exported individual entries and returns it as one ZIP:
+        `<base>.sd3` (SDIF entry file), `<base>.hy3` (Hy-Tek entry file),
+        `<base>-EntryReport-ByEvent.pdf`, `<base>-EntryReport-BySwimmer.pdf`
+        and `<base>-EntryLog.txt`, where `<base>` is
+        `<team code>-Entries-<meet name>-<DDMonYYYY>-<HHMM>` in the club's
+        time zone. Approved entries are then marked `exported`. Requires meet
+        status `entry_finalized` or `completed`, a meet start date
+        (422 `meet_dates_required`) and a club team code in org settings
+        (422 `team_code_required`). Every exported swimmer needs a male/female
+        competition category and a date of birth (422
+        `entries_not_exportable` names the swimmers otherwise). Relay entries
+        are not included (count returned in `X-Skipped-Relays`). Approved entries whose event or swimmer no longer exists are left unexported and counted in `X-Skipped-Orphans`.
+      operationId: exportEntryBundle
       parameters:
         - $ref: "#/components/parameters/MeetID"
-        - name: variant
-          in: query
-          required: false
-          schema: { type: string, enum: [extended, standard], default: extended }
-          description: "`extended` includes seed times; `standard` writes NT seeds."
       responses:
         "200":
-          description: SD3 entry file
+          description: ZIP archive holding the five entry files
           headers:
             Content-Disposition: { schema: { type: string } }
             X-Entry-Count: { schema: { type: integer } }
+            X-Athlete-Count: { schema: { type: integer } }
             X-Skipped-Relays: { schema: { type: integer } }
+            X-Skipped-Orphans: { schema: { type: integer } }
           content:
-            text/plain:
-              schema: { type: string }
-        "400":
-          $ref: "#/components/responses/BadRequest"
+            application/zip:
+              schema: { type: string, format: binary }
         "403":
           $ref: "#/components/responses/Forbidden"
         "404":
@@ -2137,7 +2149,7 @@ paths:
       tags: [Performance]
       summary: Import meet results file (coach/admin)
       description: >-
-        Uploads an SD3/CL2 results file (or an HY3/ZIP archive containing one).
+        Uploads an SDIF (.sd3) results file, or a ZIP archive containing one.
         Individual swims are matched to club swimmers by USA Swimming ID, then
         first + last name and date of birth (gender breaks ties), and recorded
         as official results, which recomputes best times. Swims already
@@ -7207,6 +7219,30 @@ paths:
         "200": { description: Organization }
         "403": { $ref: "#/components/responses/Forbidden" }
         "404": { $ref: "#/components/responses/NotFound" }
+    patch:
+      tags: [Platform]
+      summary: Edit an organization
+      description: Operator plane. Changes the registry display name and/or plan. The slug is not editable (public URLs, invites and calendar feeds depend on it). A `reason` is required and audited in both the operator log and the club's own log.
+      operationId: platformUpdateOrg
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [reason]
+              properties:
+                name: { type: string, maxLength: 120 }
+                plan: { type: string, maxLength: 40 }
+                reason: { type: string, minLength: 3, maxLength: 500 }
+      responses:
+        "200": { description: Updated organization }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
   /platform/orgs/{id}/suspend:
     post:
       tags: [Platform]
@@ -7355,6 +7391,228 @@ paths:
         "403": { $ref: "#/components/responses/Forbidden" }
         "404": { $ref: "#/components/responses/NotFound" }
         "409": { $ref: "#/components/responses/Conflict" }
+  /platform/orgs/{id}/overview:
+    get:
+      tags: [Platform]
+      summary: Club support overview
+      description: Operator plane. Registry fields, custom domains, user counts per role (directory metadata only) and read-only Stripe Connect status. Never reads a club's swimmers, invoices or households.
+      operationId: platformOrgOverview
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        "200": { description: Overview }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "501": { description: Club support tools are not configured }
+  /platform/orgs/{id}/activity:
+    get:
+      tags: [Platform]
+      summary: Operator activity on a club
+      description: Operator plane. The latest `platform.*` events in the club's audit log, newest first (max 50).
+      operationId: platformOrgActivity
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        "200": { description: Activity }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /platform/orgs/{id}/users:
+    get:
+      tags: [Platform]
+      summary: List a club's users
+      description: Operator plane. Account metadata only (name, email, roles, enabled, email verified, MFA enrolled). `search` and `role` filters; `limit` (default 50, max 200) and `offset`.
+      operationId: platformListOrgUsers
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+        - { name: search, in: query, required: false, schema: { type: string } }
+        - { name: role, in: query, required: false, schema: { type: string, enum: [admin, coach, parent, swimmer] } }
+        - { name: limit, in: query, required: false, schema: { type: integer } }
+        - { name: offset, in: query, required: false, schema: { type: integer } }
+      responses:
+        "200": { description: Users }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "501": { description: Club support tools are not configured }
+  /platform/orgs/{id}/admins:
+    post:
+      tags: [Platform]
+      summary: Add or promote a club administrator
+      description: Operator plane. Promotes an existing user of the club to admin (200), or creates and invites a new one (201). An email that belongs to another club is refused (409 admin_email_in_use). A `reason` is required and audited.
+      operationId: platformAddOrgAdmin
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, first_name, last_name, reason]
+              properties:
+                email: { type: string, format: email }
+                first_name: { type: string }
+                last_name: { type: string }
+                reason: { type: string, minLength: 3, maxLength: 500 }
+      responses:
+        "200": { description: Existing user promoted }
+        "201": { description: Admin created and invited }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "501": { description: Club support tools are not configured }
+  /platform/orgs/{id}/users/{userID}/password-reset:
+    post:
+      tags: [Platform]
+      summary: Send a password reset email
+      description: Operator plane. The user must belong to the club in the path (otherwise 404) and cannot be a platform operator. A `reason` is required; the action is audited in the operator log and mirrored into the club's own audit log.
+      operationId: platformUserPasswordReset
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+        - { name: userID, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [reason]
+              properties:
+                reason: { type: string, minLength: 3, maxLength: 500 }
+      responses:
+        "200": { description: Done }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "501": { description: Club support tools are not configured }
+  /platform/orgs/{id}/users/{userID}/resend-verification:
+    post:
+      tags: [Platform]
+      summary: Resend the email verification
+      description: Operator plane. The user must belong to the club in the path (otherwise 404) and cannot be a platform operator. A `reason` is required; the action is audited in the operator log and mirrored into the club's own audit log.
+      operationId: platformUserResendVerification
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+        - { name: userID, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [reason]
+              properties:
+                reason: { type: string, minLength: 3, maxLength: 500 }
+      responses:
+        "200": { description: Done }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "501": { description: Club support tools are not configured }
+  /platform/orgs/{id}/users/{userID}/sign-out:
+    post:
+      tags: [Platform]
+      summary: Sign a user out everywhere
+      description: Operator plane. The user must belong to the club in the path (otherwise 404) and cannot be a platform operator. A `reason` is required; the action is audited in the operator log and mirrored into the club's own audit log. Revokes every active session.
+      operationId: platformUserSignOut
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+        - { name: userID, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [reason]
+              properties:
+                reason: { type: string, minLength: 3, maxLength: 500 }
+      responses:
+        "200": { description: Done }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "501": { description: Club support tools are not configured }
+  /platform/orgs/{id}/users/{userID}/reset-mfa:
+    post:
+      tags: [Platform]
+      summary: Reset a user's MFA
+      description: Operator plane. The user must belong to the club in the path (otherwise 404) and cannot be a platform operator. A `reason` is required; the action is audited in the operator log and mirrored into the club's own audit log. Deletes every MFA factor and ends their sessions; they enrol again at next sign-in.
+      operationId: platformUserResetMFA
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+        - { name: userID, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [reason]
+              properties:
+                reason: { type: string, minLength: 3, maxLength: 500 }
+      responses:
+        "200": { description: Done }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "501": { description: Club support tools are not configured }
+  /platform/orgs/{id}/users/{userID}/disable:
+    post:
+      tags: [Platform]
+      summary: Disable a user account
+      description: Operator plane. The user must belong to the club in the path (otherwise 404) and cannot be a platform operator. A `reason` is required; the action is audited in the operator log and mirrored into the club's own audit log. Also revokes their sessions.
+      operationId: platformUserDisable
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+        - { name: userID, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [reason]
+              properties:
+                reason: { type: string, minLength: 3, maxLength: 500 }
+      responses:
+        "200": { description: Done }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "501": { description: Club support tools are not configured }
+  /platform/orgs/{id}/users/{userID}/enable:
+    post:
+      tags: [Platform]
+      summary: Re-enable a user account
+      description: Operator plane. The user must belong to the club in the path (otherwise 404) and cannot be a platform operator. A `reason` is required; the action is audited in the operator log and mirrored into the club's own audit log.
+      operationId: platformUserEnable
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+        - { name: userID, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [reason]
+              properties:
+                reason: { type: string, minLength: 3, maxLength: 500 }
+      responses:
+        "200": { description: Done }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "501": { description: Club support tools are not configured }
   /wellness/checkins:
     put:
       tags: [Engagement]
@@ -9610,6 +9868,7 @@ components:
             first_name: { type: string }
             last_name: { type: string }
             preferred_name: { type: string }
+            middle_initial: { type: string, maxLength: 1, description: "Single letter, written to meet entry files." }
             date_of_birth: { type: string, format: date }
             gender:
               type: string
@@ -9642,6 +9901,7 @@ components:
         first_name: { type: string }
         last_name: { type: string }
         preferred_name: { type: string }
+        middle_initial: { type: string, maxLength: 1 }
         date_of_birth: { type: string, format: date }
         gender:
           type: string
@@ -9662,6 +9922,7 @@ components:
         first_name: { type: string }
         last_name: { type: string }
         preferred_name: { type: string }
+        middle_initial: { type: string, maxLength: 1 }
         date_of_birth: { type: string, format: date }
         gender:
           type: string
@@ -9769,12 +10030,14 @@ components:
               enum: [draft, published, commitment_open, commitment_closed, entry_finalized, completed, archived]
             start_date: { type: string, format: date }
             end_date: { type: string, format: date }
-            entry_deadline: { type: string, format: date-time }
-            commitment_deadline: { type: string, format: date-time }
+            age_up_date: { type: string, format: date, description: "Date swimmer ages are computed on in entry files; the start date when absent." }
+            entry_deadline: { type: string, description: "Date (YYYY-MM-DD) or RFC 3339 instant in UTC." }
+            commitment_deadline: { type: string, description: "Date (YYYY-MM-DD) or RFC 3339 instant in UTC." }
             host_org: { type: string }
             location: { type: string }
             self_signup_enabled: { type: boolean }
             max_entries_per_swimmer: { type: integer, minimum: 1 }
+            swimmer_fee_cents: { type: integer, minimum: 0, description: "Host's per-swimmer surcharge, shown in the entry report cost summary." }
 
     CreateMeetRequest:
       type: object
@@ -9789,8 +10052,9 @@ components:
           enum: [SCY, SCM, LCM]
         start_date: { type: string, format: date }
         end_date: { type: string, format: date }
-        entry_deadline: { type: string, format: date-time }
-        commitment_deadline: { type: string, format: date-time }
+        age_up_date: { type: string, format: date, description: "Date swimmer ages are computed on in entry files; defaults to the start date." }
+        entry_deadline: { type: string, description: "Date (YYYY-MM-DD), RFC 3339 instant, or a zone-less local date-time interpreted in the club's time zone." }
+        commitment_deadline: { type: string, description: "Date (YYYY-MM-DD), RFC 3339 instant, or a zone-less local date-time interpreted in the club's time zone." }
         host_org: { type: string }
         location: { type: string }
         sessions:
@@ -9895,6 +10159,7 @@ components:
       properties:
         self_signup_enabled: { type: boolean }
         max_entries_per_swimmer: { type: integer, minimum: 1 }
+        swimmer_fee_cents: { type: integer, minimum: 0, maximum: 100000 }
 
     ParsedMeetSessionDraft:
       type: object
@@ -9926,6 +10191,8 @@ components:
         min_age: { type: [integer, "null"] }
         max_age: { type: [integer, "null"] }
         is_relay: { type: boolean }
+        entry_fee_cents: { type: integer, minimum: 0 }
+        time_standard_ms: { type: integer, description: "Host's entry time standard in the meet course; omitted when the event has none." }
 
     ParsedMeetSignupSettings:
       type: object
@@ -9933,6 +10200,7 @@ components:
       properties:
         self_signup_enabled: { type: boolean }
         max_entries_per_swimmer: { type: integer, minimum: 1 }
+        swimmer_fee_cents: { type: integer, minimum: 0 }
 
     ParsedMeetFile:
       type: object
@@ -9940,7 +10208,7 @@ components:
       properties:
         file_type:
           type: string
-          enum: [sd3, cl2, hy3, hyv, ev3, zip]
+          enum: [hyv, ev3]
         source_file: { type: string }
         meet_name: { type: string }
         course:
@@ -9949,6 +10217,7 @@ components:
         location: { type: string }
         start_date: { type: string, format: date }
         end_date: { type: string, format: date }
+        age_up_date: { type: string, format: date }
         sessions:
           type: array
           items: { $ref: "#/components/schemas/ParsedMeetSessionDraft" }
@@ -10026,6 +10295,11 @@ components:
         timezone: { type: string, description: "IANA zone name such as America/Los_Angeles; empty = UTC. Sets the zone advertised in the club's .ics feeds." }
         currency: { type: string, description: "ISO 4217 code in lower case; empty = the deployment default. Used for the club's Stripe payments." }
         legal_name: { type: string, maxLength: 120, description: "Legal entity name for invoices." }
+        address_line1: { type: string, maxLength: 60, description: "Club mailing address, written to meet entry files." }
+        address_line2: { type: string, maxLength: 60 }
+        address_city: { type: string, maxLength: 40 }
+        address_state: { type: string, maxLength: 3 }
+        address_postal_code: { type: string, maxLength: 10 }
         updated_at: { type: string, format: date-time }
         updated_by: { type: string }
     PublicTeamSite:

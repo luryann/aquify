@@ -173,7 +173,11 @@ func (c *bundleChecker) checkSmokeLog(rel string) {
 				line = strings.TrimSpace(line[end+1:])
 			}
 		}
-		status := strings.ToUpper(strings.TrimRight(strings.Fields(line + " ")[0], ":"))
+		fields := strings.Fields(line)
+		if len(fields) == 0 {
+			continue // blank line (e.g. trailing newline) or bare "[timestamp]"
+		}
+		status := strings.ToUpper(strings.TrimRight(fields[0], ":"))
 		switch status {
 		case "PASS":
 			passes++

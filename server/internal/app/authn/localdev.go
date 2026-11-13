@@ -7,13 +7,18 @@ import (
 )
 
 const (
-	LocalDevOrgID         = "00000000-0000-0000-0000-00000000a001"
-	LocalDevHouseholdID   = "00000000-0000-0000-0000-0000000b0001"
-	legacyLocalDevOrgID   = "org-demo"
-	LocalDevAdminUserID   = "00000000-0000-0000-0000-00000000a102"
-	LocalDevCoachUserID   = "00000000-0000-0000-0000-00000000a103"
-	LocalDevParentUserID  = "00000000-0000-0000-0000-00000000a104"
-	LocalDevSwimmerUserID = "00000000-0000-0000-0000-00000000a107"
+	LocalDevOrgID       = "00000000-0000-0000-0000-00000000a001"
+	LocalDevHouseholdID = "00000000-0000-0000-0000-0000000b0001"
+	// LocalDevPlatformOrgID is the dedicated platform org the stub operator
+	// belongs to. Set PLATFORM_ORG_ID to this value in local dev to mount the
+	// operator plane.
+	LocalDevPlatformOrgID  = "00000000-0000-0000-0000-00000000a0ff"
+	LocalDevPlatformUserID = "00000000-0000-0000-0000-00000000a1ff"
+	legacyLocalDevOrgID    = "org-demo"
+	LocalDevAdminUserID    = "00000000-0000-0000-0000-00000000a102"
+	LocalDevCoachUserID    = "00000000-0000-0000-0000-00000000a103"
+	LocalDevParentUserID   = "00000000-0000-0000-0000-00000000a104"
+	LocalDevSwimmerUserID  = "00000000-0000-0000-0000-00000000a107"
 )
 
 type LocalDevUser struct {
@@ -75,6 +80,16 @@ func localDevStaticPrincipals() map[string]*appmiddleware.Principal {
 		Name:             "Dev Admin",
 		OrgID:            LocalDevOrgID,
 		Roles:            []string{"admin"},
+		MFAAuthenticated: true,
+	}
+	// Operator stub: lives in the platform org, not the demo club, and is not
+	// part of LocalDevUsers() so it is never seeded into a club's user table.
+	principals["stub-platform"] = &appmiddleware.Principal{
+		UserID:           LocalDevPlatformUserID,
+		Email:            "operator@aquify.local",
+		Name:             "Dev Operator",
+		OrgID:            LocalDevPlatformOrgID,
+		Roles:            []string{"platform_admin"},
 		MFAAuthenticated: true,
 	}
 	return principals

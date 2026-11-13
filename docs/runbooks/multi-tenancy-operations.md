@@ -26,6 +26,27 @@ After creation the club's admin should: connect Stripe (Settings → Online paym
 
 *Pause club* sets `suspended`. Within 15 seconds on every API instance (immediately on the one that handled the click) all signed-in users of that club get 403 `org_unavailable`, sign-in is refused, the public site and sign-up disappear, and scheduled jobs stop. Stripe and Postmark webhooks are still acknowledged and recorded. *Resume club* reverses it. The platform org cannot be paused.
 
+## 3a. Supporting a club's people
+
+Open a club from the operator console (`/platform`, click its name) for the support page, or call the routes under `/api/v1/platform/orgs/{id}`. It shows the club's handle, plan, web addresses, Stripe Connect status, people per role and a list of the club's accounts. It reads account details only (name, email, roles, enabled, email verified, MFA on), never swimmers, invoices or households.
+
+| Club asks | Do this | Route |
+| --- | --- | --- |
+| "I can't log in" / forgot password | **Send password reset** | `POST .../users/{userID}/password-reset` |
+| "I never got the verification email" | **Resend verification** | `POST .../users/{userID}/resend-verification` |
+| "I lost my phone" | **Reset MFA** (deletes authenticator and backup codes, ends sessions; they enrol again at next sign-in) | `POST .../users/{userID}/reset-mfa` |
+| "Someone left, lock their account" | **Disable account** (also ends sessions); **Enable account** reverses it | `POST .../users/{userID}/disable` / `enable` |
+| "Sign them out everywhere" | **Sign out everywhere** | `POST .../users/{userID}/sign-out` |
+| "Our only admin left" | **Add an administrator** (promotes an existing user of the club, or creates and invites a new one) | `POST .../admins` |
+| "We renamed" | **Edit details** (display name and plan; the handle is fixed) | `PATCH .../orgs/{id}` |
+
+Rules every action follows:
+- A `reason` of 3-500 characters is mandatory. It is stored in the audit log, and the entry is written to both the platform log and the club's own log, so the club's admins can see what support did and why. `GET .../activity` lists the latest operator entries (`platform.*`) for a club.
+- The target must belong to the club in the URL (otherwise 404). Operator accounts and the platform org cannot be targeted. An email that belongs to another club cannot be added (409 `admin_email_in_use`).
+- Works while a club is suspended or closing (it may need to pull its export); refused once the club is deleted.
+- There is no impersonation. Recovery is always done by emailing the user or resetting their factor.
+- Dev: the login page's **Operator** button signs in as the stub operator; set `PLATFORM_ORG_ID=00000000-0000-0000-0000-00000000a0ff` first.
+
 ## 4. Closing a club and deleting its data
 
 1. **Start closing** (`offboarding`): access stops now; the cooling-off clock starts (`PLATFORM_OFFBOARDING_COOLING_OFF`, default 14 days). *Keep the club* cancels it (the org returns to `suspended`).

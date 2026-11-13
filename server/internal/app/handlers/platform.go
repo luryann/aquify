@@ -15,7 +15,9 @@ import (
 	appmiddleware "github.com/luryann/aquify/server/internal/app/middleware"
 	"github.com/luryann/aquify/server/internal/app/offboarding"
 	"github.com/luryann/aquify/server/internal/app/orgs"
+	"github.com/luryann/aquify/server/internal/app/payments"
 	"github.com/luryann/aquify/server/internal/app/provisioning"
+	"github.com/luryann/aquify/server/internal/keycloak"
 )
 
 // PlatformRole is the realm role held by Aquify operators. It is deliberately
@@ -31,6 +33,10 @@ type PlatformHandlers struct {
 	audit         *audit.Service
 	offboarding   *offboarding.Service
 	platformOrgID string
+	// kc, support and payments back the club support routes (platform_support.go).
+	kc       keycloak.Client
+	support  PlatformSupport
+	payments *payments.Service
 	// LookupTXT resolves DNS TXT records for domain verification (injectable in tests).
 	LookupTXT func(ctx context.Context, name string) ([]string, error)
 }
@@ -55,6 +61,17 @@ func (h *PlatformHandlers) RegisterRoutes(r chi.Router) {
 		p.Get("/orgs", h.list)
 		p.Post("/orgs", h.create)
 		p.Get("/orgs/{id}", h.get)
+		p.Patch("/orgs/{id}", h.updateOrg)
+		p.Get("/orgs/{id}/overview", h.overview)
+		p.Get("/orgs/{id}/activity", h.activity)
+		p.Get("/orgs/{id}/users", h.listClubUsers)
+		p.Post("/orgs/{id}/admins", h.addAdmin)
+		p.Post("/orgs/{id}/users/{userID}/password-reset", h.passwordReset())
+		p.Post("/orgs/{id}/users/{userID}/resend-verification", h.resendVerification())
+		p.Post("/orgs/{id}/users/{userID}/sign-out", h.signOutUser())
+		p.Post("/orgs/{id}/users/{userID}/reset-mfa", h.resetMFA())
+		p.Post("/orgs/{id}/users/{userID}/disable", h.disableUser())
+		p.Post("/orgs/{id}/users/{userID}/enable", h.enableUser())
 		p.Post("/orgs/{id}/suspend", h.suspend)
 		p.Post("/orgs/{id}/resume", h.resume)
 		p.Post("/orgs/{id}/offboard", h.offboard)
@@ -91,9 +108,20 @@ func (h *PlatformHandlers) principal(r *http.Request) *appmiddleware.Principal {
 	return pr
 }
 
+// operatorOnlyActions are lifecycle events that must not be written into the
+// club's own audit log: after a purge the club's tenant data is gone (a new row
+// would resurrect it), and a restore replaces that data wholesale.
+var operatorOnlyActions = map[string]bool{
+	audit.ActionPlatformOrgPurge:   true,
+	audit.ActionPlatformOrgRestore: true,
+}
+
 func (h *PlatformHandlers) record(r *http.Request, action, orgID string, after any) {
-	meta := map[string]string{"target_org_id": orgID}
-	_ = recordAudit(h.audit, h.principal(r), h.platformOrgID, action, "org", orgID, nil, after, meta)
+	if operatorOnlyActions[action] {
+		h.recordOperator(r, action, orgID, "org", orgID, nil, after)
+		return
+	}
+	h.recordSupport(r, action, orgID, "org", orgID, nil, after)
 }
 
 func (h *PlatformHandlers) list(w http.ResponseWriter, r *http.Request) {

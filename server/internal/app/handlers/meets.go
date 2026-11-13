@@ -9,6 +9,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-playground/validator/v10"
+	"github.com/luryann/aquify/meetfiles"
 	"github.com/luryann/aquify/server/internal/app/audit"
 	"github.com/luryann/aquify/server/internal/app/httpx"
 	"github.com/luryann/aquify/server/internal/app/meets"
@@ -81,6 +82,7 @@ type createMeetRequest struct {
 	Course             string                           `json:"course" validate:"omitempty,oneof=SCY SCM LCM"`
 	StartDate          string                           `json:"start_date"`
 	EndDate            string                           `json:"end_date"`
+	AgeUpDate          string                           `json:"age_up_date"`
 	EntryDeadline      string                           `json:"entry_deadline"`
 	CommitmentDeadline string                           `json:"commitment_deadline"`
 	HostOrg            string                           `json:"host_org"`
@@ -106,6 +108,7 @@ type createMeetEventDraftRequest struct {
 type createMeetSignupSettingsRequest struct {
 	SelfSignupEnabled    bool `json:"self_signup_enabled"`
 	MaxEntriesPerSwimmer int  `json:"max_entries_per_swimmer"`
+	SwimmerFeeCents      int  `json:"swimmer_fee_cents"`
 }
 
 func mapCreateMeetSessions(items []createMeetSessionRequest) []meets.CreateMeetSessionInput {
@@ -155,6 +158,7 @@ func mapCreateMeetSignupSettings(item *createMeetSignupSettingsRequest) *meets.C
 	return &meets.CreateMeetSignupSettingsInput{
 		SelfSignupEnabled:    item.SelfSignupEnabled,
 		MaxEntriesPerSwimmer: item.MaxEntriesPerSwimmer,
+		SwimmerFeeCents:      item.SwimmerFeeCents,
 	}
 }
 
@@ -168,36 +172,57 @@ func (h *MeetsHandlers) parseEntryFile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// A host publishes its events as a .hyv and a .ev3 (usually zipped
+	// together); accept either, both, or the ZIP as repeated "file" parts.
 	const maxBytes = 25 << 20
-	// Bound the whole request so an oversized upload cannot fill memory/temp disk
-	// in ParseMultipartForm before the file-size check below runs.
+	const maxFiles = 4
+	tooLarge := func() {
+		httpx.WriteError(w, r, http.StatusRequestEntityTooLarge, "file_too_large", "Meet files exceed the 25 MB upload cap.", nil)
+	}
+	// Bound the whole request so an oversized upload cannot fill memory/temp
+	// disk in ParseMultipartForm before the size checks below run.
 	r.Body = http.MaxBytesReader(w, r.Body, maxBytes+(1<<20))
-	file, header, err := r.FormFile("file")
-	if err != nil {
-		var tooLarge *http.MaxBytesError
-		if errors.As(err, &tooLarge) {
-			httpx.WriteError(w, r, http.StatusRequestEntityTooLarge, "file_too_large", "Meet file exceeds the 25 MB upload cap.", nil)
+	if err := r.ParseMultipartForm(8 << 20); err != nil {
+		var maxErr *http.MaxBytesError
+		if errors.As(err, &maxErr) {
+			tooLarge()
 			return
 		}
 		httpx.WriteError(w, r, http.StatusBadRequest, "missing_file", "Multipart field 'file' is required.", nil)
 		return
 	}
-	defer file.Close()
-
-	data, err := io.ReadAll(io.LimitReader(file, maxBytes+1))
-	if err != nil {
-		httpx.WriteError(w, r, http.StatusBadRequest, "invalid_file", "Failed to read uploaded file.", err)
+	defer func() { _ = r.MultipartForm.RemoveAll() }()
+	headers := r.MultipartForm.File["file"]
+	if len(headers) == 0 {
+		httpx.WriteError(w, r, http.StatusBadRequest, "missing_file", "Multipart field 'file' is required.", nil)
 		return
 	}
-	if int64(len(data)) > maxBytes {
-		httpx.WriteError(w, r, http.StatusRequestEntityTooLarge, "file_too_large", "Meet file exceeds the 25 MB upload cap.", nil)
+	if len(headers) > maxFiles {
+		httpx.WriteError(w, r, http.StatusBadRequest, "too_many_files", "Upload the meet's .hyv and .ev3 files, or the .zip that holds them.", nil)
 		return
 	}
+	var files []meetfiles.SourceFile
+	var total int64
+	for _, header := range headers {
+		file, err := header.Open()
+		if err != nil {
+			httpx.WriteError(w, r, http.StatusBadRequest, "invalid_file", "Failed to read uploaded file.", err)
+			return
+		}
+		data, err := io.ReadAll(io.LimitReader(file, maxBytes+1))
+		_ = file.Close()
+		if err != nil {
+			httpx.WriteError(w, r, http.StatusBadRequest, "invalid_file", "Failed to read uploaded file.", err)
+			return
+		}
+		if total += int64(len(data)); total > maxBytes {
+			tooLarge()
+			return
+		}
+		files = append(files, meetfiles.SourceFile{Name: header.Filename, Content: data})
+	}
 
-	parsed, err := h.service.ParseMeetFile(principal, orgID, meets.ParseMeetFileInput{
-		Filename: header.Filename,
-		Data:     data,
-	})
+	parsed, err := h.service.ParseMeetFile(principal, orgID, meets.ParseMeetFileInput{Files: files})
 	if err != nil {
 		if errors.Is(err, meets.ErrForbidden) {
 			httpx.WriteError(w, r, http.StatusForbidden, "forbidden", "You are not allowed to parse meet files.", nil)
@@ -229,6 +254,7 @@ func (h *MeetsHandlers) createMeet(w http.ResponseWriter, r *http.Request) {
 		Course:             req.Course,
 		StartDate:          req.StartDate,
 		EndDate:            req.EndDate,
+		AgeUpDate:          req.AgeUpDate,
 		EntryDeadline:      req.EntryDeadline,
 		CommitmentDeadline: req.CommitmentDeadline,
 		HostOrg:            req.HostOrg,

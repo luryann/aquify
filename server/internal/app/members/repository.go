@@ -138,13 +138,14 @@ func (r *Repository) UpsertSwimmer(ctx context.Context, sw Swimmer) error {
 		                      date_of_birth, gender, swimmer_external_id, usa_swimming_id, registration_status,
 		                      medical_flags, notes, emergency_contact_name, emergency_contact_phone,
 		                      emergency_contact_relationship, allergies, keycloak_user_id, created_at, updated_at, portal_access_disabled,
-		                      guardian_consent_at, guardian_consent_by, guardian_consent_version)
+		                      guardian_consent_at, guardian_consent_by, guardian_consent_version, middle_initial)
 		VALUES ($1::uuid, $2::uuid, $3::uuid, $4, $5, $6, $7::date, $8, $9, $10, $11,
-		        $12::jsonb, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, NULLIF($23, '')::uuid, $24)
+		        $12::jsonb, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, NULLIF($23, '')::uuid, $24, $25)
 		ON CONFLICT (id) DO UPDATE SET
 		  first_name                     = EXCLUDED.first_name,
 		  last_name                      = EXCLUDED.last_name,
 		  preferred_name                 = EXCLUDED.preferred_name,
+		  middle_initial                 = EXCLUDED.middle_initial,
 		  date_of_birth                  = EXCLUDED.date_of_birth,
 		  gender                         = EXCLUDED.gender,
 		  swimmer_external_id            = EXCLUDED.swimmer_external_id,
@@ -171,7 +172,7 @@ func (r *Repository) UpsertSwimmer(ctx context.Context, sw Swimmer) error {
 		dbutil.NullableString(sw.EmergencyContactRelationship), dbutil.NullableString(sw.Allergies),
 		dbutil.NullableString(sw.KeycloakUserID),
 		sw.CreatedAt, sw.UpdatedAt, sw.PortalAccessDisabled,
-		sw.GuardianConsentAt, sw.GuardianConsentBy, dbutil.NullableString(sw.GuardianConsentVersion),
+		sw.GuardianConsentAt, sw.GuardianConsentBy, dbutil.NullableString(sw.GuardianConsentVersion), sw.MiddleInitial,
 	)
 	return err
 }
@@ -487,7 +488,7 @@ func loadSwimmersInTx(ctx context.Context, tx pgx.Tx, orgID string) ([]Swimmer, 
 		       COALESCE(emergency_contact_name, ''), COALESCE(emergency_contact_phone, ''),
 		       COALESCE(emergency_contact_relationship, ''), COALESCE(allergies, ''),
 		       COALESCE(keycloak_user_id, ''), created_at, updated_at, portal_access_disabled,
-		       guardian_consent_at, COALESCE(guardian_consent_by::text, ''), COALESCE(guardian_consent_version, '')
+		       guardian_consent_at, COALESCE(guardian_consent_by::text, ''), COALESCE(guardian_consent_version, ''), middle_initial
 		FROM swimmers WHERE deleted_at IS NULL
 		AND ($1::text = '' OR org_id = NULLIF($1::text, '')::uuid)`, orgID)
 	if err != nil {
@@ -506,7 +507,7 @@ func loadSwimmersInTx(ctx context.Context, tx pgx.Tx, orgID string) ([]Swimmer, 
 			&sw.EmergencyContactRelationship, &sw.Allergies,
 			&sw.KeycloakUserID,
 			&sw.CreatedAt, &sw.UpdatedAt, &sw.PortalAccessDisabled,
-			&sw.GuardianConsentAt, &sw.GuardianConsentBy, &sw.GuardianConsentVersion,
+			&sw.GuardianConsentAt, &sw.GuardianConsentBy, &sw.GuardianConsentVersion, &sw.MiddleInitial,
 		); err != nil {
 			return sw, err
 		}

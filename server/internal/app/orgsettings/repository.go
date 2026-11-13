@@ -28,8 +28,9 @@ func (r *Repository) at(orgID string) tenantdb.Scoped { return tenantdb.Pool{P: 
 // the stored value unchanged (TRUE for a new row).
 func (r *Repository) Upsert(ctx context.Context, s *OrgSettings, swimmerAccounts *bool) error {
 	_, err := r.at(s.OrgID).Exec(ctx, `
-		INSERT INTO org_settings (org_id, team_code, team_name, lsc_code, email_sender_name, email_sender_address, created_at, updated_at, updated_by, public_slug, public_site_enabled, public_show_coaches, public_about, public_contact_email, public_contact_phone, swimmer_accounts_enabled, timezone, currency, legal_name)
-		VALUES ($1::uuid, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, COALESCE($16::boolean, TRUE), $17, $18, $19)
+		INSERT INTO org_settings (org_id, team_code, team_name, lsc_code, email_sender_name, email_sender_address, created_at, updated_at, updated_by, public_slug, public_site_enabled, public_show_coaches, public_about, public_contact_email, public_contact_phone, swimmer_accounts_enabled, timezone, currency, legal_name,
+		                          address_line1, address_line2, address_city, address_state, address_postal_code)
+		VALUES ($1::uuid, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, COALESCE($16::boolean, TRUE), $17, $18, $19, $20, $21, $22, $23, $24)
 		ON CONFLICT (org_id) DO UPDATE SET
 			team_code            = EXCLUDED.team_code,
 			team_name            = EXCLUDED.team_name,
@@ -47,10 +48,16 @@ func (r *Repository) Upsert(ctx context.Context, s *OrgSettings, swimmerAccounts
 			swimmer_accounts_enabled = COALESCE($16::boolean, org_settings.swimmer_accounts_enabled),
 			timezone             = EXCLUDED.timezone,
 			currency             = EXCLUDED.currency,
-			legal_name           = EXCLUDED.legal_name`,
+			legal_name           = EXCLUDED.legal_name,
+			address_line1        = EXCLUDED.address_line1,
+			address_line2        = EXCLUDED.address_line2,
+			address_city         = EXCLUDED.address_city,
+			address_state        = EXCLUDED.address_state,
+			address_postal_code  = EXCLUDED.address_postal_code`,
 		s.OrgID, s.TeamCode, s.TeamName, s.LSCCode, s.EmailSenderName, s.EmailSenderAddress, s.CreatedAt, s.UpdatedAt, dbutil.NullableString(s.UpdatedBy),
 		s.PublicSlug, s.PublicSiteEnabled, s.PublicShowCoaches, s.PublicAbout, s.PublicContactEmail, s.PublicContactPhone, swimmerAccounts,
 		s.Timezone, s.Currency, s.LegalName,
+		s.AddressLine1, s.AddressLine2, s.AddressCity, s.AddressState, s.AddressPostalCode,
 	)
 	return err
 }
@@ -59,10 +66,11 @@ func (r *Repository) Upsert(ctx context.Context, s *OrgSettings, swimmerAccounts
 func (r *Repository) Get(ctx context.Context, orgID string) (*OrgSettings, error) {
 	row := r.at(orgID).QueryRow(ctx, `
 		SELECT org_id::text, team_code, team_name, lsc_code, email_sender_name, email_sender_address, created_at, updated_at, COALESCE(updated_by::text, ''),
-		       public_slug, public_site_enabled, public_show_coaches, public_about, public_contact_email, public_contact_phone, timezone, currency, legal_name
+		       public_slug, public_site_enabled, public_show_coaches, public_about, public_contact_email, public_contact_phone, timezone, currency, legal_name,
+		       address_line1, address_line2, address_city, address_state, address_postal_code
 		FROM org_settings WHERE org_id = $1::uuid`, orgID)
 	s := &OrgSettings{}
-	if err := row.Scan(&s.OrgID, &s.TeamCode, &s.TeamName, &s.LSCCode, &s.EmailSenderName, &s.EmailSenderAddress, &s.CreatedAt, &s.UpdatedAt, &s.UpdatedBy, &s.PublicSlug, &s.PublicSiteEnabled, &s.PublicShowCoaches, &s.PublicAbout, &s.PublicContactEmail, &s.PublicContactPhone, &s.Timezone, &s.Currency, &s.LegalName); err != nil {
+	if err := row.Scan(&s.OrgID, &s.TeamCode, &s.TeamName, &s.LSCCode, &s.EmailSenderName, &s.EmailSenderAddress, &s.CreatedAt, &s.UpdatedAt, &s.UpdatedBy, &s.PublicSlug, &s.PublicSiteEnabled, &s.PublicShowCoaches, &s.PublicAbout, &s.PublicContactEmail, &s.PublicContactPhone, &s.Timezone, &s.Currency, &s.LegalName, &s.AddressLine1, &s.AddressLine2, &s.AddressCity, &s.AddressState, &s.AddressPostalCode); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, nil
 		}
@@ -77,10 +85,11 @@ func (r *Repository) Get(ctx context.Context, orgID string) (*OrgSettings, error
 func (r *Repository) FindBySlug(ctx context.Context, slug string) (*OrgSettings, error) {
 	row := tenantdb.Pool{P: r.pool}.ForLookup(tenantdb.LookupPublicSlug, slug).QueryRow(ctx, `
 		SELECT org_id::text, team_code, team_name, lsc_code, email_sender_name, email_sender_address, created_at, updated_at, COALESCE(updated_by::text, ''),
-		       public_slug, public_site_enabled, public_show_coaches, public_about, public_contact_email, public_contact_phone, timezone, currency, legal_name
+		       public_slug, public_site_enabled, public_show_coaches, public_about, public_contact_email, public_contact_phone, timezone, currency, legal_name,
+		       address_line1, address_line2, address_city, address_state, address_postal_code
 		FROM org_settings WHERE public_slug = $1`, slug)
 	s := &OrgSettings{}
-	if err := row.Scan(&s.OrgID, &s.TeamCode, &s.TeamName, &s.LSCCode, &s.EmailSenderName, &s.EmailSenderAddress, &s.CreatedAt, &s.UpdatedAt, &s.UpdatedBy, &s.PublicSlug, &s.PublicSiteEnabled, &s.PublicShowCoaches, &s.PublicAbout, &s.PublicContactEmail, &s.PublicContactPhone, &s.Timezone, &s.Currency, &s.LegalName); err != nil {
+	if err := row.Scan(&s.OrgID, &s.TeamCode, &s.TeamName, &s.LSCCode, &s.EmailSenderName, &s.EmailSenderAddress, &s.CreatedAt, &s.UpdatedAt, &s.UpdatedBy, &s.PublicSlug, &s.PublicSiteEnabled, &s.PublicShowCoaches, &s.PublicAbout, &s.PublicContactEmail, &s.PublicContactPhone, &s.Timezone, &s.Currency, &s.LegalName, &s.AddressLine1, &s.AddressLine2, &s.AddressCity, &s.AddressState, &s.AddressPostalCode); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, nil
 		}

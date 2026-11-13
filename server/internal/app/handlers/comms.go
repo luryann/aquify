@@ -732,6 +732,10 @@ func (h *CommsHandlers) markThreadRead(w http.ResponseWriter, r *http.Request) {
 	httpx.WriteJSON(w, http.StatusOK, map[string]any{"ok": true})
 }
 
+// messageStreamHeartbeat is how often an idle SSE stream emits a comment line so
+// proxies keep the connection open. It is a variable only so tests can shorten it.
+var messageStreamHeartbeat = 25 * time.Second
+
 // streamMessages handles GET /api/v1/messages/stream — a server-sent-events feed
 // of message create/edit/reaction events for the caller's org, filtered to
 // threads the caller is authorized to see. Returns 503 if no realtime
@@ -765,7 +769,7 @@ func (h *CommsHandlers) streamMessages(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 	flusher.Flush()
 
-	heartbeat := time.NewTicker(25 * time.Second)
+	heartbeat := time.NewTicker(messageStreamHeartbeat)
 	defer heartbeat.Stop()
 
 	ch := sub.Channel()

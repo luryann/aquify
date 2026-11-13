@@ -62,6 +62,10 @@ import (
 
 var loadDotEnvFile = loadDotEnv
 
+// osExit is replaced in tests so the process-terminating paths of main and
+// runWorker can be exercised in-process; production always uses os.Exit.
+var osExit = os.Exit
+
 // loadDotEnv reads a .env-style file with the standard godotenv parser (export
 // prefixes, quoting, escapes and inline comments) and sets any unset
 // environment variables. Existing env vars (even empty ones) are never
@@ -104,11 +108,11 @@ func loadLocalEnvFiles(appEnv string) {
 func main() {
 	if len(os.Args) > 1 && os.Args[1] == "healthcheck" {
 		if len(os.Args) != 3 {
-			os.Exit(1)
+			osExit(1)
 		}
 		if err := checkHealth(os.Args[2]); err != nil {
 			slog.Error("healthcheck failed", "error", err)
-			os.Exit(1)
+			osExit(1)
 		}
 		return
 	}
@@ -119,7 +123,7 @@ func main() {
 	// database URL, and a fresh install cannot pass full validation (which checks
 	// the schema) until it has run.
 	if len(os.Args) > 1 && strings.EqualFold(strings.TrimSpace(os.Args[1]), "migrate") {
-		os.Exit(runMigrate(context.Background(), os.Args[2:], os.Getenv, os.Stdout, os.Stderr))
+		osExit(runMigrate(context.Background(), os.Args[2:], os.Getenv, os.Stdout, os.Stderr))
 	}
 
 	cfg := app.LoadConfig()
@@ -144,13 +148,13 @@ func main() {
 	telShutdown, err := telemetry.Setup(context.Background(), telCfg, logger)
 	if err != nil {
 		logger.Error("telemetry setup failed", "error", err)
-		os.Exit(1)
+		osExit(1)
 	}
 
 	exitOnError := func(msg string, err error) {
 		if err != nil {
 			logger.Error(msg, "error", err)
-			os.Exit(1)
+			osExit(1)
 		}
 	}
 	exitOnError("startup config error", app.ValidateAppEnvConfig(cfg))
@@ -180,7 +184,7 @@ func main() {
 			cfg, _, err = app.MaybeApplyDevelopmentRedisFallback(cfg, logger, err)
 			if err != nil {
 				logger.Error("worker backend init failed", "error", err)
-				os.Exit(1)
+				osExit(1)
 			}
 		}
 		if backend != nil {
@@ -271,7 +275,7 @@ func main() {
 		if flushErr := telShutdown(context.Background()); flushErr != nil {
 			logger.Warn("telemetry shutdown error", "error", flushErr)
 		}
-		os.Exit(1)
+		osExit(1)
 	}
 	<-shutdownDone
 }
@@ -281,7 +285,7 @@ func main() {
 func runWorker(cfg app.Config, logger *slog.Logger, backend *workers.RedisBackend, telShutdown func(context.Context) error) {
 	if backend == nil {
 		logger.Error("worker mode requires REDIS_URL")
-		os.Exit(1)
+		osExit(1)
 	}
 	// The worker process records job executions; it serves them on METRICS_ADDR
 	// the same way the API does so Prometheus can scrape both.
@@ -312,7 +316,7 @@ func runWorker(cfg app.Config, logger *slog.Logger, backend *workers.RedisBacken
 	app.RegisterDurableScheduledJobs(backend, cfg, app.OrgListerFor(cfg, registry))
 	if err := backend.Start(); err != nil {
 		logger.Error("worker start failed", "error", err)
-		os.Exit(1)
+		osExit(1)
 	}
 
 	sigCh := make(chan os.Signal, 1)

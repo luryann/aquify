@@ -17,8 +17,6 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/luryann/aquify/meetfiles"
-	"github.com/luryann/aquify/meetfiles/cl2"
-	"github.com/luryann/aquify/meetfiles/sdif"
 	appmiddleware "github.com/luryann/aquify/server/internal/app/middleware"
 )
 
@@ -46,6 +44,9 @@ func validateEventBounds(minAge, maxAge *int, feeCents int) error {
 	return nil
 }
 
+// maxSwimmerFeeCents bounds the per-swimmer meet surcharge ($1,000).
+const maxSwimmerFeeCents = 100000
+
 // maxSeedTimeMs bounds a declared seed time to one hour.
 const maxSeedTimeMs = 3600000
 
@@ -71,6 +72,42 @@ func parseOptionalDate(field, raw string) (time.Time, error) {
 		return time.Time{}, validationErr("%s must be a YYYY-MM-DD date", field)
 	}
 	return t, nil
+}
+
+// normalizeDeadline validates an optional deadline and returns its canonical
+// stored form. Date-only values stay YYYY-MM-DD; a browser datetime-local value
+// (no zone) is read in the club's time zone; every instant is stored as an
+// RFC 3339 UTC string, the same shape the database hands back on reload. A UTC
+// midnight instant collapses to its date, matching how a date-only deadline
+// round-trips through the TIMESTAMPTZ column.
+func normalizeDeadline(field, raw string, loc *time.Location) (string, error) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return "", nil
+	}
+	if _, err := time.Parse("2006-01-02", raw); err == nil {
+		return raw, nil
+	}
+	if loc == nil {
+		loc = time.UTC
+	}
+	for _, layout := range []string{"2006-01-02T15:04", "2006-01-02T15:04:05"} {
+		if t, err := time.ParseInLocation(layout, raw, loc); err == nil {
+			return canonicalDeadline(t), nil
+		}
+	}
+	if t, err := time.Parse(time.RFC3339Nano, raw); err == nil {
+		return canonicalDeadline(t), nil
+	}
+	return "", validationErr("%s must be a valid date or date and time", field)
+}
+
+func canonicalDeadline(t time.Time) string {
+	t = t.UTC().Truncate(time.Second)
+	if t.Hour() == 0 && t.Minute() == 0 && t.Second() == 0 {
+		return t.Format("2006-01-02")
+	}
+	return t.Format(time.RFC3339)
 }
 
 // validateOptionalClock checks an optional HH:MM (or HH:MM:SS) time of day.
@@ -119,27 +156,41 @@ var (
 
 // Meet represents a swim meet within an org.
 type Meet struct {
-	ID                   string     `json:"id"`
-	OrgID                string     `json:"org_id"`
-	Name                 string     `json:"name"`
-	MeetType             string     `json:"meet_type"`
-	Course               string     `json:"course"`
-	StartDate            string     `json:"start_date,omitempty"`
-	EndDate              string     `json:"end_date,omitempty"`
-	EntryDeadline        string     `json:"entry_deadline,omitempty"`
-	CommitmentDeadline   string     `json:"commitment_deadline,omitempty"`
-	HostOrg              string     `json:"host_org,omitempty"`
-	Location             string     `json:"location,omitempty"`
-	SelfSignupEnabled    bool       `json:"self_signup_enabled"`
-	MaxEntriesPerSwimmer int        `json:"max_entries_per_swimmer"`
-	Status               string     `json:"status"`
-	CommitmentOpenAt     *time.Time `json:"commitment_open_at,omitempty"`
-	CommitmentClosedAt   *time.Time `json:"commitment_closed_at,omitempty"`
-	EntryFinalizedAt     *time.Time `json:"entry_finalized_at,omitempty"`
-	CreatedAt            time.Time  `json:"created_at"`
-	UpdatedAt            time.Time  `json:"updated_at"`
-	CreatedBy            string     `json:"created_by"`
-	UpdatedBy            string     `json:"updated_by"`
+	ID        string `json:"id"`
+	OrgID     string `json:"org_id"`
+	Name      string `json:"name"`
+	MeetType  string `json:"meet_type"`
+	Course    string `json:"course"`
+	StartDate string `json:"start_date,omitempty"`
+	EndDate   string `json:"end_date,omitempty"`
+	// AgeUpDate is the host's age-up date (YYYY-MM-DD); empty means the start date.
+	AgeUpDate            string `json:"age_up_date,omitempty"`
+	EntryDeadline        string `json:"entry_deadline,omitempty"`
+	CommitmentDeadline   string `json:"commitment_deadline,omitempty"`
+	HostOrg              string `json:"host_org,omitempty"`
+	Location             string `json:"location,omitempty"`
+	SelfSignupEnabled    bool   `json:"self_signup_enabled"`
+	MaxEntriesPerSwimmer int    `json:"max_entries_per_swimmer"`
+	// SwimmerFeeCents is the host's per-swimmer surcharge, shown in the cost
+	// summary of the entry reports.
+	SwimmerFeeCents    int        `json:"swimmer_fee_cents"`
+	Status             string     `json:"status"`
+	CommitmentOpenAt   *time.Time `json:"commitment_open_at,omitempty"`
+	CommitmentClosedAt *time.Time `json:"commitment_closed_at,omitempty"`
+	EntryFinalizedAt   *time.Time `json:"entry_finalized_at,omitempty"`
+	CreatedAt          time.Time  `json:"created_at"`
+	UpdatedAt          time.Time  `json:"updated_at"`
+	CreatedBy          string     `json:"created_by"`
+	UpdatedBy          string     `json:"updated_by"`
+}
+
+// AgeReferenceDate is the date swimmer ages are computed on: the host's age-up
+// date when set, else the meet's start date.
+func (m Meet) AgeReferenceDate() string {
+	if d := strings.TrimSpace(m.AgeUpDate); d != "" {
+		return d
+	}
+	return m.StartDate
 }
 
 // IsPubliclyListed reports whether the meet may appear on the unauthenticated
@@ -278,6 +329,7 @@ type CreateMeetInput struct {
 	Course             string
 	StartDate          string
 	EndDate            string
+	AgeUpDate          string
 	EntryDeadline      string
 	CommitmentDeadline string
 	HostOrg            string
@@ -357,11 +409,13 @@ type ParsedEventDraft struct {
 	MinAge        *int   `json:"min_age,omitempty"`
 	MaxAge        *int   `json:"max_age,omitempty"`
 	IsRelay       bool   `json:"is_relay"`
+	EntryFeeCents int    `json:"entry_fee_cents"`
 }
 
 type ParsedSignupSettings struct {
 	SelfSignupEnabled    bool `json:"self_signup_enabled"`
 	MaxEntriesPerSwimmer int  `json:"max_entries_per_swimmer"`
+	SwimmerFeeCents      int  `json:"swimmer_fee_cents"`
 }
 
 type CreateMeetEventDraftInput struct {
@@ -380,11 +434,13 @@ type CreateMeetEventDraftInput struct {
 type CreateMeetSignupSettingsInput struct {
 	SelfSignupEnabled    bool
 	MaxEntriesPerSwimmer int
+	SwimmerFeeCents      int
 }
 
+// ParseMeetFileInput carries the uploaded meet event files: a .hyv, a .ev3,
+// both, or a .zip holding them.
 type ParseMeetFileInput struct {
-	Filename string
-	Data     []byte
+	Files []meetfiles.SourceFile
 }
 
 type ParseMeetFileResult struct {
@@ -395,6 +451,7 @@ type ParseMeetFileResult struct {
 	Location       string               `json:"location,omitempty"`
 	StartDate      string               `json:"start_date,omitempty"`
 	EndDate        string               `json:"end_date,omitempty"`
+	AgeUpDate      string               `json:"age_up_date,omitempty"`
 	Sessions       []ParsedSessionDraft `json:"sessions"`
 	Events         []ParsedEventDraft   `json:"events"`
 	SignupSettings ParsedSignupSettings `json:"signup_settings"`
@@ -442,6 +499,27 @@ type Service struct {
 	// so the meets domain can gate entries without importing members. Nil in
 	// tests that don't exercise eligibility.
 	swimmerEligibility func(orgID, swimmerID string) (SwimmerEligibilityView, bool)
+
+	// orgTimezone resolves a club's IANA time zone name so zone-less deadlines
+	// are read in club time. Nil or an unknown name means UTC.
+	orgTimezone func(orgID string) string
+}
+
+// SetOrgTimezoneLookup injects the club time zone resolver (org settings).
+func (s *Service) SetOrgTimezoneLookup(fn func(orgID string) string) {
+	s.orgTimezone = fn
+}
+
+// orgLocation resolves the club's time zone, defaulting to UTC.
+func (s *Service) orgLocation(orgID string) *time.Location {
+	if fn := s.orgTimezone; fn != nil {
+		if zone := strings.TrimSpace(fn(orgID)); zone != "" {
+			if loc, err := time.LoadLocation(zone); err == nil {
+				return loc
+			}
+		}
+	}
+	return time.UTC
 }
 
 // SwimmerEligibilityView is the minimal swimmer data needed to validate meet
@@ -577,7 +655,7 @@ func (s *Service) syncFromDB(ctx context.Context, orgID string) error {
 		done, err := dbutil.ReloadUnlocked(&s.mu, s.syncHook, func() (func(), error) {
 			ms, sessions, events, commitments, entries, swimmers, households, selections, err := s.repo.LoadAll(ctx, orgID)
 			if err != nil {
-				return nil, err
+				return nil, &persistenceError{op: "load meets", err: err}
 			}
 			return func() {
 				s.replaceOrgLocked(orgID, ms, sessions, events, commitments, entries, swimmers, households, selections)
@@ -594,7 +672,7 @@ func (s *Service) syncFromDB(ctx context.Context, orgID string) error {
 	defer s.mu.UnlockWithoutBump()
 	ms, sessions, events, commitments, entries, swimmers, households, selections, err := s.repo.LoadAll(ctx, orgID)
 	if err != nil {
-		return err
+		return &persistenceError{op: "load meets", err: err}
 	}
 	if s.syncHook != nil {
 		s.syncHook()
@@ -705,17 +783,30 @@ func (s *Service) ParseMeetFile(principal *appmiddleware.Principal, orgID string
 	if strings.TrimSpace(orgID) == "" {
 		return nil, fmt.Errorf("%w: org id is required", ErrInvalidMeetFile)
 	}
-	filename := strings.TrimSpace(input.Filename)
-	if filename == "" {
-		return nil, fmt.Errorf("%w: filename is required", ErrInvalidMeetFile)
+	var files []meetfiles.SourceFile
+	for _, f := range input.Files {
+		name := strings.TrimSpace(f.Name)
+		if name == "" {
+			return nil, fmt.Errorf("%w: filename is required", ErrInvalidMeetFile)
+		}
+		if len(f.Content) == 0 {
+			return nil, fmt.Errorf("%w: %s is empty", ErrInvalidMeetFile, name)
+		}
+		files = append(files, meetfiles.SourceFile{Name: name, Content: f.Content})
 	}
-	if len(input.Data) == 0 {
-		return nil, fmt.Errorf("%w: file is empty", ErrInvalidMeetFile)
+	if len(files) == 0 {
+		return nil, fmt.Errorf("%w: a meet events file is required", ErrInvalidMeetFile)
 	}
 
-	result, warnings, err := parseMeetDefinition(filename, input.Data)
+	result, warnings, err := meetfiles.ParseMeetEvents(files)
 	if err != nil {
-		return nil, err
+		if errors.Is(err, meetfiles.ErrNoMeetEvents) {
+			return nil, fmt.Errorf("%w: upload the host's meet events file (.hyv or .ev3, or the .zip that holds them)", ErrInvalidMeetFile)
+		}
+		return nil, fmt.Errorf("%w: %v", ErrInvalidMeetFile, err)
+	}
+	if len(result.Events) == 0 {
+		return nil, fmt.Errorf("%w: no events could be read from %s", ErrInvalidMeetFile, result.SourceFile)
 	}
 
 	startDate := ""
@@ -725,6 +816,11 @@ func (s *Service) ParseMeetFile(principal *appmiddleware.Principal, orgID string
 	endDate := ""
 	if result.MeetEndDate != nil {
 		endDate = result.MeetEndDate.UTC().Format("2006-01-02")
+	}
+
+	ageUpDate := ""
+	if result.AgeUpDate != nil {
+		ageUpDate = result.AgeUpDate.UTC().Format("2006-01-02")
 	}
 
 	return &ParseMeetFileResult{
@@ -737,81 +833,10 @@ func (s *Service) ParseMeetFile(principal *appmiddleware.Principal, orgID string
 		EndDate:        endDate,
 		Sessions:       deriveSessionDrafts(result),
 		Events:         deriveEventDrafts(result),
+		AgeUpDate:      ageUpDate,
 		SignupSettings: defaultSignupSettings(),
 		ParseWarnings:  warnings,
 	}, nil
-}
-
-func parseMeetDefinition(filename string, data []byte) (*meetfiles.ParsedMeetDefinition, []string, error) {
-	fileType := meetfiles.DetectFileType(filename, data)
-	switch fileType {
-	case meetfiles.FileTypeSD3:
-		result, err := sdif.Parse(data)
-		if err != nil {
-			return nil, nil, fmt.Errorf("%w: parse SD3: %v", ErrInvalidMeetFile, err)
-		}
-		return parsedMeetDefinitionFromResult(filename, result), parseWarnings(result.ParseErrors), nil
-	case meetfiles.FileTypeCL2:
-		result, err := cl2.Parse(data)
-		if err != nil {
-			return nil, nil, fmt.Errorf("%w: parse CL2: %v", ErrInvalidMeetFile, err)
-		}
-		return parsedMeetDefinitionFromResult(filename, result), parseWarnings(result.ParseErrors), nil
-	case meetfiles.FileTypeHY3:
-		ingest := meetfiles.ReadHY3(filename, data)
-		if ingest.SelectedPayload == nil {
-			if ingest.Error != nil {
-				return nil, nil, fmt.Errorf("%w: %s", ErrInvalidMeetFile, ingest.Error.Message)
-			}
-			return nil, nil, fmt.Errorf("%w: hy3 payload missing", ErrInvalidMeetFile)
-		}
-		result, warnings, err := parseMeetDefinition(ingest.SelectedPayload.Name, ingest.SelectedPayload.Content)
-		if err != nil {
-			return nil, nil, err
-		}
-		if ingest.Error != nil {
-			warnings = append([]string{ingest.Error.Message}, warnings...)
-		}
-		return result, warnings, nil
-	case meetfiles.FileTypeHYV:
-		result, err := meetfiles.ParseHYV(filename, data)
-		if err != nil {
-			return nil, nil, fmt.Errorf("%w: parse HYV: %v", ErrInvalidMeetFile, err)
-		}
-		return result, parseWarnings(result.ParseErrors), nil
-	case meetfiles.FileTypeEV3:
-		result, err := meetfiles.ParseEV3(filename, data)
-		if err != nil {
-			return nil, nil, fmt.Errorf("%w: parse EV3: %v", ErrInvalidMeetFile, err)
-		}
-		return result, parseWarnings(result.ParseErrors), nil
-	case meetfiles.FileTypeZIP:
-		entries, err := meetfiles.ReadMeetZip(data)
-		if err != nil {
-			return nil, nil, fmt.Errorf("%w: parse ZIP: %v", ErrInvalidMeetFile, err)
-		}
-		if len(entries) == 0 {
-			return nil, nil, fmt.Errorf("%w: zip archive does not contain a parseable ev3/hyv/sd3/cl2 payload", ErrInvalidMeetFile)
-		}
-		sort.Slice(entries, func(i, j int) bool {
-			iType := meetfiles.DetectFileType(entries[i].Name, entries[i].Content)
-			jType := meetfiles.DetectFileType(entries[j].Name, entries[j].Content)
-			if iType != jType {
-				return meetFileTypePriority(iType) < meetFileTypePriority(jType)
-			}
-			return strings.ToLower(entries[i].Name) < strings.ToLower(entries[j].Name)
-		})
-		result, warnings, err := parseMeetDefinition(entries[0].Name, entries[0].Content)
-		if err != nil {
-			return nil, nil, err
-		}
-		if len(entries) > 1 {
-			warnings = append([]string{fmt.Sprintf("zip archive contained %d parseable files; selected %s", len(entries), entries[0].Name)}, warnings...)
-		}
-		return result, warnings, nil
-	default:
-		return nil, nil, fmt.Errorf("%w: unsupported file type", ErrInvalidMeetFile)
-	}
 }
 
 func parseWarnings(errs []meetfiles.ParseError) []string {
@@ -825,72 +850,6 @@ func parseWarnings(errs []meetfiles.ParseError) []string {
 			out = append(out, parseErr.Message)
 		}
 	}
-	return out
-}
-
-func parsedMeetDefinitionFromResult(sourceFile string, result *meetfiles.ParseResult) *meetfiles.ParsedMeetDefinition {
-	if result == nil {
-		return &meetfiles.ParsedMeetDefinition{SourceFile: sourceFile}
-	}
-	return &meetfiles.ParsedMeetDefinition{
-		FileType:      result.FileType,
-		SourceFile:    sourceFile,
-		MeetName:      result.MeetName,
-		MeetStartDate: result.MeetStartDate,
-		MeetEndDate:   result.MeetEndDate,
-		Course:        result.Course,
-		Events:        deriveMeetEventsFromParseResult(result),
-		ParseErrors:   append([]meetfiles.ParseError{}, result.ParseErrors...),
-	}
-}
-
-// deriveMeetEventsFromParseResult builds a deduplicated event catalog from
-// SD3/CL2 entry records (D0 individual results, E0 relay headers). Unlike
-// HYV/EV3 files, SD3/CL2 have no dedicated event-definition record — the
-// event catalog is implicit in the (often many) per-swimmer entry rows, so
-// this collapses repeated rows for the same event down to one entry.
-func deriveMeetEventsFromParseResult(result *meetfiles.ParseResult) []meetfiles.ParsedMeetEvent {
-	if result == nil {
-		return nil
-	}
-
-	seen := make(map[string]bool)
-	var out []meetfiles.ParsedMeetEvent
-
-	addEvent := func(ev meetfiles.ParsedEvent, isRelay bool) {
-		eventNumber := strings.TrimSpace(ev.EventNumber)
-		key := eventNumber
-		if key == "" {
-			key = fmt.Sprintf("%d|%s|%s|%s|%t", ev.Distance, ev.Stroke, ev.EventGender, ev.AgeGroup, isRelay)
-		}
-		if seen[key] {
-			return
-		}
-		seen[key] = true
-
-		minAge, maxAge := sdifAgeGroupBounds(ev.AgeGroup)
-		out = append(out, meetfiles.ParsedMeetEvent{
-			EventNumber: eventNumber,
-			Distance:    ev.Distance,
-			Stroke:      ev.Stroke,
-			Gender:      strings.TrimSpace(ev.EventGender),
-			MinAge:      minAge,
-			MaxAge:      maxAge,
-			Course:      ev.Course,
-			IsRelay:     isRelay,
-		})
-	}
-
-	for _, individual := range result.IndividualResults {
-		addEvent(individual.Event, false)
-	}
-	for _, relay := range result.RelayResults {
-		addEvent(relay.Event, true)
-	}
-
-	sort.Slice(out, func(i, j int) bool {
-		return eventNumberLess(out[i].EventNumber, out[j].EventNumber)
-	})
 	return out
 }
 
@@ -929,40 +888,6 @@ func splitEventNumber(v string) (int, string, bool) {
 		return 0, v, false
 	}
 	return n, v[end:], true
-}
-
-// sdifAgeGroupBounds parses an SDIF-style 4-digit age group field (e.g.
-// "1824" -> ages 18-24, "0018" -> up to 18, "1899" -> 18 and over) into
-// min/max bounds. "OPEN" and blank mean no age restriction.
-func sdifAgeGroupBounds(ageGroup string) (*int, *int) {
-	ag := strings.TrimSpace(ageGroup)
-	if ag == "" || strings.EqualFold(ag, "OPEN") || len(ag) != 4 {
-		return nil, nil
-	}
-
-	var minAge, maxAge *int
-	if minVal, err := strconv.Atoi(ag[:2]); err == nil && minVal > 0 {
-		minAge = &minVal
-	}
-	if maxVal, err := strconv.Atoi(ag[2:]); err == nil && maxVal > 0 && maxVal < 99 {
-		maxAge = &maxVal
-	}
-	return minAge, maxAge
-}
-
-func meetFileTypePriority(fileType meetfiles.FileType) int {
-	switch fileType {
-	case meetfiles.FileTypeEV3:
-		return 1
-	case meetfiles.FileTypeHYV:
-		return 2
-	case meetfiles.FileTypeSD3:
-		return 3
-	case meetfiles.FileTypeCL2:
-		return 4
-	default:
-		return 100
-	}
 }
 
 func defaultSessionDrafts() []ParsedSessionDraft {
@@ -1051,6 +976,7 @@ func deriveEventDrafts(result *meetfiles.ParsedMeetDefinition) []ParsedEventDraf
 			MinAge:        event.MinAge,
 			MaxAge:        event.MaxAge,
 			IsRelay:       event.IsRelay,
+			EntryFeeCents: event.EntryFeeCents,
 		})
 	}
 	return out
@@ -1204,10 +1130,16 @@ func (s *Service) CreateMeet(principal *appmiddleware.Principal, orgID string, i
 	if err != nil {
 		return Meet{}, MeetAuditEvent{}, err
 	}
-	if _, err := parseOptionalDate("entry_deadline", input.EntryDeadline); err != nil {
+	if _, err := parseOptionalDate("age_up_date", input.AgeUpDate); err != nil {
 		return Meet{}, MeetAuditEvent{}, err
 	}
-	if _, err := parseOptionalDate("commitment_deadline", input.CommitmentDeadline); err != nil {
+	loc := s.orgLocation(orgID)
+	entryDeadline, err := normalizeDeadline("entry_deadline", input.EntryDeadline, loc)
+	if err != nil {
+		return Meet{}, MeetAuditEvent{}, err
+	}
+	commitmentDeadline, err := normalizeDeadline("commitment_deadline", input.CommitmentDeadline, loc)
+	if err != nil {
 		return Meet{}, MeetAuditEvent{}, err
 	}
 	if !startDate.IsZero() && !endDate.IsZero() && endDate.Before(startDate) {
@@ -1223,6 +1155,9 @@ func (s *Service) CreateMeet(principal *appmiddleware.Principal, orgID string, i
 		if signupSettings.MaxEntriesPerSwimmer <= 0 {
 			signupSettings.MaxEntriesPerSwimmer = 3
 		}
+		if signupSettings.SwimmerFeeCents < 0 || signupSettings.SwimmerFeeCents > maxSwimmerFeeCents {
+			return Meet{}, MeetAuditEvent{}, validationErr("swimmer_fee_cents must be between 0 and %d", maxSwimmerFeeCents)
+		}
 	}
 
 	s.mu.Lock()
@@ -1237,12 +1172,14 @@ func (s *Service) CreateMeet(principal *appmiddleware.Principal, orgID string, i
 		Course:               course,
 		StartDate:            strings.TrimSpace(input.StartDate),
 		EndDate:              strings.TrimSpace(input.EndDate),
-		EntryDeadline:        strings.TrimSpace(input.EntryDeadline),
-		CommitmentDeadline:   strings.TrimSpace(input.CommitmentDeadline),
+		AgeUpDate:            strings.TrimSpace(input.AgeUpDate),
+		EntryDeadline:        entryDeadline,
+		CommitmentDeadline:   commitmentDeadline,
 		HostOrg:              strings.TrimSpace(input.HostOrg),
 		Location:             strings.TrimSpace(input.Location),
 		SelfSignupEnabled:    signupSettings.SelfSignupEnabled,
 		MaxEntriesPerSwimmer: signupSettings.MaxEntriesPerSwimmer,
+		SwimmerFeeCents:      signupSettings.SwimmerFeeCents,
 		Status:               "draft",
 		CreatedAt:            now,
 		UpdatedAt:            now,
@@ -2114,7 +2051,7 @@ func (s *Service) SelectCommitmentEvent(principal *appmiddleware.Principal, orgI
 	// feedback (the authoritative gate at entry creation still applies too).
 	if s.swimmerEligibility != nil {
 		if sw, ok := s.swimmerEligibility(orgID, cmt.SwimmerID); ok {
-			if err := validateSwimmerEventEligibility(sw, ev, meet.StartDate); err != nil {
+			if err := validateSwimmerEventEligibility(sw, ev, meet.AgeReferenceDate()); err != nil {
 				return EventSelection{}, err
 			}
 		}
@@ -2486,7 +2423,7 @@ func (s *Service) ProposeEntry(principal *appmiddleware.Principal, orgID, meetID
 	eligibilityOverridden := false
 	if !input.IsRelay && s.swimmerEligibility != nil {
 		if sw, ok := s.swimmerEligibility(orgID, swimmerID); ok {
-			if err := validateSwimmerEventEligibility(sw, ev, meet.StartDate); err != nil {
+			if err := validateSwimmerEventEligibility(sw, ev, meet.AgeReferenceDate()); err != nil {
 				if !input.OverrideEligibility {
 					return Entry{}, MeetAuditEvent{}, err
 				}
@@ -2630,7 +2567,7 @@ func (s *Service) OverrideEntry(principal *appmiddleware.Principal, orgID, meetI
 	// Re-check eligibility against the new event (skip relays).
 	if !entry.IsRelay && s.swimmerEligibility != nil {
 		if sw, ok := s.swimmerEligibility(orgID, entry.SwimmerID); ok {
-			if err := validateSwimmerEventEligibility(sw, newEvent, meet.StartDate); err != nil {
+			if err := validateSwimmerEventEligibility(sw, newEvent, meet.AgeReferenceDate()); err != nil {
 				return Entry{}, MeetAuditEvent{}, err
 			}
 		}
@@ -2810,7 +2747,7 @@ func (s *Service) ApproveEntry(principal *appmiddleware.Principal, orgID, meetID
 }
 
 // MarkEntriesExported moves the given approved entries to "exported" after an
-// SD3 entry file has been generated for the host. Entries already exported are
+// entry bundle has been generated for the host. Entries already exported are
 // left as-is so a re-download does not fail; any other status is skipped.
 func (s *Service) MarkEntriesExported(principal *appmiddleware.Principal, orgID, meetID string, entryIDs []string) (int, MeetAuditEvent, error) {
 	if !appmiddleware.HasAnyRole(principal, "admin", "coach") {
@@ -2853,7 +2790,7 @@ func (s *Service) MarkEntriesExported(principal *appmiddleware.Principal, orgID,
 		ActorUserID: principal.UserID,
 		Action:      "meet.entries_exported",
 		After:       map[string]any{"exported_count": marked, "entry_count": len(entryIDs)},
-		Metadata:    map[string]any{"meet_id": meet.ID, "format": "sd3"},
+		Metadata:    map[string]any{"meet_id": meet.ID, "format": "entry_bundle"},
 	})
 	return marked, auditEvent, nil
 }

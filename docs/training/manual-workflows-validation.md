@@ -63,7 +63,7 @@ A workflow is **validated** when the named owner has completed all steps and sig
 
 ## Workflow 2: Meet Setup and Commitment Cycle
 
-**Description:** Create a meet from scratch, open commitments to parents, review and adjust entries, finalize entries, and export an SD3 file.
+**Description:** Create a meet from scratch, open commitments to parents, review and adjust entries, finalize entries, and download the entry files for the host.
 
 **Owner:** Club Admin Lead (setup) + Head Coach (commitment review)
 **Backup Validator:** Product Manager
@@ -89,8 +89,8 @@ A workflow is **validated** when the named owner has completed all steps and sig
 17. [ ] As a coach, override one event selection. Enter an audit reason.
 18. [ ] Navigate to the meet detail and click **Close Commitments**. Verify status transitions.
 19. [ ] Click **Finalize Entries**. Verify status transitions to `entry_finalized`.
-20. [ ] Click **Export Entries (SD3)**. Wait for the export to generate.
-21. [ ] Download the SD3 file and verify it is a valid SDIF file (non-empty, correct extension).
+20. [ ] Click **Download entry files**.
+21. [ ] Open the downloaded ZIP and verify it holds five files with the same name stem: `.sd3`, `.hy3`, `-EntryReport-ByEvent.pdf`, `-EntryReport-BySwimmer.pdf` and `-EntryLog.txt`.
 
 ### Pass Criteria
 
@@ -98,7 +98,7 @@ A workflow is **validated** when the named owner has completed all steps and sig
 - Parents can commit and select events from the portal without a swimmer login.
 - Coach override is logged in the audit trail with the provided reason.
 - Entry finalization locks all entries.
-- SD3 export generates and downloads successfully.
+- The entry files ZIP downloads successfully and the entry log totals match the approved entries.
 - No 500 errors during any step.
 
 ### Sign-Off
@@ -115,17 +115,17 @@ A workflow is **validated** when the named owner has completed all steps and sig
 
 ## Workflow 3: Results Import
 
-**Description:** Upload a meet result file (HY3 format), review and resolve any matching conflicts, apply the import, and verify that swimmer best times are updated.
+**Description:** Upload a meet result file (SD3 format), review and resolve any matching conflicts, apply the import, and verify that swimmer best times are updated.
 
 **Owner:** Club Admin Lead
 **Backup Validator:** Head Coach
 
 ### Steps to Validate
 
-1. [ ] Obtain a valid test HY3 file (can be a synthetic SD3 file in a ZIP renamed to `.hy3`). Ensure at least one swimmer in the file matches a aquify swimmer by name+DOB.
+1. [ ] Obtain a valid test SD3 results file (or a ZIP that contains one). Ensure at least one swimmer in the file matches a aquify swimmer by name+DOB.
 2. [ ] Log in as admin.
 3. [ ] Navigate to **Imports → Upload File**.
-4. [ ] Upload the test HY3 file.
+4. [ ] Upload the test SD3 file.
 5. [ ] Observe status transitions: `uploaded → scanning → parsing → matching`.
 6. [ ] If the import reaches `conflicts_pending`: review the Conflicts tab and resolve each conflict by matching the record to the correct swimmer.
 7. [ ] Click **Apply Import**.

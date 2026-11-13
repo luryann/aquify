@@ -1251,6 +1251,64 @@ func (s *Service) PurgeUnverifiedMFAFactors(orgID, userID, factorType string) er
 	return nil
 }
 
+// ResetMFA deletes every MFA factor (verified or not) the user has, in memory
+// and in the database, and returns how many were removed. The user enrolls a
+// fresh factor at their next sign-in. Callers revoke the user's sessions
+// separately so no already-MFA'd session outlives the reset.
+func (s *Service) ResetMFA(ctx context.Context, orgID, userID string) (int, error) {
+	userID = strings.TrimSpace(userID)
+	if userID == "" {
+		return 0, errors.New("user id is required")
+	}
+	removed := 0
+	if s.pool != nil {
+		tag, err := s.at(orgID).Exec(ctx, `DELETE FROM mfa_factors WHERE org_id = $1 AND user_id::text = $2`, orgID, userID)
+		if err != nil {
+			return 0, fmt.Errorf("reset MFA factors: %w", err)
+		}
+		removed = int(tag.RowsAffected())
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.pool == nil {
+		removed = len(s.mfaFactorsByUser[userID])
+	}
+	delete(s.mfaFactorsByUser, userID)
+	return removed, nil
+}
+
+// VerifiedMFAUsers returns the set of user IDs in orgID with at least one
+// verified MFA factor.
+func (s *Service) VerifiedMFAUsers(ctx context.Context, orgID string) (map[string]bool, error) {
+	out := map[string]bool{}
+	if s.pool != nil {
+		rows, err := s.at(orgID).Query(ctx, `SELECT DISTINCT user_id::text FROM mfa_factors WHERE org_id = $1 AND is_verified = true`, orgID)
+		if err != nil {
+			return nil, fmt.Errorf("list MFA-enrolled users: %w", err)
+		}
+		defer rows.Close()
+		for rows.Next() {
+			var id string
+			if err := rows.Scan(&id); err != nil {
+				return nil, err
+			}
+			out[id] = true
+		}
+		return out, rows.Err()
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	for userID, records := range s.mfaFactorsByUser {
+		for _, rec := range records {
+			if rec.Factor.IsVerified && rec.Factor.OrgID == orgID {
+				out[userID] = true
+				break
+			}
+		}
+	}
+	return out, nil
+}
+
 func (s *Service) EnrollMFA(userID, email, orgID, factorType, label string) (MFAFactor, error) {
 	factorType = strings.TrimSpace(strings.ToLower(factorType))
 	if !slices.Contains([]string{"totp", "backup_code"}, factorType) {

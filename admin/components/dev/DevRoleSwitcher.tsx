@@ -11,6 +11,7 @@ const STUB_ORDER = [
   'stub-coach',
   'stub-parent',
   'stub-swimmer',
+  'stub-platform',
 ] as const
 
 export function DevRoleSwitcher() {

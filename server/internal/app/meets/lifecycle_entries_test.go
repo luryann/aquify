@@ -138,12 +138,13 @@ func TestParseResultsFileFormats(t *testing.T) {
 	if _, _, err := ParseResultsFile("notes.txt", []byte("hello")); !errors.Is(err, ErrInvalidMeetFile) {
 		t.Fatalf("unsupported type: want ErrInvalidMeetFile, got %v", err)
 	}
-	cl2, err := os.ReadFile("../../../../internal/meetfiles/testdata/fixtures/sample.cl2")
-	if err != nil {
-		t.Fatalf("cl2 fixture: %v", err)
+	// There is no CL2 parser any more: an unknown extension is identified by
+	// content, so only genuine SDIF is read and anything else is refused.
+	if _, _, err := ParseResultsFile("results.cl2", data); err != nil {
+		t.Fatalf("SDIF content under another extension: %v", err)
 	}
-	if _, _, err := ParseResultsFile("results.cl2", cl2); err != nil {
-		t.Fatalf("cl2: %v", err)
+	if _, _, err := ParseResultsFile("results.cl2", []byte("CL2 SCAFFOLD")); !errors.Is(err, ErrInvalidMeetFile) {
+		t.Fatalf("non-SDIF content: want ErrInvalidMeetFile, got %v", err)
 	}
 }
 

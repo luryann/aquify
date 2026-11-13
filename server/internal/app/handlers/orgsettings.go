@@ -62,6 +62,11 @@ type updateOrgSettingsBody struct {
 	Timezone               *string `json:"timezone"`
 	Currency               *string `json:"currency"`
 	LegalName              *string `json:"legal_name"`
+	AddressLine1           *string `json:"address_line1"`
+	AddressLine2           *string `json:"address_line2"`
+	AddressCity            *string `json:"address_city"`
+	AddressState           *string `json:"address_state"`
+	AddressPostalCode      *string `json:"address_postal_code"`
 	PublicSiteEnabled      *bool   `json:"public_site_enabled"`
 	PublicShowCoaches      *bool   `json:"public_show_coaches"`
 	PublicAbout            *string `json:"public_about"`
@@ -96,6 +101,11 @@ func (h *OrgSettingsHandlers) update(w http.ResponseWriter, r *http.Request) {
 		Timezone:               body.Timezone,
 		Currency:               body.Currency,
 		LegalName:              body.LegalName,
+		AddressLine1:           body.AddressLine1,
+		AddressLine2:           body.AddressLine2,
+		AddressCity:            body.AddressCity,
+		AddressState:           body.AddressState,
+		AddressPostalCode:      body.AddressPostalCode,
 		PublicSiteEnabled:      body.PublicSiteEnabled,
 		PublicShowCoaches:      body.PublicShowCoaches,
 		PublicAbout:            body.PublicAbout,
@@ -107,7 +117,7 @@ func (h *OrgSettingsHandlers) update(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, r, http.StatusUnprocessableEntity, "invalid_slug", err.Error(), nil)
 		return
 	}
-	if errors.Is(err, orgsettings.ErrInvalidTimezone) || errors.Is(err, orgsettings.ErrInvalidCurrency) || errors.Is(err, orgsettings.ErrInvalidLegalName) {
+	if errors.Is(err, orgsettings.ErrInvalidTimezone) || errors.Is(err, orgsettings.ErrInvalidCurrency) || errors.Is(err, orgsettings.ErrInvalidLegalName) || errors.Is(err, orgsettings.ErrInvalidAddress) {
 		httpx.WriteError(w, r, http.StatusUnprocessableEntity, "invalid_profile", err.Error(), nil)
 		return
 	}

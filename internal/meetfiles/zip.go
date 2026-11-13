@@ -13,19 +13,25 @@ type ZipEntry struct {
 	Content []byte
 }
 
-// ReadZip extracts all relevant meet files from a ZIP archive.
-// Only entries with .sd3 or .cl2 extensions (case-insensitive) are returned;
-// all other files (images, PDFs, etc.) are ignored.
-func ReadZip(data []byte) ([]ZipEntry, error) {
-	entries, err := readZipEntriesWithExt(data, ".sd3", ".cl2")
+// ReadEventsZip returns the meet event files (.ev3, .hyv) inside a ZIP, the
+// way hosts usually distribute them.
+func ReadEventsZip(data []byte) ([]ZipEntry, error) {
+	entries, err := readZipEntriesWithExt(data, ".ev3", ".hyv")
 	if err != nil {
 		return nil, fmt.Errorf("meetfiles/zip: %w", err)
 	}
 	return entries, nil
 }
 
-// readZipEntriesWithExt reads, under the shared size caps, every non-directory
-// entry whose name ends in one of exts (lowercase, case-insensitive match).
+// ReadResultsZip returns the SDIF results files (.sd3) inside a ZIP.
+func ReadResultsZip(data []byte) ([]ZipEntry, error) {
+	entries, err := readZipEntriesWithExt(data, ".sd3")
+	if err != nil {
+		return nil, fmt.Errorf("meetfiles/zip: %w", err)
+	}
+	return entries, nil
+}
+
 func readZipEntriesWithExt(data []byte, exts ...string) ([]ZipEntry, error) {
 	r, err := zip.NewReader(bytes.NewReader(data), int64(len(data)))
 	if err != nil {

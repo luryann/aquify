@@ -59,7 +59,7 @@ aquify is your club's all-in-one operations platform. It replaces TeamUnify/Spor
 
 1. Navigate to **Meets** and click **New Meet**.
 2. Fill in **Basic Info**: meet name, host club, location, pool type (SCY/SCM/LCM), entry deadline.
-3. Optionally upload meet package files (PDF, heat sheet) and a meet entry file (.cl2/.sd3/.zip/.hy3). Uploading a meet entry file auto-populates the sessions in the next step.
+3. Optionally upload meet package files (PDF, heat sheet) and the meet events files the host published (`.hyv` and `.ev3`, or the `.zip` they come in). Uploading them fills in the meet details, sessions, events and entry fees; if you add both files, aquify checks that they agree and tells you if they do not.
 4. In the **Schedule** step, add sessions using the **Add Session** button. For each session, enter:
    - Day label (e.g., Day 1)
    - Session name
@@ -88,14 +88,14 @@ aquify is your club's all-in-one operations platform. It replaces TeamUnify/Spor
 1. From the meet detail, click **Close Commitments** when the commitment window ends.
 2. Review the entry list. Make any final coach adjustments.
 3. Click **Finalize Entries**. This transitions the meet to `entry_finalized` state and locks all entries.
-4. After finalization, entries can be exported as an SD3 file for submission.
+4. After finalization, download the entry files to send to the meet host.
 
-### 2.5 Exporting SD3
+### 2.5 Exporting entry files
 
-1. From the finalized meet detail, click **Export Entries (SD3)**.
-2. The system generates the SD3 file in the background. You will see a loading indicator.
-3. When the export is `ready`, a download button appears. Click to download the `.sd3` file.
-4. Submit the SD3 file to the meet host per their instructions.
+1. From the finalized meet's Entries tab, click **Download entry files**.
+2. aquify downloads one ZIP named `<TEAM>-Entries-<Meet name>-<date>-<time>.zip`. It holds the `.sd3` and `.hy3` entry files, an entry report by event, an entry report by swimmer, and an entry log.
+3. Set your club's team code, LSC and mailing address in **Settings** first; they are written into the files. Every swimmer needs a male or female competition category and a date of birth.
+4. Send the ZIP (or the files inside it) to the meet host per their instructions.
 
 ---
 
@@ -105,7 +105,7 @@ aquify is your club's all-in-one operations platform. It replaces TeamUnify/Spor
 
 1. Navigate to **Imports**.
 2. Click **Upload File**.
-3. Select your file (.cl2, .sd3, .zip, or .hy3 format).
+3. Select your file (`.sd3`, or a `.zip` that contains one).
 4. The system uploads the file and begins parsing. Status transitions: `uploaded → scanning → parsing → matching`.
 5. If there are no conflicts, the import moves to `applied` automatically.
 6. If there are conflicts (swimmer matching ambiguities), the import moves to `conflicts_pending`.
@@ -124,7 +124,7 @@ aquify is your club's all-in-one operations platform. It replaces TeamUnify/Spor
 
 1. Navigate to **Exports**.
 2. Find the export by meet name or date.
-3. Click **Download** to download the SD3 or ZIP file.
+3. Click **Download** to download the file.
 4. Exports expire after 7 days. If a download link is expired, re-generate the export from the meet detail.
 
 ---
@@ -268,5 +268,5 @@ To run a report:
 ### Common Mistakes
 
 - **Wrong org ID in API calls:** If you are using the API directly, always include `X-Org-Id` header. The most common cause of 403 errors is a mismatched org ID.
-- **Forgot to finalize entries before exporting SD3:** The export button is only available in `entry_finalized` state. If you cannot export, check the meet lifecycle state.
+- **Forgot to finalize entries before exporting:** The entry files can only be downloaded in the `entry_finalized` state. If you cannot export, check the meet lifecycle state.
 - **Commitment window closed before all parents responded:** You can reopen commitments briefly (owner/admin only) and notify affected families. Every reopen is logged in the audit trail.

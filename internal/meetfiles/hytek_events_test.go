@@ -75,7 +75,7 @@ func TestParseEV3Fixture(t *testing.T) {
 	}
 }
 
-func TestReadMeetZip_PrefersMeetSetupFormats(t *testing.T) {
+func TestReadEventsZip_ReturnsOnlyEventFiles(t *testing.T) {
 	archive := buildZIP(t, map[string][]byte{
 		"setup/sample.ev3":  readFixture(t, "sample.ev3"),
 		"setup/sample.hyv":  readFixture(t, "sample.hyv"),
@@ -83,12 +83,12 @@ func TestReadMeetZip_PrefersMeetSetupFormats(t *testing.T) {
 		"notes.txt":         []byte("ignored"),
 	})
 
-	entries, err := meetfiles.ReadMeetZip(archive)
+	entries, err := meetfiles.ReadEventsZip(archive)
 	if err != nil {
-		t.Fatalf("ReadMeetZip error: %v", err)
+		t.Fatalf("ReadEventsZip error: %v", err)
 	}
-	if len(entries) != 3 {
-		t.Fatalf("len(entries) = %d, want 3", len(entries))
+	if len(entries) != 2 {
+		t.Fatalf("len(entries) = %d, want 2", len(entries))
 	}
 }
 

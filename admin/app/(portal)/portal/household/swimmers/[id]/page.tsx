@@ -129,6 +129,7 @@ export default function SwimmerProfilePage() {
   // Editable local state (initialized from swimmer data on load)
   const [emergencyNotes, setEmergencyNotes] = useState('')
   const [preferredName, setPreferredName] = useState('')
+  const [middleInitial, setMiddleInitial] = useState('')
   const [emergencyContactName, setEmergencyContactName] = useState('')
   const [emergencyContactPhone, setEmergencyContactPhone] = useState('')
   const [emergencyContactRelationship, setEmergencyContactRelationship] = useState('')
@@ -171,6 +172,7 @@ export default function SwimmerProfilePage() {
         setSwimmer(sw)
         setEmergencyNotes(sw.notes ?? '')
         setPreferredName(sw.preferred_name ?? '')
+        setMiddleInitial(sw.middle_initial ?? '')
         setEmergencyContactName(sw.emergency_contact_name ?? '')
         setEmergencyContactPhone(sw.emergency_contact_phone ?? '')
         setEmergencyContactRelationship(sw.emergency_contact_relationship ?? '')
@@ -209,6 +211,7 @@ export default function SwimmerProfilePage() {
     try {
       const updated = await updateSwimmer(api, orgId, swimmerId, {
         preferred_name: preferredName,
+        middle_initial: middleInitial,
         notes: emergencyNotes,
         emergency_contact_name: emergencyContactName,
         emergency_contact_phone: emergencyContactPhone,
@@ -218,6 +221,7 @@ export default function SwimmerProfilePage() {
       setSwimmer(updated)
       setEmergencyNotes(updated.notes ?? '')
       setPreferredName(updated.preferred_name ?? '')
+      setMiddleInitial(updated.middle_initial ?? '')
       setEmergencyContactName(updated.emergency_contact_name ?? '')
       setEmergencyContactPhone(updated.emergency_contact_phone ?? '')
       setEmergencyContactRelationship(updated.emergency_contact_relationship ?? '')
@@ -386,6 +390,20 @@ export default function SwimmerProfilePage() {
                   ) : (
                     <div className="is-ddcee0b">
                       {preferredName || <span style={{ color: 'var(--border-strong)', fontStyle: 'italic' }}>Not set</span>}
+                    </div>
+                  )}
+                  <div className="is-8ab28f2 u-mt-12px">Middle initial</div>
+                  {editingName ? (
+                    <input aria-label="Middle initial"
+                      value={middleInitial}
+                      maxLength={1}
+                      onChange={(e) => setMiddleInitial(e.target.value.replace(/[^A-Za-z]/g, '').toUpperCase())}
+                      className="is-1855096"
+                      style={{ maxWidth: '72px' }}
+                    />
+                  ) : (
+                    <div className="is-ddcee0b">
+                      {middleInitial || <span style={{ color: 'var(--border-strong)', fontStyle: 'italic' }}>Not set</span>}
                     </div>
                   )}
                 </div>

@@ -127,7 +127,7 @@ export default function AuditLogPage() {
         event.resource_type,
         event.resource_id,
         event.actor_user_id,
-        actorNames[event.actor_user_id] ?? '',
+        event.actor_roles.includes('platform_admin') ? 'aquify support' : (actorNames[event.actor_user_id] ?? ''),
         JSON.stringify(event.metadata ?? {}),
       ].join(' ').toLowerCase().includes(query)
     })
@@ -195,7 +195,7 @@ export default function AuditLogPage() {
                     <div>
                       <div className="u-fs-fs-sm u-ff-font-body u-mb-6px" style={{ color: 'var(--text-muted)' }}>{formatDateTime(event.occurred_at)}</div>
                       <div className="u-fs-fs-sm" style={{ color: 'var(--text-subtle)' }}>
-                        {actorNames[event.actor_user_id] ?? `${event.actor_user_id.slice(0, 8)}…`}
+                        {event.actor_roles.includes('platform_admin') ? 'aquify support' : (actorNames[event.actor_user_id] ?? `${event.actor_user_id.slice(0, 8)}…`)}
                       </div>
                     </div>
                     <div style={{ minWidth: 0, overflowWrap: 'anywhere' }}>

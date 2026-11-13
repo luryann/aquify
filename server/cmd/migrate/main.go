@@ -11,10 +11,13 @@ import (
 	"github.com/luryann/aquify/server/internal/migration"
 )
 
+// exitFunc is a seam so tests can observe exit codes without terminating the test binary.
+var exitFunc = os.Exit
+
 func main() {
 	if len(os.Args) < 2 {
 		usage()
-		os.Exit(1)
+		exitFunc(1)
 	}
 
 	switch os.Args[1] {
@@ -24,7 +27,7 @@ func main() {
 		runDryRun(os.Args[2:])
 	default:
 		usage()
-		os.Exit(1)
+		exitFunc(1)
 	}
 }
 
@@ -46,18 +49,18 @@ func runDryRun(args []string) {
 
 	if *inputDir == "" {
 		fmt.Fprintln(os.Stderr, "dry-run requires -input-dir")
-		os.Exit(1)
+		exitFunc(1)
 	}
 
 	sourceCounts, err := loadSourceCounts(*sourceCountsPath)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "load source counts: %v\n", err)
-		os.Exit(1)
+		exitFunc(1)
 	}
 	sourceBillingTotal, err := parseOptionalCents(*sourceBillingTotalRaw)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "parse source billing total: %v\n", err)
-		os.Exit(1)
+		exitFunc(1)
 	}
 
 	runner := migration.NewRunner(migration.Config{
@@ -72,13 +75,13 @@ func runDryRun(args []string) {
 	switch {
 	case runErr != nil && writeErr != nil:
 		fmt.Fprintf(os.Stderr, "dry-run error: %v\n%v\n", runErr, writeErr)
-		os.Exit(1)
+		exitFunc(1)
 	case runErr != nil:
 		fmt.Fprintf(os.Stderr, "dry-run completed with errors; report written to %s\n", *reportPath)
-		os.Exit(1)
+		exitFunc(1)
 	case writeErr != nil:
 		fmt.Fprintln(os.Stderr, writeErr)
-		os.Exit(1)
+		exitFunc(1)
 	}
 
 	fmt.Printf("dry-run completed successfully; report written to %s\n", *reportPath)

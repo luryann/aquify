@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"strings"
 	"time"
@@ -13,15 +14,23 @@ import (
 	"github.com/luryann/aquify/server/internal/db"
 )
 
+// exit is os.Exit, replaceable so tests can drive main without ending the process.
+var exit = os.Exit
+
 func main() {
-	databaseURL := os.Getenv("DATABASE_URL")
+	exit(run(os.Getenv, os.Stderr))
+}
+
+// run performs the reset and returns the process exit code.
+func run(getenv func(string) string, stderr io.Writer) int {
+	databaseURL := getenv("DATABASE_URL")
 	if databaseURL == "" {
-		fmt.Fprintln(os.Stderr, "DATABASE_URL is required")
-		os.Exit(1)
+		fmt.Fprintln(stderr, "DATABASE_URL is required")
+		return 1
 	}
-	if err := validateResetTarget(databaseURL, os.Getenv("E2E_ALLOW_DB_RESET")); err != nil {
-		fmt.Fprintf(os.Stderr, "refusing to reset database: %v\n", err)
-		os.Exit(1)
+	if err := validateResetTarget(databaseURL, getenv("E2E_ALLOW_DB_RESET")); err != nil {
+		fmt.Fprintf(stderr, "refusing to reset database: %v\n", err)
+		return 1
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
@@ -29,8 +38,8 @@ func main() {
 
 	pool, err := db.Open(ctx, databaseURL)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "open db: %v\n", err)
-		os.Exit(1)
+		fmt.Fprintf(stderr, "open db: %v\n", err)
+		return 1
 	}
 	defer pool.Close()
 
@@ -40,9 +49,10 @@ CREATE SCHEMA public;
 GRANT ALL ON SCHEMA public TO postgres;
 GRANT ALL ON SCHEMA public TO public;
 `); err != nil {
-		fmt.Fprintf(os.Stderr, "reset schema: %v\n", err)
-		os.Exit(1)
+		fmt.Fprintf(stderr, "reset schema: %v\n", err)
+		return 1
 	}
+	return 0
 }
 
 func validateResetTarget(databaseURL, allowReset string) error {

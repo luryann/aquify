@@ -29,7 +29,7 @@ type unmatchedResult struct {
 }
 
 // importMeetResults handles POST /meets/{meetID}/results/import: a multipart
-// SD3/CL2/HY3/ZIP results file whose individual swims are matched to club
+// SD3 results file (or a ZIP holding one) whose individual swims are matched to club
 // swimmers (USA Swimming ID first, then name + DOB, gender as tiebreaker) and
 // recorded as official results, which recomputes best times. Re-importing the
 // same file is a no-op for swims already recorded.

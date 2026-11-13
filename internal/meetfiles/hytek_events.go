@@ -2,6 +2,7 @@ package meetfiles
 
 import (
 	"fmt"
+	"math"
 	"sort"
 	"strconv"
 	"strings"
@@ -37,6 +38,7 @@ func ParseHYV(filename string, data []byte) (*ParsedMeetDefinition, error) {
 		MeetEndDate:   endDate,
 		Course:        parseHytekCourse(cleanHytekField(header[4])),
 	}
+	result.AgeUpDate, _ = parseHytekDate(header[3])
 
 	for lineNumber, raw := range lines[1:] {
 		fields := splitHytekFields(raw)
@@ -98,6 +100,7 @@ func ParseEV3(filename string, data []byte) (*ParsedMeetDefinition, error) {
 		MeetEndDate:   endDate,
 		Course:        parseHytekCourse(cleanHytekField(header[5])),
 	}
+	result.AgeUpDate, _ = parseHytekDate(header[4])
 
 	sessionByNumber := map[int]sessionMeta{}
 
@@ -171,6 +174,10 @@ func parseHYVEvent(fields []string, course Course) (ParsedMeetEvent, bool, error
 		MaxAge:      maxAge,
 		Course:      course,
 		IsRelay:     isRelay,
+		// Column 12 is the entry fee; columns 10 and 14 carry the entry time
+		// standard in short course yards and long course metres.
+		EntryFeeCents: parseHytekFee(hytekField(fields, 11)),
+		TimeStandards: hytekTimeStandards(hytekField(fields, 9), hytekField(fields, 13)),
 	}, true, nil
 }
 
@@ -211,6 +218,10 @@ func parseEV3Event(fields []string, course Course) (ParsedMeetEvent, bool, sessi
 		MaxAge:        maxAge,
 		Course:        course,
 		IsRelay:       isRelay,
+		// Column 15 is the entry fee; columns 21 and 17 carry the entry time
+		// standard in short course yards and long course metres.
+		EntryFeeCents: parseHytekFee(fields[14]),
+		TimeStandards: hytekTimeStandards(fields[20], fields[16]),
 	}
 	meta := sessionMeta{
 		sessionNumber: sessionNumber,
@@ -459,4 +470,60 @@ func normalizeHytekClock(value string) string {
 		return ""
 	}
 	return parsed.Format("15:04")
+}
+
+func hytekField(fields []string, i int) string {
+	if i < len(fields) {
+		return fields[i]
+	}
+	return ""
+}
+
+// parseHytekFee reads a dollar amount such as "6" or "15.5" into cents.
+func parseHytekFee(value string) int {
+	value = cleanHytekField(value)
+	if value == "" {
+		return 0
+	}
+	amount, err := strconv.ParseFloat(value, 64)
+	if err != nil || amount <= 0 || amount > 100000 {
+		return 0
+	}
+	return int(math.Round(amount * 100))
+}
+
+// ParseSwimTime reads "22:22.99", "3:50.99" or "47.79" into milliseconds.
+// It returns 0 for blank or malformed values.
+func ParseSwimTime(value string) int {
+	value = cleanHytekField(value)
+	if value == "" {
+		return 0
+	}
+	minutes := 0
+	if i := strings.IndexByte(value, ':'); i >= 0 {
+		m, err := strconv.Atoi(value[:i])
+		if err != nil || m < 0 {
+			return 0
+		}
+		minutes, value = m, value[i+1:]
+	}
+	seconds, err := strconv.ParseFloat(value, 64)
+	if err != nil || seconds < 0 || (seconds >= 60 && minutes > 0) {
+		return 0
+	}
+	return minutes*60000 + int(math.Round(seconds*1000))
+}
+
+func hytekTimeStandards(scy, lcm string) map[Course]int {
+	out := map[Course]int{}
+	if ms := ParseSwimTime(scy); ms > 0 {
+		out[CourseShortCourseYards] = ms
+	}
+	if ms := ParseSwimTime(lcm); ms > 0 {
+		out[CourseLongCourseMeters] = ms
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
 }

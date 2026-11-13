@@ -162,15 +162,6 @@ func main() {
 	malformedSD3 := a0 + crlf + badRecord + crlf + truncatedD0 + crlf + z0 + crlf
 	writeFile("malformed.sd3", malformedSD3)
 
-	// Minimal CL2 scaffold fixture.
-	// CL2 format is proprietary; this fixture exercises the scaffold.
-	cl2Content := "CL2 SCAFFOLD SAMPLE FILE - proprietary format\r\n" +
-		"EVENT 001 100 FREE SCY\r\n" +
-		"HEAT  1  LANE  1  SMITH     JOHN    58.12\r\n" +
-		"HEAT  1  LANE  2  DOE       JANE    32.01\r\n" +
-		"MYSTERY vendor-specific payload\r\n"
-	writeFile("sample.cl2", cl2Content)
-
 	fmt.Println("all fixtures written")
 }
 

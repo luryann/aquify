@@ -1,5 +1,0 @@
-CL2 SCAFFOLD SAMPLE FILE - proprietary format
-EVENT 001 100 FREE SCY
-HEAT  1  LANE  1  SMITH     JOHN    58.12
-HEAT  1  LANE  2  DOE       JANE    32.01
-MYSTERY vendor-specific payload

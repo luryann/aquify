@@ -7,9 +7,10 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 
-	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -170,15 +171,14 @@ func isolatedSchemaPool(t *testing.T, stopBefore string) *pgxpool.Pool {
 	if err != nil {
 		t.Fatal(err)
 	}
-	schema := "iso_test_" + strings.ReplaceAll(uuid.NewString(), "-", "")
+	sweepStaleIsolatedSchemasOnce(t, base)
+	schema := newIsolatedSchemaName(time.Now())
 	if _, err := base.Exec(ctx, "CREATE SCHEMA "+schema); err != nil {
 		base.Close()
 		t.Fatal(err)
 	}
 	t.Cleanup(func() {
-		if _, err := base.Exec(ctx, "DROP SCHEMA "+schema+" CASCADE"); err != nil {
-			t.Errorf("drop isolated schema %s: %v", schema, err)
-		}
+		dropIsolatedSchemaOrFail(t, base, schema)
 		base.Close()
 	})
 	cfg, err := pgxpool.ParseConfig(url)
@@ -192,24 +192,58 @@ func isolatedSchemaPool(t *testing.T, stopBefore string) *pgxpool.Pool {
 	}
 	t.Cleanup(pool.Close)
 
-	_, thisFile, _, _ := runtime.Caller(0)
-	paths, err := filepath.Glob(filepath.Join(filepath.Dir(thisFile), "..", "..", "..", "db", "migrations", "*.sql"))
-	if err != nil || len(paths) == 0 {
+	migrations, err := isolatedMigrations()
+	if err != nil {
 		t.Fatalf("migrations: %v", err)
 	}
-	for _, path := range paths {
-		if stopBefore != "" && filepath.Base(path) >= stopBefore {
+	for _, m := range migrations {
+		if stopBefore != "" && m.name >= stopBefore {
 			break
 		}
-		data, err := os.ReadFile(path)
-		if err != nil {
-			t.Fatal(err)
-		}
-		sql := strings.SplitN(string(data), "-- +goose Up", 2)[1]
-		sql = strings.SplitN(sql, "-- +goose Down", 2)[0]
-		if _, err := pool.Exec(ctx, sql); err != nil {
-			t.Fatalf("migration %s: %v", path, err)
+		if _, err := pool.Exec(ctx, m.sql); err != nil {
+			t.Fatalf("migration %s: %v", m.name, err)
 		}
 	}
 	return pool
+}
+
+// isolatedMigration is the Up section of one goose migration file.
+type isolatedMigration struct{ name, sql string }
+
+var (
+	isolatedMigrationsOnce sync.Once
+	isolatedMigrationList  []isolatedMigration
+	isolatedMigrationsErr  error
+)
+
+// isolatedMigrations returns every migration's Up SQL in file-name order. The files are read
+// and split once per test process, not once per isolated schema.
+func isolatedMigrations() ([]isolatedMigration, error) {
+	isolatedMigrationsOnce.Do(func() {
+		_, thisFile, _, _ := runtime.Caller(0)
+		paths, err := filepath.Glob(filepath.Join(filepath.Dir(thisFile), "..", "..", "..", "db", "migrations", "*.sql"))
+		if err != nil {
+			isolatedMigrationsErr = err
+			return
+		}
+		if len(paths) == 0 {
+			isolatedMigrationsErr = fmt.Errorf("no migration files found")
+			return
+		}
+		for _, path := range paths {
+			data, err := os.ReadFile(path)
+			if err != nil {
+				isolatedMigrationsErr = err
+				return
+			}
+			_, afterUp, found := strings.Cut(string(data), "-- +goose Up")
+			if !found {
+				isolatedMigrationsErr = fmt.Errorf("migration %s has no goose Up section", path)
+				return
+			}
+			up, _, _ := strings.Cut(afterUp, "-- +goose Down")
+			isolatedMigrationList = append(isolatedMigrationList, isolatedMigration{name: filepath.Base(path), sql: up})
+		}
+	})
+	return isolatedMigrationList, isolatedMigrationsErr
 }

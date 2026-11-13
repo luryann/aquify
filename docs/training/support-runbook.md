@@ -30,9 +30,9 @@ Use the incident number to reference in tickets and Slack threads (e.g., "follow
 ### Common Causes
 
 - Corrupt or truncated file
-- Wrong encoding (import expects UTF-8 or ASCII for SD3/CL2)
+- Wrong encoding (import expects UTF-8 or ASCII for SD3 results and HYV/EV3 meet events files)
 - File extension does not match actual format (e.g., `.sd3` file that is actually a ZIP)
-- HY3 inner payload has conflicting SD3 and CL2 files
+- The `.hyv` and `.ev3` meet events files disagree (aquify lists each difference as a warning; ask the host for a matching pair)
 - Meet file has swimmer IDs that do not exist in aquify
 
 ### Diagnostic Steps

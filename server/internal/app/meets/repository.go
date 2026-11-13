@@ -44,16 +44,16 @@ func (r *Repository) UpsertMeet(ctx context.Context, m Meet) error {
 func upsertMeet(ctx context.Context, db execer, m Meet) error {
 	_, err := db.Exec(ctx, `
 		INSERT INTO meets (
-			id, org_id, name, meet_type, course, start_date, end_date,
+			id, org_id, name, meet_type, course, start_date, end_date, age_up_date,
 			entry_deadline, commitment_deadline, host_org, location,
-			self_signup_enabled, max_entries_per_swimmer,
+			self_signup_enabled, max_entries_per_swimmer, swimmer_fee_cents,
 			status, commitment_open_at, commitment_closed_at, entry_finalized_at,
 			created_at, updated_at, created_by, updated_by
 		)
 		VALUES (
-			$1::uuid, $2::uuid, $3, $4, $5, $6, $7,
+			$1::uuid, $2::uuid, $3, $4, $5, $6, $7, $23,
 			$8, $9, $10, $11,
-			$12, $13,
+			$12, $13, $22,
 			$14, $15, $16, $17,
 			$18, $19, $20::uuid, $21::uuid
 		)
@@ -63,12 +63,14 @@ func upsertMeet(ctx context.Context, db execer, m Meet) error {
 		  course                  = EXCLUDED.course,
 		  start_date              = EXCLUDED.start_date,
 		  end_date                = EXCLUDED.end_date,
+		  age_up_date             = EXCLUDED.age_up_date,
 		  entry_deadline          = EXCLUDED.entry_deadline,
 		  commitment_deadline     = EXCLUDED.commitment_deadline,
 		  host_org                = EXCLUDED.host_org,
 		  location                = EXCLUDED.location,
 		  self_signup_enabled     = EXCLUDED.self_signup_enabled,
 		  max_entries_per_swimmer = EXCLUDED.max_entries_per_swimmer,
+		  swimmer_fee_cents       = EXCLUDED.swimmer_fee_cents,
 		  status                  = EXCLUDED.status,
 		  commitment_open_at      = EXCLUDED.commitment_open_at,
 		  commitment_closed_at    = EXCLUDED.commitment_closed_at,
@@ -77,23 +79,45 @@ func upsertMeet(ctx context.Context, db execer, m Meet) error {
 		  updated_by              = EXCLUDED.updated_by`,
 		m.ID, m.OrgID, m.Name, m.MeetType, m.Course,
 		dbutil.NullableString(m.StartDate), dbutil.NullableString(m.EndDate),
-		dbutil.NullableString(m.EntryDeadline), dbutil.NullableString(m.CommitmentDeadline),
+		deadlineParam(m.EntryDeadline), deadlineParam(m.CommitmentDeadline),
 		strings.TrimSpace(m.HostOrg), strings.TrimSpace(m.Location),
 		m.SelfSignupEnabled, m.MaxEntriesPerSwimmer,
 		m.Status, m.CommitmentOpenAt, m.CommitmentClosedAt, m.EntryFinalizedAt,
 		m.CreatedAt, m.UpdatedAt,
 		dbutil.NullableString(m.CreatedBy), dbutil.NullableString(m.UpdatedBy),
+		m.SwimmerFeeCents, dbutil.NullableString(m.AgeUpDate),
 	)
 	return err
+}
+
+// deadlineParam binds a stored deadline to its TIMESTAMPTZ column. A bare date
+// is pinned to UTC midnight explicitly: left alone, Postgres would read it in
+// the session time zone and the value would shift on reload.
+func deadlineParam(v string) any {
+	v = strings.TrimSpace(v)
+	switch {
+	case v == "":
+		return nil
+	case len(v) == len("2006-01-02"):
+		return v + "T00:00:00Z"
+	default:
+		return v
+	}
+}
+
+// deadlineText renders a TIMESTAMPTZ deadline column as the canonical stored
+// string (see canonicalDeadline): RFC 3339 UTC, or a bare date at UTC midnight.
+func deadlineText(col string) string {
+	return `COALESCE(CASE WHEN ` + col + ` IS NULL THEN '' WHEN (` + col + ` AT TIME ZONE 'UTC')::time = '00:00:00' THEN to_char(` + col + ` AT TIME ZONE 'UTC', 'YYYY-MM-DD') ELSE to_char(` + col + ` AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') END, '')`
 }
 
 func (r *Repository) LoadMeets(ctx context.Context, orgID string) ([]Meet, error) {
 	rows, err := r.at(orgID).Query(ctx, `
 		SELECT id::text, org_id::text, name, meet_type, course,
-		       COALESCE(start_date::text, ''), COALESCE(end_date::text, ''),
-		       COALESCE(entry_deadline::text, ''), COALESCE(commitment_deadline::text, ''),
+		       COALESCE(start_date::text, ''), COALESCE(end_date::text, ''), COALESCE(age_up_date::text, ''),
+		       `+deadlineText("entry_deadline")+`, `+deadlineText("commitment_deadline")+`,
 		       COALESCE(host_org, ''), COALESCE(location, ''),
-		       self_signup_enabled, COALESCE(max_entries_per_swimmer, 0),
+		       self_signup_enabled, COALESCE(max_entries_per_swimmer, 0), swimmer_fee_cents,
 		       status, commitment_open_at, commitment_closed_at, entry_finalized_at,
 		       created_at, updated_at,
 		       COALESCE(created_by::text, ''), COALESCE(updated_by::text, '')
@@ -106,10 +130,10 @@ func (r *Repository) LoadMeets(ctx context.Context, orgID string) ([]Meet, error
 		var m Meet
 		err := rows.Scan(
 			&m.ID, &m.OrgID, &m.Name, &m.MeetType, &m.Course,
-			&m.StartDate, &m.EndDate,
+			&m.StartDate, &m.EndDate, &m.AgeUpDate,
 			&m.EntryDeadline, &m.CommitmentDeadline,
 			&m.HostOrg, &m.Location,
-			&m.SelfSignupEnabled, &m.MaxEntriesPerSwimmer,
+			&m.SelfSignupEnabled, &m.MaxEntriesPerSwimmer, &m.SwimmerFeeCents,
 			&m.Status, &m.CommitmentOpenAt, &m.CommitmentClosedAt, &m.EntryFinalizedAt,
 			&m.CreatedAt, &m.UpdatedAt,
 			&m.CreatedBy, &m.UpdatedBy,

@@ -9,7 +9,8 @@ import (
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
-	"strings"
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/luryann/aquify/server/internal/app/meets"
@@ -359,52 +360,21 @@ func TestMeetParseEntryFileDerivesSessionsFromBackendParser(t *testing.T) {
 	router := NewRouter(Config{}, slog.New(slog.NewTextHandler(io.Discard, nil)))
 	adminToken := issueSessionToken(t, router, "org-parse", []string{"admin"}, false)
 
-	pad := func(s string, n int) string {
-		if len(s) >= n {
-			return s[:n]
-		}
-		return s + strings.Repeat(" ", n-len(s))
-	}
-	sdifLine := func(parts ...any) string {
-		var sb strings.Builder
-		for i := 0; i+1 < len(parts); i += 2 {
-			sb.WriteString(pad(parts[i].(string), parts[i+1].(int)))
-		}
-		line := sb.String()
-		if len(line) < 160 {
-			line += strings.Repeat(" ", 160-len(line))
-		}
-		return line[:160]
-	}
-	validSD3 := []byte(
-		sdifLine(
-			"A0", 2, "1", 1, "", 8,
-			"02", 2, "", 30,
-			"TestSoftware", 20, "v1.0", 10,
-			"Test Contact", 20, "000-000-0000", 12,
-			"03152026", 8, "", 42, "AZ", 2, "", 3,
-		) + "\r\n" +
-			sdifLine(
-				"B1", 2, "1", 1, "", 8,
-				"Spring Invitational", 30,
-				"100 Pool Lane", 22, "", 22,
-				"Springfield", 20, "AZ", 2, "85001", 10,
-				"USA", 3, "1", 1,
-				"03152026", 8, "03162026", 8,
-				"0000", 4, "", 8,
-				"2", 1, "", 10,
-			) + "\r\n" +
-			sdifLine("Z0", 2, "1", 1, "", 157) + "\r\n",
-	)
-
+	// The host's two event files, uploaded together as repeated "file" parts.
 	var body bytes.Buffer
 	writer := multipart.NewWriter(&body)
-	fileWriter, err := writer.CreateFormFile("file", "meet.sd3")
-	if err != nil {
-		t.Fatalf("create multipart file: %v", err)
-	}
-	if _, err := fileWriter.Write(validSD3); err != nil {
-		t.Fatalf("write multipart file: %v", err)
+	for _, name := range []string{"bca-fall-festival.hyv", "bca-fall-festival.ev3"} {
+		content, err := os.ReadFile(filepath.Join("..", "..", "..", "internal", "meetfiles", "testdata", "fixtures", name))
+		if err != nil {
+			t.Fatalf("read fixture: %v", err)
+		}
+		fileWriter, err := writer.CreateFormFile("file", name)
+		if err != nil {
+			t.Fatalf("create multipart file: %v", err)
+		}
+		if _, err := fileWriter.Write(content); err != nil {
+			t.Fatalf("write multipart file: %v", err)
+		}
 	}
 	if err := writer.Close(); err != nil {
 		t.Fatalf("close multipart writer: %v", err)
@@ -432,27 +402,43 @@ func TestMeetParseEntryFileDerivesSessionsFromBackendParser(t *testing.T) {
 				Section       string `json:"section"`
 				Name          string `json:"name"`
 				SessionDate   string `json:"session_date"`
+				StartTime     string `json:"start_time"`
 			} `json:"sessions"`
+			Events []struct {
+				EventNumber   string `json:"event_number"`
+				EntryFeeCents int    `json:"entry_fee_cents"`
+			} `json:"events"`
+			ParseWarnings []string `json:"parse_warnings"`
 		} `json:"parsed"`
 	}
 	if err := json.Unmarshal(rr.Body.Bytes(), &payload); err != nil {
 		t.Fatalf("decode parse response: %v", err)
 	}
 
-	if payload.Parsed.MeetName != "Spring Invitational" {
-		t.Fatalf("meet_name = %q, want Spring Invitational", payload.Parsed.MeetName)
+	if payload.Parsed.MeetName != "2026 BCA Fall Festival" {
+		t.Fatalf("meet_name = %q", payload.Parsed.MeetName)
 	}
-	if payload.Parsed.StartDate != "2026-03-15" || payload.Parsed.EndDate != "2026-03-16" {
+	if payload.Parsed.StartDate != "2026-11-14" || payload.Parsed.EndDate != "2026-11-15" {
 		t.Fatalf("unexpected parsed dates: start=%q end=%q", payload.Parsed.StartDate, payload.Parsed.EndDate)
 	}
 	if payload.Parsed.Course != "SCY" {
 		t.Fatalf("course = %q, want SCY", payload.Parsed.Course)
 	}
-	if len(payload.Parsed.Sessions) != 2 {
-		t.Fatalf("expected 2 derived sessions, got %d", len(payload.Parsed.Sessions))
+	// The two formats describe the same meet, so nothing is flagged.
+	if len(payload.Parsed.ParseWarnings) != 0 {
+		t.Fatalf("unexpected warnings: %v", payload.Parsed.ParseWarnings)
 	}
-	if payload.Parsed.Sessions[0].SessionDate != "2026-03-15" || payload.Parsed.Sessions[1].SessionDate != "2026-03-16" {
-		t.Fatalf("unexpected session dates: %+v", payload.Parsed.Sessions)
+	if len(payload.Parsed.Sessions) != 6 {
+		t.Fatalf("expected 6 sessions, got %d", len(payload.Parsed.Sessions))
+	}
+	if s := payload.Parsed.Sessions[5]; s.SessionDate != "2026-11-15" || s.StartTime != "14:30" {
+		t.Fatalf("unexpected last session: %+v", s)
+	}
+	if n := len(payload.Parsed.Events); n != 79 {
+		t.Fatalf("expected 79 events, got %d", n)
+	}
+	if ev := payload.Parsed.Events[0]; ev.EventNumber != "1" || ev.EntryFeeCents != 600 {
+		t.Fatalf("unexpected first event: %+v", ev)
 	}
 }
 

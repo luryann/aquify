@@ -98,7 +98,19 @@ function ThemeToggle() {
   )
 }
 
+/** "⌘ K" on Apple devices, "Ctrl K" elsewhere. Resolved after mount so SSR and hydration match. */
+function useShortcutLabel() {
+  const [label, setLabel] = useState('Ctrl K')
+  useEffect(() => {
+    const nav = navigator as Navigator & { userAgentData?: { platform?: string } }
+    const platform = nav.userAgentData?.platform || navigator.platform || ''
+    if (/mac|iphone|ipad|ipod/i.test(platform)) setLabel('⌘ K')
+  }, [])
+  return label
+}
+
 export function Topbar({ actions, onOpenMobileNav }: TopbarProps) {
+  const shortcutLabel = useShortcutLabel()
   const crumbs = useBreadcrumb()
 
   return (
@@ -171,7 +183,7 @@ export function Topbar({ actions, onOpenMobileNav }: TopbarProps) {
         >
           <Icon name="search" size={14} />
           <span className="mobile-hide">Search</span>
-          <span className="kbd-hint topbar-kbd" aria-hidden>Ctrl K</span>
+          <span className="kbd-hint topbar-kbd" aria-hidden>{shortcutLabel}</span>
         </button>
 
         <ThemeToggle />

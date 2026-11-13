@@ -573,6 +573,13 @@ func NewRouterWithServices(cfg Config, logger *slog.Logger, deps RouterDeps) htt
 		exportsService = exports.NewServiceWithPool(dbPool, objectStore)
 	}
 	orgSettingsService := orgsettings.NewServiceWithPool(dbPool)
+	// Zone-less meet deadlines (browser datetime-local) are read in club time.
+	meetsService.SetOrgTimezoneLookup(func(orgID string) string {
+		if st, err := orgSettingsService.Get(orgID); err == nil && st != nil {
+			return st.Timezone
+		}
+		return ""
+	})
 	orgSettingsService.SetSlugReserved(func(slug, orgID string) bool {
 		o, err := orgRegistry.BySlug(context.Background(), slug)
 		return err == nil && o.ID != orgID
@@ -587,6 +594,7 @@ func NewRouterWithServices(cfg Config, logger *slog.Logger, deps RouterDeps) htt
 	// Wire meets service into performance service so that best-time recomputes
 	// automatically back-fill seed times on future draft/submitted entries.
 	performanceService.SetEntrySeedTimeUpdater(meetsService)
+	exportsHandlers.WithBestTimeSources(performanceService)
 	// Wire members service as the household checker so that per-swimmer
 	// performance reads enforce parent household scoping at the service layer.
 	performanceService.SetHouseholdChecker(membershipService)
@@ -759,6 +767,8 @@ func NewRouterWithServices(cfg Config, logger *slog.Logger, deps RouterDeps) htt
 	platformHandlers := handlers.NewPlatformHandlers(orgRegistry, &provisioning.Provisioner{
 		Orgs: orgRegistry, Keycloak: kcClient, Settings: orgSettingsService, Logger: logger,
 	}, auditService, platformOrgID)
+	platformHandlers.SetSupport(kcClient, authService)
+	platformHandlers.SetPayments(paymentAccounts)
 	if dbPool != nil {
 		platformHandlers.SetOffboarding(&offboarding.Service{
 			Pool: dbPool, Orgs: orgRegistry, Store: objectStore, Keycloak: kcClient, Logger: logger,

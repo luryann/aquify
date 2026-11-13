@@ -364,6 +364,91 @@ func (s *Service) SetStatus(ctx context.Context, id, to string) (*Org, error) {
 	return s.Get(ctx, cur.ID)
 }
 
+// ErrInvalidField reports an Update value that failed validation.
+var ErrInvalidField = errors.New("invalid field")
+
+// UpdateInput holds the registry fields an operator may edit. The slug is
+// deliberately absent: public URLs, invites and feed links depend on it.
+type UpdateInput struct {
+	Name *string
+	Plan *string
+}
+
+// Update edits an org's display name and plan. Deleted orgs are immutable.
+func (s *Service) Update(ctx context.Context, id string, in UpdateInput) (*Org, error) {
+	cur, err := s.Get(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	if cur.Status == StatusDeleted || cur.Status == StatusPurging {
+		return nil, fmt.Errorf("%w: org is %s", ErrInvalidStatus, cur.Status)
+	}
+	name, plan := cur.Name, cur.Plan
+	if in.Name != nil {
+		name = strings.TrimSpace(*in.Name)
+		if name == "" || len([]rune(name)) > 120 {
+			return nil, fmt.Errorf("%w: name must be 1-120 characters", ErrInvalidField)
+		}
+	}
+	if in.Plan != nil {
+		plan = strings.TrimSpace(*in.Plan)
+		if len([]rune(plan)) > 40 {
+			return nil, fmt.Errorf("%w: plan must be at most 40 characters", ErrInvalidField)
+		}
+	}
+	if s.pool == nil {
+		s.mu.Lock()
+		o := s.mem[cur.ID]
+		o.Name, o.Plan, o.UpdatedAt = name, plan, s.now().UTC()
+		s.mu.Unlock()
+		s.invalidate(cur.ID)
+		return s.Get(ctx, cur.ID)
+	}
+	if _, err := s.pool.Exec(ctx, `UPDATE orgs SET name = $2, plan = $3, updated_at = now() WHERE id = $1::uuid`, cur.ID, name, plan); err != nil {
+		return nil, fmt.Errorf("update org: %w", err)
+	}
+	s.invalidate(cur.ID)
+	return s.Get(ctx, cur.ID)
+}
+
+// Domain is a custom domain claimed by an org.
+type Domain struct {
+	Domain   string `json:"domain"`
+	Verified bool   `json:"verified"`
+}
+
+// Domains lists an org's custom domains, oldest first in a stable order.
+func (s *Service) Domains(ctx context.Context, orgID string) ([]Domain, error) {
+	if _, err := s.Get(ctx, orgID); err != nil {
+		return nil, err
+	}
+	out := []Domain{}
+	if s.pool == nil {
+		s.mu.Lock()
+		for name, d := range s.domains {
+			if d.orgID == orgID {
+				out = append(out, Domain{Domain: name, Verified: d.verified})
+			}
+		}
+		s.mu.Unlock()
+		sort.Slice(out, func(i, j int) bool { return out[i].Domain < out[j].Domain })
+		return out, nil
+	}
+	rows, err := s.at(orgID).Query(ctx, `SELECT domain, verified_at IS NOT NULL FROM org_domains WHERE org_id = $1::uuid ORDER BY created_at, domain`, orgID)
+	if err != nil {
+		return nil, fmt.Errorf("list org domains: %w", err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var d Domain
+		if err := rows.Scan(&d.Domain, &d.Verified); err != nil {
+			return nil, err
+		}
+		out = append(out, d)
+	}
+	return out, rows.Err()
+}
+
 // Tombstone atomically releases the slug and marks a purging org deleted, so a
 // failure can never leave an org with its slug cleared but its status unchanged.
 func (s *Service) Tombstone(ctx context.Context, id string) error {

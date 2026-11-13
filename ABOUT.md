@@ -4,7 +4,7 @@ At a high level, it combines:
 
 - Member and household management (parents, swimmers, coaches, groups, registrations)
 - Meet operations (meet setup, commitments, entry approvals)
-- Meet-file interoperability (`.cl2`, `.sd3`, `.zip` import; Standard/Extended SD3 export; SDIF workflows)
+- Meet-file interoperability (`.hyv`/`.ev3` meet event import; `.sd3` + `.hy3` entry bundle export with entry reports and log; `.sd3` results import)
 - Performance tracking (results, best times, time standards, progression)
 - Billing and payments (invoices, payments, refunds, ledger, Stripe integration)
 - Communications (announcements and email campaigns)

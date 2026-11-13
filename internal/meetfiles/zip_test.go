@@ -30,20 +30,20 @@ func buildZIP(t *testing.T, files map[string][]byte) []byte {
 	return buf.Bytes()
 }
 
-func TestReadZip_ExtractsSD3AndCL2(t *testing.T) {
+func TestReadResultsZip_ExtractsSD3(t *testing.T) {
 	sd3Content := []byte("A0 sample sd3 content")
-	cl2Content := []byte("CL2 sample cl2 content")
+	upperContent := []byte("A0 upper-case extension")
 	pdfContent := []byte("%PDF-1.4 ignored")
 
 	archive := buildZIP(t, map[string][]byte{
 		"results.sd3": sd3Content,
-		"entries.CL2": cl2Content, // uppercase extension
+		"entries.SD3": upperContent, // uppercase extension
 		"readme.pdf":  pdfContent,
 	})
 
-	entries, err := meetfiles.ReadZip(archive)
+	entries, err := meetfiles.ReadResultsZip(archive)
 	if err != nil {
-		t.Fatalf("ReadZip error: %v", err)
+		t.Fatalf("ReadResultsZip error: %v", err)
 	}
 
 	if len(entries) != 2 {
@@ -58,21 +58,21 @@ func TestReadZip_ExtractsSD3AndCL2(t *testing.T) {
 	if !names["results.sd3"] {
 		t.Error("expected results.sd3 in entries")
 	}
-	if !names["entries.CL2"] {
-		t.Error("expected entries.CL2 in entries")
+	if !names["entries.SD3"] {
+		t.Error("expected entries.SD3 in entries")
 	}
 	if names["readme.pdf"] {
 		t.Error("readme.pdf should have been filtered out")
 	}
 }
 
-func TestReadZip_ContentPreserved(t *testing.T) {
+func TestReadResultsZip_ContentPreserved(t *testing.T) {
 	want := []byte("A0 this is the content 12345")
 	archive := buildZIP(t, map[string][]byte{"file.sd3": want})
 
-	entries, err := meetfiles.ReadZip(archive)
+	entries, err := meetfiles.ReadResultsZip(archive)
 	if err != nil {
-		t.Fatalf("ReadZip error: %v", err)
+		t.Fatalf("ReadResultsZip error: %v", err)
 	}
 	if len(entries) != 1 {
 		t.Fatalf("expected 1 entry, got %d", len(entries))
@@ -82,45 +82,45 @@ func TestReadZip_ContentPreserved(t *testing.T) {
 	}
 }
 
-func TestReadZip_EmptyArchive(t *testing.T) {
+func TestReadResultsZip_EmptyArchive(t *testing.T) {
 	archive := buildZIP(t, map[string][]byte{})
-	entries, err := meetfiles.ReadZip(archive)
+	entries, err := meetfiles.ReadResultsZip(archive)
 	if err != nil {
-		t.Fatalf("ReadZip error on empty archive: %v", err)
+		t.Fatalf("ReadResultsZip error on empty archive: %v", err)
 	}
 	if len(entries) != 0 {
 		t.Errorf("expected 0 entries from empty archive, got %d", len(entries))
 	}
 }
 
-func TestReadZip_NoRelevantFiles(t *testing.T) {
+func TestReadResultsZip_NoRelevantFiles(t *testing.T) {
 	archive := buildZIP(t, map[string][]byte{
 		"readme.txt": []byte("text"),
 		"image.png":  []byte("binary"),
 	})
-	entries, err := meetfiles.ReadZip(archive)
+	entries, err := meetfiles.ReadResultsZip(archive)
 	if err != nil {
-		t.Fatalf("ReadZip error: %v", err)
+		t.Fatalf("ReadResultsZip error: %v", err)
 	}
 	if len(entries) != 0 {
-		t.Errorf("expected 0 entries (no sd3/cl2), got %d", len(entries))
+		t.Errorf("expected 0 entries (no sd3), got %d", len(entries))
 	}
 }
 
-func TestReadZip_InvalidData(t *testing.T) {
-	_, err := meetfiles.ReadZip([]byte("not a zip file"))
+func TestReadResultsZip_InvalidData(t *testing.T) {
+	_, err := meetfiles.ReadResultsZip([]byte("not a zip file"))
 	if err == nil {
 		t.Error("expected error for invalid ZIP data")
 	}
 }
 
-func TestReadZip_RejectsOversizedEntry(t *testing.T) {
+func TestReadResultsZip_RejectsOversizedEntry(t *testing.T) {
 	big := bytes.Repeat([]byte("A"), 101<<20) // compresses to a few KB, expands past the cap
 	data := buildZIP(t, map[string][]byte{"huge.sd3": big})
 	if len(data) > 1<<20 {
 		t.Fatalf("test archive unexpectedly large: %d bytes", len(data))
 	}
-	if _, err := meetfiles.ReadZip(data); err == nil {
+	if _, err := meetfiles.ReadResultsZip(data); err == nil {
 		t.Fatal("expected an error for an entry larger than the size limit")
 	}
 }
@@ -128,17 +128,17 @@ func TestReadZip_RejectsOversizedEntry(t *testing.T) {
 // The 250 MiB archive cap must hold while reading, not after: the third 90 MiB
 // entry only gets the 70 MiB that is left of the budget, so it fails without
 // being read in full.
-func TestReadZip_EnforcesCumulativeCapWhileReading(t *testing.T) {
+func TestReadResultsZip_EnforcesCumulativeCapWhileReading(t *testing.T) {
 	chunk := bytes.Repeat([]byte("A"), 90<<20)
 	data := buildZIP(t, map[string][]byte{"a.sd3": chunk, "b.sd3": chunk, "c.sd3": chunk})
-	if _, err := meetfiles.ReadZip(data); err == nil || !strings.Contains(err.Error(), "cumulative") {
+	if _, err := meetfiles.ReadResultsZip(data); err == nil || !strings.Contains(err.Error(), "cumulative") {
 		t.Fatalf("expected a cumulative-cap error, got %v", err)
 	}
 }
 
-func TestReadZip_NormalizesAndRejectsUnsafeNames(t *testing.T) {
+func TestReadResultsZip_NormalizesAndRejectsUnsafeNames(t *testing.T) {
 	ok := buildZIP(t, map[string][]byte{`sub\dir/./a.sd3`: []byte("x")})
-	entries, err := meetfiles.ReadZip(ok)
+	entries, err := meetfiles.ReadResultsZip(ok)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -146,20 +146,8 @@ func TestReadZip_NormalizesAndRejectsUnsafeNames(t *testing.T) {
 		t.Fatalf("names = %+v", entries)
 	}
 	for _, bad := range []string{"../evil.sd3", "/abs/evil.sd3", `..\evil.sd3`, "C:/evil.sd3"} {
-		if _, err := meetfiles.ReadZip(buildZIP(t, map[string][]byte{bad: []byte("x")})); err == nil {
-			t.Errorf("ReadZip accepted unsafe name %q", bad)
-		}
-	}
-}
-
-func TestReadHY3_UnsafeNamesNeverBecomePayloads(t *testing.T) {
-	res := meetfiles.ReadHY3("a.hy3", buildZIP(t, map[string][]byte{"../evil.sd3": []byte("x"), "ok.sd3": []byte("y")}))
-	if res.SelectedPayload == nil || res.SelectedPayload.Name != "ok.sd3" {
-		t.Fatalf("selected = %+v err=%+v", res.SelectedPayload, res.Error)
-	}
-	for _, p := range res.AllPayloads {
-		if strings.Contains(p.Name, "..") {
-			t.Fatalf("unsafe payload surfaced: %q", p.Name)
+		if _, err := meetfiles.ReadResultsZip(buildZIP(t, map[string][]byte{bad: []byte("x")})); err == nil {
+			t.Errorf("ReadResultsZip accepted unsafe name %q", bad)
 		}
 	}
 }

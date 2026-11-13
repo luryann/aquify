@@ -51,6 +51,10 @@ const REPORT_TYPE_OPTIONS: { value: ReportType; label: string; hint: string }[] 
   { value: 'eligibility_report', label: 'Eligibility report', hint: 'Per event, each swimmer’s sex/age eligibility status.' },
 ]
 
+type ReportChoice = ReportType | 'all'
+
+const ALL_REPORTS_OPTION = { value: 'all' as const, label: 'All reports', hint: 'Entry, event and eligibility reports together.' }
+
 const GROUPING_OPTIONS: { value: EntryReportGrouping; label: string }[] = [
   { value: 'session', label: 'By session' },
   { value: 'group', label: 'By training group' },
@@ -113,7 +117,7 @@ export function ReportsPanel({ meetId }: { meetId: string }) {
   const [showNew, setShowNew] = useState(false)
   const [generating, setGenerating] = useState(false)
   const [genError, setGenError] = useState<string | null>(null)
-  const [genForm, setGenForm] = useState<{ report_type: ReportType; grouping: EntryReportGrouping }>({
+  const [genForm, setGenForm] = useState<{ report_type: ReportChoice; grouping: EntryReportGrouping }>({
     report_type: 'entry_report',
     grouping: 'session',
   })
@@ -160,10 +164,19 @@ export function ReportsPanel({ meetId }: { meetId: string }) {
     setGenerating(true)
     setGenError(null)
     try {
-      await generateReport(api, session.user.orgId, meetId, {
-        report_type: genForm.report_type,
-        ...(genForm.report_type === 'entry_report' ? { grouping: genForm.grouping } : {}),
-      })
+      const orgId = session.user.orgId
+      const types = genForm.report_type === 'all' ? REPORT_TYPE_OPTIONS.map((r) => r.value) : [genForm.report_type]
+      const results = await Promise.allSettled(types.map((type) => generateReport(api, orgId, meetId, {
+        report_type: type,
+        ...(type === 'entry_report' ? { grouping: genForm.grouping } : {}),
+      })))
+      const failed = results.flatMap((r, i) => (r.status === 'rejected' ? [reportLabel(types[i])] : []))
+      if (failed.length === types.length) throw (results[0] as PromiseRejectedResult).reason
+      if (failed.length > 0) {
+        await loadReports()
+        setGenError(`Couldn’t generate: ${failed.join(', ')}. The others are in the list.`)
+        return
+      }
       setShowNew(false)
       setGenForm({ report_type: 'entry_report', grouping: 'session' })
       await loadReports()
@@ -174,7 +187,7 @@ export function ReportsPanel({ meetId }: { meetId: string }) {
     }
   }
 
-  const activeReport = REPORT_TYPE_OPTIONS.find((r) => r.value === genForm.report_type)
+  const activeReport = [...REPORT_TYPE_OPTIONS, ALL_REPORTS_OPTION].find((r) => r.value === genForm.report_type)
 
   return (
     <div>
@@ -197,12 +210,12 @@ export function ReportsPanel({ meetId }: { meetId: string }) {
             <form onSubmit={handleGenerate} className="u-gap-16px" style={{ display: 'flex', flexDirection: 'column' }}>
               <div>
                 <label className="form-label form-label-required">Report type</label>
-                <select style={INPUT_STYLE} value={genForm.report_type} onChange={(e) => setGenForm((f) => ({ ...f, report_type: e.target.value as ReportType }))}>
-                  {REPORT_TYPE_OPTIONS.map((r) => <option key={r.value} value={r.value}>{r.label}</option>)}
+                <select style={INPUT_STYLE} value={genForm.report_type} onChange={(e) => setGenForm((f) => ({ ...f, report_type: e.target.value as ReportChoice }))}>
+                  {[...REPORT_TYPE_OPTIONS, ALL_REPORTS_OPTION].map((r) => <option key={r.value} value={r.value}>{r.label}</option>)}
                 </select>
                 {activeReport && <p className="u-fs-fs-xs" style={{ color: 'var(--text-muted)', margin: '6px 2px 0' }}>{activeReport.hint}</p>}
               </div>
-              {genForm.report_type === 'entry_report' && (
+              {(genForm.report_type === 'entry_report' || genForm.report_type === 'all') && (
                 <div>
                   <label className="form-label">Group entries by</label>
                   <div className="u-gap-6px" style={{ display: 'flex' }}>

@@ -68,6 +68,18 @@ export function formatDateTime(value?: string | null): string {
   return new Date(value).toLocaleString('en-US', DATE_TIME_OPTS)
 }
 
+/**
+ * Format a deadline: a bare `YYYY-MM-DD` shows the date alone, a full timestamp
+ * (RFC 3339, what the API stores for deadlines with a time) shows date and time
+ * in the viewer's zone.
+ */
+export function formatDeadline(value?: string | null): string {
+  if (!value) return '—'
+  if (DATE_ONLY.test(value.trim())) return formatDateOnly(value)
+  const parsed = new Date(value)
+  return Number.isNaN(parsed.getTime()) ? value : formatDateTime(value)
+}
+
 /** "Jul 4" style label for a date-only or ISO string. */
 export function formatShortDate(value: string): string {
   return parseBackendDate(value).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })

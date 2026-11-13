@@ -1,5 +1,6 @@
 'use client'
 
+import Link from 'next/link'
 import { useState } from 'react'
 import type { ApiClient } from '@/lib/api'
 import { uiErrorMessage } from '@/lib/frontend-telemetry'
@@ -57,7 +58,7 @@ export function ClubRow({ org, isPlatform, api, platformOrgId, onChanged, onNoti
 
   return (
     <tr>
-      <td>{org.name}{isPlatform ? <span className="badge badge-default u-ml-8px">Platform</span> : null}</td>
+      <td>{isPlatform ? org.name : <Link href={`/platform/clubs/${org.id}`}>{org.name}</Link>}{isPlatform ? <span className="badge badge-default u-ml-8px">Platform</span> : null}</td>
       <td><code>{org.slug ?? '—'}</code></td>
       <td><span className={`badge ${STATUS_BADGE[org.status]}`}>{orgStatusLabel(org.status)}</span></td>
       <td>{new Date(org.created_at).toLocaleDateString()}</td>

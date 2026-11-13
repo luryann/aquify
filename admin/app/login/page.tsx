@@ -14,6 +14,7 @@ const STUB_ROLES = [
   { id: 'stub-coach', label: 'Coach', color: '#34d399', rgb: '52,211,153', desc: 'Training & meets' },
   { id: 'stub-parent', label: 'Parent', color: '#a78bfa', rgb: '167,139,250', desc: 'Household portal' },
   { id: 'stub-swimmer', label: 'Swimmer', color: '#22d3ee', rgb: '34,211,238', desc: 'Swimmer portal' },
+  { id: 'stub-platform', label: 'Operator', color: '#fb923c', rgb: '251,146,60', desc: 'Manage clubs (needs PLATFORM_ORG_ID)' },
 ] as const
 
 export default function LoginPage() {

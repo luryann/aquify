@@ -307,12 +307,14 @@ type AddContactInput struct {
 }
 
 type Swimmer struct {
-	ID                           string   `json:"id"`
-	OrgID                        string   `json:"org_id"`
-	HouseholdID                  string   `json:"household_id"`
-	FirstName                    string   `json:"first_name"`
-	LastName                     string   `json:"last_name"`
-	PreferredName                string   `json:"preferred_name,omitempty"`
+	ID            string `json:"id"`
+	OrgID         string `json:"org_id"`
+	HouseholdID   string `json:"household_id"`
+	FirstName     string `json:"first_name"`
+	LastName      string `json:"last_name"`
+	PreferredName string `json:"preferred_name,omitempty"`
+	// MiddleInitial is a single upper-case letter, used on meet entry files.
+	MiddleInitial                string   `json:"middle_initial,omitempty"`
 	DateOfBirth                  string   `json:"date_of_birth"`
 	Gender                       string   `json:"gender"`
 	SwimmerExternalID            string   `json:"swimmer_external_id,omitempty"`
@@ -349,6 +351,7 @@ type CreateSwimmerInput struct {
 	FirstName          string
 	LastName           string
 	PreferredName      string
+	MiddleInitial      string
 	DateOfBirth        string
 	Gender             string
 	SwimmerExternalID  string
@@ -362,6 +365,7 @@ type UpdateSwimmerInput struct {
 	FirstName                    *string
 	LastName                     *string
 	PreferredName                *string
+	MiddleInitial                *string
 	DateOfBirth                  *string
 	Gender                       *string
 	SwimmerExternalID            *string
@@ -712,6 +716,7 @@ func (s *Service) AnonymizeHousehold(orgID, householdID string) error {
 		swimmer.FirstName = "Deleted"
 		swimmer.LastName = "Swimmer"
 		swimmer.PreferredName = ""
+		swimmer.MiddleInitial = ""
 		swimmer.SwimmerExternalID = ""
 		swimmer.USASwimmingID = ""
 		swimmer.MedicalFlags = nil
@@ -751,7 +756,7 @@ func (s *Service) AnonymizeHousehold(orgID, householdID string) error {
 // auditPIIKeys are the snapshot/metadata keys that carry directly identifying
 // swimmer data.
 var auditPIIKeys = map[string]struct{}{
-	"first_name": {}, "last_name": {}, "preferred_name": {}, "name": {}, "full_name": {},
+	"first_name": {}, "last_name": {}, "preferred_name": {}, "middle_initial": {}, "name": {}, "full_name": {},
 	"date_of_birth": {}, "swimmer_external_id": {}, "usa_swimming_id": {},
 	"medical_flags": {}, "notes": {}, "allergies": {},
 	"emergency_contact_name": {}, "emergency_contact_phone": {}, "emergency_contact_relationship": {},
@@ -971,6 +976,7 @@ func (s *Service) createSwimmer(principal *appmiddleware.Principal, orgID string
 		FirstName:          strings.TrimSpace(input.FirstName),
 		LastName:           strings.TrimSpace(input.LastName),
 		PreferredName:      strings.TrimSpace(input.PreferredName),
+		MiddleInitial:      NormalizeMiddleInitial(input.MiddleInitial),
 		DateOfBirth:        strings.TrimSpace(input.DateOfBirth),
 		Gender:             strings.TrimSpace(strings.ToLower(input.Gender)),
 		SwimmerExternalID:  strings.TrimSpace(input.SwimmerExternalID),
@@ -1064,6 +1070,9 @@ func (s *Service) UpdateSwimmer(principal *appmiddleware.Principal, orgID, swimm
 	}
 	if input.PreferredName != nil {
 		swimmer.PreferredName = strings.TrimSpace(*input.PreferredName)
+	}
+	if input.MiddleInitial != nil {
+		swimmer.MiddleInitial = NormalizeMiddleInitial(*input.MiddleInitial)
 	}
 	if input.DateOfBirth != nil {
 		nextDOB := strings.TrimSpace(*input.DateOfBirth)
@@ -2033,6 +2042,7 @@ func swimmerSnapshot(swimmer Swimmer) map[string]any {
 		"first_name":          swimmer.FirstName,
 		"last_name":           swimmer.LastName,
 		"preferred_name":      swimmer.PreferredName,
+		"middle_initial":      swimmer.MiddleInitial,
 		"date_of_birth":       swimmer.DateOfBirth,
 		"gender":              swimmer.Gender,
 		"swimmer_external_id": swimmer.SwimmerExternalID,
@@ -2103,4 +2113,19 @@ func swimmerNeedsGuardianConsent(sw Swimmer) bool {
 		return true
 	}
 	return dob.AddDate(13, 0, 0).After(time.Now().UTC())
+}
+
+// NormalizeMiddleInitial reduces free text to a single upper-case ASCII
+// letter ("" when there is none), the only form meet entry files can carry.
+func NormalizeMiddleInitial(value string) string {
+	for _, r := range strings.TrimSpace(value) {
+		if r >= 'a' && r <= 'z' {
+			r -= 'a' - 'A'
+		}
+		if r >= 'A' && r <= 'Z' {
+			return string(r)
+		}
+		return ""
+	}
+	return ""
 }

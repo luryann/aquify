@@ -369,6 +369,7 @@ type createSwimmerRequest struct {
 	FirstName          string   `json:"first_name" validate:"required"`
 	LastName           string   `json:"last_name" validate:"required"`
 	PreferredName      string   `json:"preferred_name"`
+	MiddleInitial      string   `json:"middle_initial"`
 	DateOfBirth        string   `json:"date_of_birth" validate:"required"`
 	Gender             string   `json:"gender" validate:"required,oneof=female male non_binary undisclosed"`
 	SwimmerExternalID  string   `json:"swimmer_external_id"`
@@ -397,6 +398,7 @@ func (h *MembershipHandlers) createSwimmer(w http.ResponseWriter, r *http.Reques
 		FirstName:          req.FirstName,
 		LastName:           req.LastName,
 		PreferredName:      req.PreferredName,
+		MiddleInitial:      req.MiddleInitial,
 		DateOfBirth:        req.DateOfBirth,
 		Gender:             req.Gender,
 		SwimmerExternalID:  req.SwimmerExternalID,
@@ -465,6 +467,7 @@ type updateSwimmerRequest struct {
 	FirstName                    *string   `json:"first_name"`
 	LastName                     *string   `json:"last_name"`
 	PreferredName                *string   `json:"preferred_name"`
+	MiddleInitial                *string   `json:"middle_initial"`
 	DateOfBirth                  *string   `json:"date_of_birth"`
 	Gender                       *string   `json:"gender" validate:"omitempty,oneof=female male non_binary undisclosed"`
 	SwimmerExternalID            *string   `json:"swimmer_external_id"`
@@ -496,6 +499,7 @@ func (h *MembershipHandlers) updateSwimmer(w http.ResponseWriter, r *http.Reques
 		FirstName:                    req.FirstName,
 		LastName:                     req.LastName,
 		PreferredName:                req.PreferredName,
+		MiddleInitial:                req.MiddleInitial,
 		DateOfBirth:                  req.DateOfBirth,
 		Gender:                       req.Gender,
 		SwimmerExternalID:            req.SwimmerExternalID,

@@ -1,6 +1,9 @@
 import type { Role } from './roles'
 
 export const LOCAL_DEV_ORG_ID = '00000000-0000-0000-0000-00000000a001'
+// Dedicated platform org the stub operator belongs to (mirrors the backend
+// authn/localdev.go LocalDevPlatformOrgID). Set PLATFORM_ORG_ID to this value.
+export const LOCAL_DEV_PLATFORM_ORG_ID = '00000000-0000-0000-0000-00000000a0ff'
 // Fixed demo household the stub parent/swimmer are linked to (mirrors the
 // backend authn/localdev.go LocalDevHouseholdID) so portal household-scoped
 // pages resolve under dev stub login without an OIDC session.
@@ -54,5 +57,14 @@ export const LOCAL_DEV_USERS: Record<string, LocalDevUser> = {
     orgId: LOCAL_DEV_ORG_ID,
     avatarInitials: 'DS',
     householdId: LOCAL_DEV_HOUSEHOLD_ID,
+  },
+  'stub-platform': {
+    id: '00000000-0000-0000-0000-00000000a1ff',
+    email: 'operator@aquify.local',
+    name: 'Dev Operator',
+    role: 'platform_admin',
+    orgId: LOCAL_DEV_PLATFORM_ORG_ID,
+    avatarInitials: 'DO',
+    mfaAuthenticated: true,
   },
 }

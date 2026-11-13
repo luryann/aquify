@@ -67,6 +67,9 @@ func (r *repository) Query(ctx context.Context, f Filter) ([]AuditEvent, error) 
 	if f.Action != "" {
 		add("lower(action) = lower($%d)", f.Action)
 	}
+	if f.ActionPrefix != "" {
+		add("starts_with(lower(action), lower($%d))", f.ActionPrefix)
+	}
 	if f.ResourceType != "" {
 		add("lower(resource_type) = lower($%d)", f.ResourceType)
 	}

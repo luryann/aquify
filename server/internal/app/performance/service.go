@@ -1576,3 +1576,47 @@ func (s *Service) EvaluateCutQualification(orgID string, principal *appmiddlewar
 
 	return result, nil
 }
+
+// BestTimeSource says where a swimmer's current best time for one event was
+// swum. Manually entered best times have no source and are not listed.
+type BestTimeSource struct {
+	SwimmerID  string
+	Distance   int
+	Stroke     string
+	Course     string
+	BestTimeMs int
+	MeetID     string
+}
+
+// ListBestTimeSources returns the meet behind every best time in the org that
+// came from a recorded result. Staff only: it spans every swimmer.
+func (s *Service) ListBestTimeSources(orgID string, principal *appmiddleware.Principal) ([]BestTimeSource, error) {
+	if err := s.ensureOrg(orgID); err != nil {
+		return nil, err
+	}
+	if !appmiddleware.HasAnyRole(principal, "admin", "coach") {
+		return nil, ErrForbidden
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	var out []BestTimeSource
+	for _, bt := range s.bestTimes {
+		if bt.OrgID != orgID || bt.BestTimeMs == nil || bt.IsManualOverride || bt.ResultID == "" {
+			continue
+		}
+		result, ok := s.results[bt.ResultID]
+		if !ok || result.OrgID != orgID || result.MeetID == "" {
+			continue
+		}
+		out = append(out, BestTimeSource{
+			SwimmerID:  bt.SwimmerID,
+			Distance:   bt.EventDistance,
+			Stroke:     bt.Stroke,
+			Course:     bt.Course,
+			BestTimeMs: *bt.BestTimeMs,
+			MeetID:     result.MeetID,
+		})
+	}
+	return out, nil
+}

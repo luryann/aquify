@@ -14,7 +14,7 @@ aquify is the team's operational system of record: memberships, meets, money, me
 
 - **Member & household management** — parents, swimmers, coaches, groups, and registrations
 - **Meet operations** — meet setup, commitment tracking, event entry approvals, and coach overrides
-- **Meet-file interoperability** — `.cl2`, `.sd3`, `.zip` import; Standard/Extended SD3 export; SDIF workflows; HY3 as a ZIP container
+- **Meet-file interoperability** — import the host's `.hyv`/`.ev3` meet event files; export an entry bundle for the host (`.sd3`, `.hy3`, entry reports by event and by swimmer, entry log); import `.sd3` results
 - **Performance tracking** — results, best times, time standards, and swimmer progression
 - **Billing & payments** — invoices, payments, refunds, append-only ledger, and Stripe integration
 - **Communications** — announcements and Postmark email campaigns with delivery/suppression tracking
@@ -45,7 +45,7 @@ root/
   server/             # Go API backend (Chi router, pgx, Asynq)
   admin/              # Next.js TypeScript admin portal
   db/migrations/      # Goose SQL migration files
-  internal/meetfiles/ # Standalone CL2/SD3/ZIP/HY3 parsing library
+  internal/meetfiles/ # Standalone meet file library (HYV/EV3 in, SD3/HY3 entry bundle out)
   docs/               # Planning docs, OpenAPI spec, runbooks, ADRs
   scripts/            # Shell helpers (cutover, smoke checks, etc.)
   Makefile            # All dev targets

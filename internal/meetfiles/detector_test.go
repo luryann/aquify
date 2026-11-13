@@ -13,8 +13,6 @@ func TestDetectFileType_ByExtension(t *testing.T) {
 	}{
 		{"results.sd3", meetfiles.FileTypeSD3},
 		{"RESULTS.SD3", meetfiles.FileTypeSD3},
-		{"entries.cl2", meetfiles.FileTypeCL2},
-		{"ENTRIES.CL2", meetfiles.FileTypeCL2},
 		{"meet.zip", meetfiles.FileTypeZIP},
 		{"MEET.ZIP", meetfiles.FileTypeZIP},
 		{"events.hyv", meetfiles.FileTypeHYV},

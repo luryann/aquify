@@ -1,4 +1,5 @@
-// Package meetfiles implements SD3/SDIF, CL2, and ZIP file parsing for swim
+// Package meetfiles reads and writes swim meet interchange files: Hy-Tek meet
+// event files (.hyv/.ev3), SDIF results (.sd3) and the entry bundle for swim
 // meet interoperability.  It produces a normalized ParseResult that the import
 // service uses to match swimmers, queue conflicts, and build reports.
 package meetfiles
@@ -12,7 +13,6 @@ type FileType string
 
 const (
 	FileTypeSD3 FileType = "sd3"
-	FileTypeCL2 FileType = "cl2"
 	FileTypeZIP FileType = "zip"
 	FileTypeHY3 FileType = "hy3"
 	FileTypeHYV FileType = "hyv"
@@ -136,6 +136,12 @@ type ParsedMeetEvent struct {
 	MaxAge        *int
 	Course        Course
 	IsRelay       bool
+	// EntryFeeCents is the per-entry fee the host charges for this event.
+	EntryFeeCents int
+	// TimeStandards holds the event's entry time standard in milliseconds,
+	// keyed by the course it is expressed in. Hosts publish the same standard
+	// converted for each course they accept times in.
+	TimeStandards map[Course]int
 }
 
 // ParsedMeetDefinition is the top-level output for meet setup file parsing.
@@ -146,10 +152,12 @@ type ParsedMeetDefinition struct {
 	Location      string
 	MeetStartDate *time.Time
 	MeetEndDate   *time.Time
-	Course        Course
-	Sessions      []ParsedMeetSession
-	Events        []ParsedMeetEvent
-	ParseErrors   []ParseError
+	// AgeUpDate is the date swimmer ages are computed on.
+	AgeUpDate   *time.Time
+	Course      Course
+	Sessions    []ParsedMeetSession
+	Events      []ParsedMeetEvent
+	ParseErrors []ParseError
 }
 
 // ─── Top-level result ─────────────────────────────────────────────────────────
@@ -185,42 +193,10 @@ const (
 	ErrCodeMalformedRecord ErrorCode = "malformed_record"
 	// ErrCodeAmbiguousMatch means multiple swimmers match the identity fields.
 	ErrCodeAmbiguousMatch ErrorCode = "ambiguous_match"
-	// ErrCodeHY3EmptyArchive means the .hy3 ZIP container has no files at all.
-	ErrCodeHY3EmptyArchive ErrorCode = "hy3_empty_archive"
-	// ErrCodeHY3NoPayload means the .hy3 archive has no parseable .sd3 or .cl2 files.
-	ErrCodeHY3NoPayload ErrorCode = "hy3_no_parseable_payload"
-	// ErrCodeHY3AmbiguousPayload means the .hy3 archive contains multiple parseable
-	// files; one was selected by deterministic precedence but the conflict is flagged.
-	ErrCodeHY3AmbiguousPayload ErrorCode = "hy3_ambiguous_payload"
-	// ErrCodeArchiveTooLarge means a ZIP/HY3 archive exceeded the per-entry or
+	// ErrCodeArchiveTooLarge means a ZIP archive exceeded the per-entry or
 	// cumulative decompressed-size cap (zip-bomb protection).
 	ErrCodeArchiveTooLarge ErrorCode = "archive_too_large"
 )
-
-// HY3 ingest result
-
-// HY3IngestResult holds the outcome of reading a .hy3 container archive.
-// The SelectedPayload is the single file chosen for parsing; callers should
-// pass its Content to the appropriate SD3 or CL2 parser.
-type HY3IngestResult struct {
-	// SourceFile is the original .hy3 filename.
-	SourceFile string
-	// SelectedPayload is the inner file chosen for parsing.  Nil when no
-	// parseable payload could be selected (see Error).
-	SelectedPayload *ZipEntry
-	// AllPayloads contains every .sd3 and .cl2 entry found in the archive,
-	// sorted by deterministic precedence (SD3 before CL2, then lexicographic).
-	AllPayloads []ZipEntry
-	// UnknownFiles lists filenames inside the archive that are neither .sd3
-	// nor .cl2 and were therefore skipped.
-	UnknownFiles []string
-	// Error is non-nil when a packaging failure prevents payload selection
-	// (hy3_empty_archive, hy3_no_parseable_payload, hy3_ambiguous_payload, or
-	// malformed_record when the archive itself is corrupt).
-	// Note: ErrCodeHY3AmbiguousPayload is set even when a payload was selected,
-	// so callers must check SelectedPayload independently of Error.
-	Error *ParseError
-}
 
 // ParseError captures a line-level parse or match error.
 type ParseError struct {

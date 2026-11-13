@@ -2,7 +2,7 @@
 
 import { Suspense, useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
-import { useSearchParams } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { Icon } from '@/components/ui/icons'
 import { Table, type Column } from '@/components/ui/Table'
 import { Tabs } from '@/components/ui/Tabs'
@@ -58,7 +58,7 @@ const COLUMNS: Column<MeetRow>[] = [
     sortable: true,
     render: (row) => (
       <div>
-        <Link href={`/meets/${row.id}`} className="u-fw-600 u-fs-fs-base" style={{ color: 'var(--text)', textDecoration: 'none' }}>{row.name}</Link>
+        <Link href={`/meets/${row.id}`} onClick={(e) => e.stopPropagation()} className="u-fw-600 u-fs-fs-base" style={{ color: 'var(--text)', textDecoration: 'none' }}>{row.name}</Link>
         <div className="u-fs-fs-xs u-mt-2px" style={{ color: 'var(--text-muted)' }}>{row.host} · {row.location || 'Location TBD'}</div>
       </div>
     ),
@@ -122,6 +122,7 @@ function MeetsPageContent() {
   const { session } = useSession()
   const api = useApiClient(session?.token)
   const searchParams = useSearchParams()
+  const router = useRouter()
   const [rows, setRows] = useState<MeetRow[]>([])
   const [viewTab, setViewTab] = useState('upcoming')
   const [search, setSearch] = useState('')
@@ -229,8 +230,9 @@ function MeetsPageContent() {
       ) : error ? (
         <EmptyState icon="alert-circle" title="Unable to load meets" description={error} />
       ) : (
-        <Table columns={COLUMNS} data={filtered} pageSize={10} emptyTitle="No meets found" emptyDescription="Try adjusting your filters or create a new meet." />
+        <Table columns={COLUMNS} data={filtered} pageSize={10} onRowClick={(row) => router.push(`/meets/${row.id}`)} emptyTitle="No meets found" emptyDescription="Try adjusting your filters or create a new meet." />
       )}
     </div>
   )
 }
+

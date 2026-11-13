@@ -58,6 +58,14 @@ const (
 	ActionPlatformOrgRestore                 = "platform.org.restore"
 	ActionPlatformOrgDomainAdd               = "platform.org.domain_add"
 	ActionPlatformOrgDomainVerify            = "platform.org.domain_verify"
+	ActionPlatformOrgUpdate                  = "platform.org.update"
+	ActionPlatformUserPasswordReset          = "platform.user.password_reset"
+	ActionPlatformUserResendVerification     = "platform.user.resend_verification"
+	ActionPlatformUserSignOut                = "platform.user.sign_out"
+	ActionPlatformUserMFAReset               = "platform.user.mfa_reset"
+	ActionPlatformUserDisable                = "platform.user.disable"
+	ActionPlatformUserEnable                 = "platform.user.enable"
+	ActionPlatformUserAdminAdd               = "platform.user.admin_add"
 	ActionCommsNotificationPreferencesUpdate = "comms.notification_preferences.update"
 	ActionCommsMessageSend                   = "comms.message.send"
 	ActionCommsMessageEdit                   = "comms.message.edit"
@@ -134,9 +142,12 @@ type AppendRequest struct {
 
 // Filter specifies which audit events to return.
 type Filter struct {
-	OrgID        string
-	ActorUserID  string
-	Action       string
+	OrgID       string
+	ActorUserID string
+	Action      string
+	// ActionPrefix keeps events whose action starts with it (case-insensitive),
+	// e.g. "platform." for operator activity. Applied before Limit.
+	ActionPrefix string
 	ResourceType string
 	ResourceID   string
 	// From and To bound the occurred_at range (both inclusive).
@@ -278,6 +289,9 @@ func (s *Service) Query(f Filter) ([]AuditEvent, error) {
 			continue
 		}
 		if f.Action != "" && !strings.EqualFold(ev.Action, f.Action) {
+			continue
+		}
+		if f.ActionPrefix != "" && !strings.HasPrefix(strings.ToLower(ev.Action), strings.ToLower(f.ActionPrefix)) {
 			continue
 		}
 		if f.ResourceType != "" && !strings.EqualFold(ev.ResourceType, f.ResourceType) {

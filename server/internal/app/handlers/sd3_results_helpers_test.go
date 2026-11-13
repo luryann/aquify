@@ -8,49 +8,6 @@ import (
 	"github.com/luryann/aquify/server/internal/app/members"
 )
 
-func TestSD3EncodingHelpers(t *testing.T) {
-	t.Parallel()
-	ten, fourteen := 10, 14
-	cases := map[string]string{
-		sd3AgeGroup(&ten, &fourteen): "1014",
-		sd3AgeGroup(nil, &ten):       "UN10",
-		sd3AgeGroup(&fourteen, nil):  "14OV",
-		sd3AgeGroup(nil, nil):        "UNOV",
-	}
-	for got, want := range cases {
-		if got != want {
-			t.Fatalf("age group: got %q want %q", got, want)
-		}
-	}
-	for in, want := range map[string]meetfiles.Stroke{
-		"freestyle": meetfiles.StrokeFreestyle, "backstroke": meetfiles.StrokeBackstroke, "breaststroke": meetfiles.StrokeBreaststroke,
-		"butterfly": meetfiles.StrokeButterfly, "individual_medley": meetfiles.StrokeIM, "freestyle_relay": meetfiles.StrokeFreestyleRelay,
-		"medley_relay": meetfiles.StrokeMedleyRelay, "kick": meetfiles.StrokeUnknown,
-	} {
-		if got := sd3Stroke(in); got != want {
-			t.Fatalf("stroke %q: got %q want %q", in, got, want)
-		}
-	}
-	if sd3EventGender("f") != "F" || sd3EventGender("O") != "X" || sd3EventGender("") != "X" {
-		t.Fatal("event gender mapping")
-	}
-	if sd3SwimmerGender("female") != "F" || sd3SwimmerGender("male") != "M" || sd3SwimmerGender("non_binary") != "" {
-		t.Fatal("swimmer gender mapping")
-	}
-	if got := sd3Filename("Fall Classic: 2026!", "2026-11-14"); got != "Fall-Classic-2026-20261114-entries.sd3" {
-		t.Fatalf("filename: %q", got)
-	}
-	if got := sd3Filename("***", ""); got != "meet-entries.sd3" {
-		t.Fatalf("fallback filename: %q", got)
-	}
-	if d := parseSD3Date("2026-11-14T08:00:00Z"); d == nil || d.Format("2006-01-02") != "2026-11-14" {
-		t.Fatalf("parse date: %v", d)
-	}
-	if parseSD3Date("soon") != nil {
-		t.Fatal("invalid date should parse to nil")
-	}
-}
-
 func TestResultImportHelpersAndSwimmerMatching(t *testing.T) {
 	t.Parallel()
 	if resultCourse(meetfiles.Course(""), "lcm", "SCY") != "LCM" || resultCourse("", "") != "" {

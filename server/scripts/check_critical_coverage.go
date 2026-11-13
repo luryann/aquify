@@ -30,6 +30,9 @@ var criticalThresholds = []threshold{
 
 var coveragePattern = regexp.MustCompile(`coverage:\s+([0-9]+(?:\.[0-9]+)?)%\s+of statements`)
 
+// exit is a seam so tests can observe the gate failing without killing the test binary.
+var exit = os.Exit
+
 func main() {
 	var failures []string
 	for _, item := range criticalThresholds {
@@ -50,7 +53,7 @@ func main() {
 		for _, failure := range failures {
 			fmt.Fprintf(os.Stderr, "- %s\n", failure)
 		}
-		os.Exit(1)
+		exit(1)
 	}
 }
 

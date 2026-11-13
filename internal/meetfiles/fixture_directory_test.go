@@ -7,8 +7,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/luryann/aquify/meetfiles"
-	"github.com/luryann/aquify/meetfiles/cl2"
 	"github.com/luryann/aquify/meetfiles/sdif"
 )
 
@@ -47,21 +45,6 @@ func TestParserFixtureDirectory_MalformedFixture(t *testing.T) {
 	}
 	if len(result.ParseErrors) == 0 {
 		t.Fatal("expected malformed fixture to produce parse errors")
-	}
-}
-
-func TestParserFixtureDirectory_CL2Fixture(t *testing.T) {
-	t.Parallel()
-
-	result, err := cl2.Parse(readFixture(t, "sample.cl2"))
-	if err != nil {
-		t.Fatalf("Parse CL2 fixture: %v", err)
-	}
-	if result.FileType != meetfiles.FileTypeCL2 {
-		t.Fatalf("expected CL2 fixture file type, got %q", result.FileType)
-	}
-	if len(result.ParseErrors) == 0 {
-		t.Fatal("expected CL2 scaffold fixture to retain unrecognised-line coverage")
 	}
 }
 
